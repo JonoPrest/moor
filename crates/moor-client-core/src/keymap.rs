@@ -56,6 +56,8 @@ pub enum Command {
     Reply,
     /// Delete the focused thread's root comment (own comments only).
     Delete,
+    /// Apply the focused suggestion thread's patch to the working tree.
+    ApplySuggestion,
     ToggleResolved,
     FileSearch,
     ToggleLayout,
@@ -431,6 +433,7 @@ impl Keymap {
             b(X::Thread, keys!("r"), C::Reply, true),
             b(X::Thread, keys!("x"), C::ToggleResolved, true),
             b(X::Thread, keys!("d"), C::Delete, false),
+            b(X::Thread, keys!("a"), C::ApplySuggestion, false),
             // Composer: everything else is text; the host submits.
             b(X::Composer, keys!("esc"), C::Back, true),
             // Commit stepper
@@ -627,6 +630,7 @@ pub fn label(command: Command) -> &'static str {
         Command::Comment => "comment",
         Command::Reply => "reply",
         Command::Delete => "delete",
+        Command::ApplySuggestion => "apply suggestion",
         Command::ToggleResolved => "resolve",
         Command::FileSearch => "find file",
         Command::ToggleLayout => "split/unified",

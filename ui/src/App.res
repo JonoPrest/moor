@@ -72,6 +72,14 @@ module Shell = {
       KeyEvent.listen("keydown", handler)
       Some(() => KeyEvent.unlisten("keydown", handler))
     })
+    // Keep the focused list item on screen (the diff scrolls itself).
+    React.useEffect1(() => {
+      switch model.focus {
+      | Diff(_) | Composer(_) | Help(_) => ()
+      | ReviewList(_) | Tree(_) | Thread(_) | CommitStepper(_) => Focused.scrollIntoView()
+      }
+      None
+    }, [model.focus])
     let dispatch = core.dispatch
     let left = if Array.length(model.tree.roots) > 0 {
       <Tree tree=model.tree focus=model.focus dispatch />

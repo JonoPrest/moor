@@ -21,6 +21,7 @@ type t =
   | @as("DeleteComment") DeleteComment({@as("comment_id") commentId: commentId})
   | @as("ResolveThread") ResolveThread({@as("thread_id") threadId: threadId})
   | @as("UnresolveThread") UnresolveThread({@as("thread_id") threadId: threadId})
+  | @as("ApplySuggestion") ApplySuggestion({@as("comment_id") commentId: commentId})
   | @as("Viewport")
   Viewport({file: View.FileRef.t, @as("first_row") firstRow: int, @as("last_row") lastRow: int})
   | @as("CloseFile") CloseFile({})

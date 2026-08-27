@@ -401,6 +401,7 @@ struct_fixture!(
         file: file_ref()?,
         lang: Some("Rust".into()),
         content: proto_named::<RenderContent>("Text")?,
+        viewed: ViewedState::ChangedSinceViewed,
         first_row: 120,
         last_row: 179,
         rows: vec![local::<DiffRow>()?],
@@ -437,15 +438,20 @@ struct_fixture!(
         place: local_named::<ThreadPlace>("Lines")?,
         outdated: false,
         pending: true,
+        suggestion: true,
     }
 );
 struct_fixture!(StepperCommit, "StepperCommit", {
     let c = proto::<CommitInfo>()?;
     StepperCommit {
         oid: c.oid,
+        parents: c.parents,
         subject: c.subject,
+        body: c.body,
         author: c.author.name,
         time: c.author.time,
+        committer: c.committer.name,
+        committer_time: c.committer.time,
     }
 });
 struct_fixture!(
@@ -584,6 +590,9 @@ enum_fixture!(
         },
         Action::UnresolveThread {
             thread_id: thread_id()?,
+        },
+        Action::ApplySuggestion {
+            comment_id: comment_id()?,
         },
         Action::Viewport {
             file: file_ref()?,

@@ -570,6 +570,45 @@ fn every_action_is_reachable_from_a_binding() {
         }))
         .unwrap();
     states.push(toggled);
+    // A suggestion thread, focused: `a` applies it.
+    let mut with_suggestion = ready();
+    let suggestion = Comment {
+        kind: CommentKind::Suggestion {
+            patch: "@@ -1 +1 @@\n-a\n+b\n".into(),
+        },
+        ..comment(11, Anchor::Review)
+    };
+    let suggestion_thread = suggestion.thread_id;
+    with_suggestion
+        .handle(Input::Server(ServerMsg::Event {
+            event: moor_protocol::Event {
+                seq: Seq::new(3),
+                ts: Timestamp::from_millis(0),
+                author: Author::Human {
+                    name: "other".into(),
+                    machine: "host".into(),
+                },
+                client_id: ClientId::from_parts(9, 9),
+                client_seq: moor_protocol::ClientSeq::new(1),
+                body: moor_protocol::EventBody::CommentCreated {
+                    comment: suggestion,
+                },
+            },
+        }))
+        .unwrap();
+    let index = with_suggestion
+        .view()
+        .threads
+        .iter()
+        .position(|t| t.id == suggestion_thread)
+        .unwrap();
+    with_suggestion
+        .handle(Input::User(Action::SetFocus {
+            focus: Focus::Thread { index },
+        }))
+        .unwrap();
+    assert!(with_suggestion.view().threads[index].suggestion);
+    states.push(with_suggestion);
     let mut viewed = ready();
     viewed
         .handle(Input::User(Action::Viewport {

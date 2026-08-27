@@ -49,6 +49,9 @@ let make = (~diff: DiffView.t, ~layout: Layout.t, ~focus: Focus.t, ~dispatch: Ac
     }
     None
   }, [focusedRow])
+  // A viewed file collapses (§4.4); the reader can expand it for this visit.
+  let (expanded, setExpanded) = React.useState(() => false)
+  let collapsed = diff.viewed == Viewed && !expanded
   let cached = Dict.make()
   diff.rows->Array.forEach(r => cached->Dict.set(Int.toString(r.index), r))
   let title = diff.file.path
@@ -64,7 +67,15 @@ let make = (~diff: DiffView.t, ~layout: Layout.t, ~focus: Focus.t, ~dispatch: Ac
         </div>
       : React.null}
     binary
-    <div className="diff-scroll" ref={ReactDOM.Ref.domRef(scrollRef)}>
+    {collapsed
+      ? <div className="diff-collapsed">
+          {React.string("Viewed — ")}
+          <UI.Button label="show anyway" kind=Ghost onClick={() => setExpanded(_ => true)} />
+        </div>
+      : React.null}
+    <div
+      className={"diff-scroll" ++ (collapsed ? " hidden" : "")}
+      ref={ReactDOM.Ref.domRef(scrollRef)}>
       <div
         className="diff-rows"
         style={{

@@ -162,6 +162,7 @@ module DiffView = {
     file: FileRef.t,
     lang: @s.null option<string>,
     content: Render.RenderContent.t,
+    viewed: ViewedState.t,
     @as("first_row") firstRow: int,
     @as("last_row") lastRow: int,
     rows: array<DiffRow.t>,
@@ -193,12 +194,22 @@ module ThreadView = {
     place: ThreadPlace.t,
     outdated: bool,
     pending: bool,
+    suggestion: bool,
   }
 }
 
 module StepperCommit = {
   @schema
-  type t = {oid: commitOid, subject: string, author: string, time: timestamp}
+  type t = {
+    oid: commitOid,
+    parents: array<commitOid>,
+    subject: string,
+    body: string,
+    author: string,
+    time: timestamp,
+    committer: string,
+    @as("committer_time") committerTime: timestamp,
+  }
 }
 
 module CommitStepper = {
@@ -251,6 +262,7 @@ module Command = {
     | Comment
     | Reply
     | Delete
+    | ApplySuggestion
     | ToggleResolved
     | FileSearch
     | ToggleLayout

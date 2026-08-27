@@ -19,7 +19,12 @@ let placeText = (p: ThreadPlace.t) =>
 
 module Item = {
   @react.component
-  let make = (~thread: ThreadView.t, ~focused: bool, ~onSelect: unit => unit) => {
+  let make = (
+    ~thread: ThreadView.t,
+    ~focused: bool,
+    ~onSelect: unit => unit,
+    ~onApply: unit => unit,
+  ) => {
     let flags = [
       thread.resolved ? "resolved" : "",
       thread.outdated ? "outdated" : "",
@@ -36,6 +41,9 @@ module Item = {
           {thread.pending ? <span className="thread-pending"> {React.string("…")} </span> : React.null}
         </div>
         <div className="thread-summary"> {React.string(thread.summary)} </div>
+        {thread.suggestion
+          ? <UI.Button label="Apply suggestion (a)" kind=Primary onClick=onApply />
+          : React.null}
       </li>,
       focused,
     )
@@ -65,6 +73,7 @@ let make = (
               thread=t
               focused={focusedIndex == Some(indexOffset + i)}
               onSelect={() => dispatch(SetFocus({focus: Focus.Thread({index: indexOffset + i})}))}
+              onApply={() => dispatch(ApplySuggestion({commentId: t.root}))}
             />
           )
           ->React.array}

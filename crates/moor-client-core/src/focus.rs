@@ -299,6 +299,7 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 | Command::Comment
                 | Command::Reply
                 | Command::Delete
+                | Command::ApplySuggestion
                 | Command::ToggleResolved
                 | Command::FileSearch
                 | Command::ToggleLayout
@@ -549,6 +550,16 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 return Err(nothing());
             }
             Ok(Action::DeleteComment { comment_id: t.root })
+        }
+        Command::ApplySuggestion => {
+            let Focus::Thread { index } = focus else {
+                return Err(nothing());
+            };
+            let t = view.threads.get(index).ok_or_else(nothing)?;
+            if !t.suggestion {
+                return Err(nothing());
+            }
+            Ok(Action::ApplySuggestion { comment_id: t.root })
         }
         Command::ToggleResolved => {
             let Focus::Thread { index } = focus else {

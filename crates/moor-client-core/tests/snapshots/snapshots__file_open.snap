@@ -85,6 +85,7 @@ expression: core.view()
       "additions": 2,
       "deletions": 1
     },
+    "viewed": "Unviewed",
     "first_row": 0,
     "last_row": 15,
     "rows": [
@@ -243,7 +244,8 @@ expression: core.view()
         "end": 2
       },
       "outdated": false,
-      "pending": false
+      "pending": false,
+      "suggestion": false
     },
     {
       "id": "00000001YJ0000000000000002",
@@ -261,7 +263,8 @@ expression: core.view()
         "type": "Review"
       },
       "outdated": false,
-      "pending": false
+      "pending": false,
+      "suggestion": false
     }
   ],
   "conversation": [
@@ -281,7 +284,8 @@ expression: core.view()
         "type": "Review"
       },
       "outdated": false,
-      "pending": false
+      "pending": false,
+      "suggestion": false
     }
   ],
   "stepper": null,

@@ -121,3 +121,50 @@ describe("Tree", () => {
     expect(dispatch)->toHaveBeenLastCalledWith(Action.SetFocus({focus: Tree({index: 1})}))
   })
 })
+
+describe("Stepper", () => {
+  test("shows the selected commit's body, committer and parents", () => {
+    let dispatch = fn()
+    let stepper = Fixtures.parse(View.CommitStepper.schema, "client", "CommitStepper", "default")
+    let {container} = render(<Stepper stepper focus={CommitStepper({index: 0})} dispatch />)
+    expect(Element.querySelector(container, ".commit-panel .commit-subject"))->not_->toBeNull
+    expect(Element.querySelector(container, ".commit-body"))->not_->toBeNull
+    expect(Element.querySelector(container, ".commit-panel .commit-oid"))->not_->toBeNull
+    let items = Element.querySelectorAll(container, ".stepper-commit")
+    expect(Element.hasAttribute(items->Array.getUnsafe(0), "data-focused"))->toBe(true)
+    FireEvent.doubleClick(items->Array.getUnsafe(0))
+    expect(dispatch)->toHaveBeenLastCalledWith(Action.StepCommit({selected: Some(0)}))
+  })
+})
+
+describe("Threads", () => {
+  test("offers to apply a suggestion thread and dispatches ApplySuggestion", () => {
+    let dispatch = fn()
+    let thread = Fixtures.parse(View.ThreadView.schema, "client", "ThreadView", "default")
+    let _ = render(
+      <Threads title="Threads" threads=[thread] focus={Thread({index: 0})} indexOffset=0 dispatch />,
+    )
+    FireEvent.click(Screen.getByText("Apply suggestion (a)"))
+    // The click also bubbles to the row (SetFocus), so not the last call.
+    expect(dispatch)->toHaveBeenCalledWith(Action.ApplySuggestion({commentId: thread.root}))
+    let plain = {...thread, suggestion: false}
+    cleanup()
+    let {container} = render(
+      <Threads title="Threads" threads=[plain] focus={Thread({index: 0})} indexOffset=0 dispatch />,
+    )
+    expect(Element.querySelector(container, "button"))->toBeNull
+  })
+})
+
+describe("DiffView (viewed)", () => {
+  test("collapses a viewed file until the reader asks to see it", () => {
+    let dispatch = fn()
+    let base = Fixtures.parse(View.DiffView.schema, "client", "DiffView", "default")
+    let viewed = {...base, viewed: Viewed}
+    let {container} = render(<DiffView diff=viewed layout=Unified focus={Diff({row: 121})} dispatch />)
+    expect(Element.querySelector(container, ".diff-collapsed"))->not_->toBeNull
+    expect(Element.querySelector(container, ".diff-scroll.hidden"))->not_->toBeNull
+    FireEvent.click(Screen.getByText("show anyway"))
+    expect(Element.querySelector(container, ".diff-collapsed"))->toBeNull
+  })
+})

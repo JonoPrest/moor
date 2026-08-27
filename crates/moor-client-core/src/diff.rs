@@ -9,15 +9,16 @@
 //! good anchor and flagged; deleted ones are not placed at all.
 
 use moor_protocol::{
-    Anchor, Author, BlobOid, ChunkIndex, Comment, CommentId, CommentState, CommitInfo,
-    FileRenderHeader, RenderChunk, RenderContent, RenderTarget, RepoId, ReviewSnapshot, Row, Side,
-    Thread, ThreadId, ThreadResolution, Timestamp,
+    Anchor, Author, BlobOid, ChunkIndex, Comment, CommentId, CommentKind, CommentState, CommitInfo,
+    CommitOid, FileRenderHeader, RenderChunk, RenderContent, RenderTarget, RepoId, ReviewSnapshot,
+    Row, Side, Thread, ThreadId, ThreadResolution, Timestamp,
 };
 use serde::{Deserialize, Serialize};
 use strum::EnumDiscriminants;
 
 use crate::cache::{CacheKey, CacheValue, ContentCache, RenderKey};
 use crate::content::FileRef;
+use crate::explorer::ViewedState;
 
 /// Where a thread is anchored, for the thread list and the diff overlay.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumDiscriminants)]
@@ -38,6 +39,8 @@ pub enum ThreadPlace {
 }
 
 /// One thread as the thread list shows it.
+// Four independent flags is the domain; a bit set would hide the names.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ThreadView {
@@ -54,6 +57,8 @@ pub struct ThreadView {
     pub outdated: bool,
     /// Some comment in the thread is still awaiting the daemon.
     pub pending: bool,
+    /// The root is a `CommentKind::Suggestion` (a patch that can be applied).
+    pub suggestion: bool,
 }
 
 /// A row of the open file with the threads placed on it.
@@ -73,6 +78,9 @@ pub struct DiffView {
     pub file: FileRef,
     pub lang: Option<String>,
     pub content: RenderContent,
+    /// Whether the current viewer marked this file viewed at its head blob;
+    /// hosts collapse `Viewed` files.
+    pub viewed: ViewedState,
     pub first_row: u32,
     pub last_row: u32,
     /// Rows of the window that are cached, in order; gaps are chunks still
@@ -83,14 +91,19 @@ pub struct DiffView {
     pub file_threads: Vec<ThreadId>,
 }
 
-/// One commit of the stepper.
+/// One commit of the stepper, with what the commit panel shows.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StepperCommit {
-    pub oid: moor_protocol::CommitOid,
+    pub oid: CommitOid,
+    pub parents: Vec<CommitOid>,
     pub subject: String,
+    /// Everything after the subject; empty if none.
+    pub body: String,
     pub author: String,
     pub time: Timestamp,
+    pub committer: String,
+    pub committer_time: Timestamp,
 }
 
 /// Commits of one repo of the review, oldest first, with a cursor.
@@ -111,9 +124,13 @@ impl CommitStepper {
                 .iter()
                 .map(|c| StepperCommit {
                     oid: c.oid,
+                    parents: c.parents.clone(),
                     subject: c.subject.clone(),
+                    body: c.body.clone(),
                     author: c.author.name.clone(),
                     time: c.author.time,
+                    committer: c.committer.name.clone(),
+                    committer_time: c.committer.time,
                 })
                 .collect(),
             selected: None,
@@ -156,6 +173,7 @@ fn thread_view(snapshot: &ReviewSnapshot, t: &Thread, pending: &PendingIds) -> O
         place: place_of(anchor),
         outdated,
         pending: pending.comments.iter().any(in_thread) || pending.threads.contains(&t.id),
+        suggestion: matches!(root.kind, CommentKind::Suggestion { .. }),
     })
 }
 
@@ -337,6 +355,7 @@ pub(crate) fn all_rows(
 pub(crate) fn diff_view(
     cache: &ContentCache,
     snapshot: &ReviewSnapshot,
+    viewer: &Author,
     render: &RenderKey,
     first_row: u32,
     last_row: u32,
@@ -351,6 +370,13 @@ pub(crate) fn diff_view(
         repo_id: render.repo_id,
         path: render.path.clone(),
     };
+    let viewed_state = crate::explorer::viewed_state(
+        snapshot,
+        viewer,
+        render.repo_id,
+        &render.path,
+        blob_on(&render.target, Side::Head),
+    );
     let placements = placements(snapshot, render);
     let file_threads: Vec<ThreadId> = placements
         .iter()
@@ -368,6 +394,7 @@ pub(crate) fn diff_view(
             file,
             lang: header.lang.clone(),
             content: header.content.clone(),
+            viewed: viewed_state,
             first_row,
             last_row,
             rows: Vec::new(),
@@ -376,7 +403,14 @@ pub(crate) fn diff_view(
         });
     };
     if chunk_rows == 0 || chunk_count == 0 || total_rows == 0 {
-        return Some(empty(header, file, first_row, last_row, file_threads));
+        return Some(empty(
+            header,
+            file,
+            viewed_state,
+            first_row,
+            last_row,
+            file_threads,
+        ));
     }
     let last_row = last_row.min(total_rows - 1);
     let first_row = first_row.min(last_row);
@@ -407,6 +441,7 @@ pub(crate) fn diff_view(
         file,
         lang: header.lang.clone(),
         content: header.content.clone(),
+        viewed: viewed_state,
         first_row,
         last_row,
         rows,
@@ -418,6 +453,7 @@ pub(crate) fn diff_view(
 fn empty(
     header: &FileRenderHeader,
     file: FileRef,
+    viewed: ViewedState,
     first_row: u32,
     last_row: u32,
     file_threads: Vec<ThreadId>,
@@ -426,6 +462,7 @@ fn empty(
         file,
         lang: header.lang.clone(),
         content: header.content.clone(),
+        viewed,
         first_row,
         last_row,
         rows: Vec::new(),

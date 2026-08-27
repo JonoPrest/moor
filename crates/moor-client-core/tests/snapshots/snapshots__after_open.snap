@@ -91,7 +91,8 @@ expression: core.view()
         "end": 2
       },
       "outdated": false,
-      "pending": false
+      "pending": false,
+      "suggestion": false
     },
     {
       "id": "00000001YJ0000000000000002",
@@ -109,7 +110,8 @@ expression: core.view()
         "type": "Review"
       },
       "outdated": false,
-      "pending": false
+      "pending": false,
+      "suggestion": false
     }
   ],
   "conversation": [
@@ -129,7 +131,8 @@ expression: core.view()
         "type": "Review"
       },
       "outdated": false,
-      "pending": false
+      "pending": false,
+      "suggestion": false
     }
   ],
   "stepper": null,

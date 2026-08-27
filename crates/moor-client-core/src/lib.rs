@@ -161,6 +161,11 @@ pub enum Action {
     UnresolveThread {
         thread_id: ThreadId,
     },
+    /// Write a suggestion comment's patch to the working tree. Not
+    /// optimistic: the daemon reports the result as `SuggestionApplied`.
+    ApplySuggestion {
+        comment_id: CommentId,
+    },
     /// The host shows rows `first_row..=last_row` of `file`. Opens the file
     /// if it was not; drives chunk (pre)fetching.
     Viewport {
@@ -572,6 +577,7 @@ impl ClientCore {
                     diff::diff_view(
                         &self.content.cache,
                         &open.snapshot,
+                        &self.config.author,
                         &f.render,
                         f.first_row,
                         f.last_row,
@@ -1010,6 +1016,33 @@ impl ClientCore {
                     review_id,
                     thread_id,
                 })
+            }
+            Action::ApplySuggestion { comment_id } => {
+                let review_id = self.open_review_id()?;
+                self.require_subscribed()?;
+                let Some(open) = &self.view.review else {
+                    return Err(CoreError::NoOpenReview);
+                };
+                let is_suggestion = open.snapshot.comments.iter().any(|c| {
+                    c.id == comment_id && matches!(c.kind, CommentKind::Suggestion { .. })
+                });
+                if !is_suggestion {
+                    return Err(CoreError::Mutation(MutationError::UnknownComment(
+                        comment_id,
+                    )));
+                }
+                let client_seq = self.next_client_seq;
+                self.next_client_seq = client_seq.next();
+                Ok(vec![self.request(
+                    Request::Mutate {
+                        client_seq,
+                        mutation: Mutation::ApplySuggestion {
+                            review_id,
+                            comment_id,
+                        },
+                    },
+                    InFlight::Mutate { client_seq },
+                )])
             }
             Action::DraftDiscarded => {
                 if self.view.draft.is_none() {

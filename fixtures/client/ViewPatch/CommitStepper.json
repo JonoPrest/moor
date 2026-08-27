@@ -3,7 +3,13 @@
     "commits": [
       {
         "author": "Ada Lovelace",
+        "body": "Longer explanation.\n\nWith paragraphs.",
+        "committer": "Ada Lovelace",
+        "committer_time": 1700000060000,
         "oid": "363738393a3b3c3d3e3f40414243444546474849",
+        "parents": [
+          "1718191a1b1c1d1e1f202122232425262728292a"
+        ],
         "subject": "Add README, fix section reference",
         "time": 1700000000000
       }
