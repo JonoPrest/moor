@@ -1,0 +1,31 @@
+[package]
+name = "moor-cli"
+version = "0.1.0"
+edition = "2024"
+description = "Command-line client for the moord code-review daemon"
+
+[[bin]]
+name = "moor"
+path = "src/main.rs"
+
+[dependencies]
+moor-protocol = { workspace = true }
+moord = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+clap = { workspace = true }
+gethostname = { workspace = true }
+
+[dev-dependencies]
+assert_cmd = "2"
+moor-review-core.workspace = true
+moor-test-support.workspace = true
+predicates = "3"
+serde_json.workspace = true
+tempfile = { workspace = true }
+tokio-util.workspace = true
+
+[lints]
+workspace = true

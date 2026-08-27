@@ -7,6 +7,7 @@ members = [
     "crates/moor-test-support",
     "crates/moord",
     "crates/moor-mcp",
+    "crates/moor-cli",
     "xtask",
 ]
 
