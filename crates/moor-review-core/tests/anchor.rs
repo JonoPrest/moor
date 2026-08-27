@@ -254,13 +254,18 @@ fn apply_edits(
     protect: std::ops::RangeInclusive<u32>,
 ) -> Vec<String> {
     // Apply edits from the bottom up so earlier indexes stay valid; skip any
-    // that would touch the protected 1-based range.
+    // that would touch the protected 1-based range. Among edits at the same
+    // index a delete goes last, otherwise a later replace/insert at that
+    // index would land on the line that slid up into it.
     let mut out = lines.to_vec();
     let mut sorted = edits.to_vec();
     sorted.sort_by_key(|e| {
-        std::cmp::Reverse(match e {
-            Edit::Insert { at, .. } | Edit::Delete { at, .. } | Edit::Replace { at } => *at,
-        })
+        let (at, rank) = match e {
+            Edit::Replace { at } => (*at, 0),
+            Edit::Insert { at, .. } => (*at, 1),
+            Edit::Delete { at, .. } => (*at, 2),
+        };
+        (std::cmp::Reverse(at), rank)
     });
     for e in sorted {
         match e {

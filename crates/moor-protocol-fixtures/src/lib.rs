@@ -1306,6 +1306,7 @@ enum_fixture!(
             },
             since: Since::After { seq: Seq::new(41) }
         },
+        Request::Shutdown,
         Request::Unsubscribe {
             scope: SubscribeScope::Review {
                 review_id: review_id()
@@ -1358,6 +1359,7 @@ enum_fixture!(
         },
         Response::Subscribed { seq: Seq::new(42) },
         Response::Unsubscribed,
+        Response::ShuttingDown,
         Response::Committed {
             event: event(EventBody::ThreadResolved {
                 review_id: review_id(),

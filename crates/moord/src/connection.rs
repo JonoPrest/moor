@@ -99,6 +99,7 @@ where
     let outbox = Outbox { tx };
     let writer = tokio::spawn(write_loop(wr, rx, negotiated.protocol));
 
+    let _tracked = daemon.track_connection();
     let conn = Arc::new(Connection {
         daemon,
         negotiated,
@@ -263,6 +264,17 @@ impl Connection {
             Request::Unsubscribe { scope } => {
                 self.subs.lock().await.scopes.retain(|s| *s != scope);
                 Ok(Response::Unsubscribed)
+            }
+            Request::Shutdown => {
+                tracing::info!(client = %self.negotiated.client_id, "shutdown requested");
+                let token = self.daemon.shutdown().clone();
+                // Let the reply reach the client before the accept loop
+                // drops every connection.
+                tokio::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                    token.cancel();
+                });
+                Ok(Response::ShuttingDown)
             }
             Request::OpenReview { review_id, opts } => {
                 let r =

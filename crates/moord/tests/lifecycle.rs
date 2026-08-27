@@ -238,12 +238,17 @@ async fn sigkill_mid_burst_reopens_consistent_and_socket_is_reclaimed() {
     let _ = std::fs::remove_file(&socket);
 }
 
+/// `--stdio` proxies to the machine's daemon, starting it detached when
+/// nothing listens, and exits on EOF; `Request::Shutdown` stops the daemon.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn stdio_mode_serves_one_client_and_exits_on_eof() {
+async fn stdio_proxies_to_an_autostarted_daemon_and_shutdown_stops_it() {
     let dir = tempfile::tempdir().unwrap();
+    let socket = short_socket("stdio");
     let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_moord"))
         .arg("--data-dir")
         .arg(dir.path())
+        .arg("--socket")
+        .arg(&socket)
         .arg("--stdio")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -276,10 +281,28 @@ async fn stdio_mode_serves_one_client_and_exits_on_eof() {
         panic!("shape");
     };
     assert!(workspaces.is_empty());
+    assert!(
+        moord::launch::is_listening(&socket).await,
+        "a detached daemon was started"
+    );
     drop(c);
     let status = tokio::time::timeout(Duration::from_secs(10), child.wait())
         .await
-        .expect("daemon exits when stdin closes")
+        .expect("proxy exits when stdin closes")
         .unwrap();
     assert!(status.success(), "{status}");
+
+    // The daemon outlived the proxy; a direct client can stop it.
+    let direct = connect(&socket).await;
+    let Response::ShuttingDown = direct.request(Request::Shutdown).await.unwrap() else {
+        panic!("shape");
+    };
+    let start = Instant::now();
+    while moord::launch::is_listening(&socket).await {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "daemon did not exit"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
 }

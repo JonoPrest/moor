@@ -93,7 +93,13 @@ async fn human(h: &Harness) -> Client {
 
 fn server(h: &Harness) -> Server {
     Server::new(
-        Endpoint::Unix(h.socket.clone()),
+        Endpoint {
+            context: moor_config::Context::Local {
+                data_dir: None,
+                socket: Some(h.socket.clone()),
+            },
+            autostart: false,
+        },
         AgentIdentity {
             model: "test-model".into(),
             session_id: "sess-1".into(),

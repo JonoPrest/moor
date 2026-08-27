@@ -23,8 +23,10 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 clap = { workspace = true }
 gethostname = { workspace = true }
+moor-config = { workspace = true }
 
 [dev-dependencies]
+moor-config = { path = "../moor-config" }
 moor-review-core = { workspace = true }
 moor-test-support = { workspace = true }
 tempfile = { workspace = true }

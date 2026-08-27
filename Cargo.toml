@@ -8,6 +8,7 @@ members = [
     "crates/moord",
     "crates/moor-mcp",
     "crates/moor-cli",
+    "crates/moor-config",
     "xtask",
 ]
 
@@ -24,6 +25,7 @@ moor-review-core = { path = "crates/moor-review-core" }
 moor-test-support = { path = "crates/moor-test-support" }
 moord = { path = "crates/moord" }
 moor-mcp = { path = "crates/moor-mcp" }
+moor-config = { path = "crates/moor-config" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

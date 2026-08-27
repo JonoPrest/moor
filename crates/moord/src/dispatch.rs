@@ -102,6 +102,7 @@ pub async fn single(
         }
         Request::Subscribe { .. }
         | Request::Unsubscribe { .. }
+        | Request::Shutdown
         | Request::OpenReview { .. }
         | Request::FileRender { .. }
         | Request::BlobRender { .. } => Err(DaemonError::Core(CoreError::Invalid {

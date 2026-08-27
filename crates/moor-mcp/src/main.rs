@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 
 use clap::Parser;
+use moor_config::Context;
 use moor_mcp::server::AgentIdentity;
 use moor_mcp::{Endpoint, Server};
 use moor_protocol::BuildInfo;
@@ -11,23 +12,25 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 #[derive(Debug, Parser)]
 #[command(name = "moor-mcp", version, about)]
 struct Args {
-    /// Daemon unix socket. Default: `<data-dir>/moord.sock`.
+    /// Named context from the config file (see `moor context`). Default:
+    /// the current one, or an implicit local daemon.
+    #[arg(long, short = 'c', env = "MOOR_CONTEXT")]
+    context: Option<String>,
+    /// Config file. Default: `$XDG_CONFIG_HOME/moor/config.toml`.
+    #[arg(long, env = "MOOR_CONFIG")]
+    config: Option<PathBuf>,
+    /// Ad-hoc local context: this daemon socket. Overrides `--context`.
     #[arg(long, env = "MOOR_SOCKET")]
     socket: Option<PathBuf>,
-    /// Daemon WebSocket URL (`ws://host:port`); overrides `--socket`.
+    /// Ad-hoc context: a daemon WebSocket URL (`ws://host:port`).
     #[arg(long, env = "MOOR_WS_URL")]
     ws: Option<String>,
-    /// Where state lives, used only to find the default socket.
+    /// Ad-hoc local context: data dir (socket at `<data-dir>/moord.sock`).
     #[arg(long, env = "MOOR_DATA_DIR")]
     data_dir: Option<PathBuf>,
-}
-
-fn default_data_dir() -> anyhow::Result<PathBuf> {
-    if let Ok(x) = std::env::var("XDG_DATA_HOME") {
-        return Ok(PathBuf::from(x).join("moor"));
-    }
-    let home = std::env::var("HOME").map_err(|_| anyhow::anyhow!("HOME is not set"))?;
-    Ok(PathBuf::from(home).join(".local/share/moor"))
+    /// Fail instead of starting the daemon when it is not running.
+    #[arg(long)]
+    no_autostart: bool,
 }
 
 #[tokio::main]
@@ -37,18 +40,27 @@ async fn main() -> anyhow::Result<()> {
         .with_writer(std::io::stderr)
         .init();
     let args = Args::parse();
-    let endpoint = match args.ws {
-        Some(url) => Endpoint::Ws(url),
-        None => Endpoint::Unix(match args.socket {
-            Some(s) => s,
-            None => args
-                .data_dir
-                .map_or_else(default_data_dir, Ok)?
-                .join("moord.sock"),
-        }),
+    let context = if let Some(url) = args.ws {
+        Context::Ws { url }
+    } else if args.socket.is_some() || args.data_dir.is_some() {
+        Context::Local {
+            data_dir: args.data_dir,
+            socket: args.socket,
+        }
+    } else {
+        let path = match args.config {
+            Some(p) => p,
+            None => moor_config::Config::default_path()?,
+        };
+        moor_config::Config::load(&path)?
+            .resolve(args.context.as_deref())?
+            .1
     };
     let mut server = Server::new(
-        endpoint,
+        Endpoint {
+            context,
+            autostart: !args.no_autostart,
+        },
         AgentIdentity::from_env(),
         BuildInfo {
             name: "moor-mcp".into(),

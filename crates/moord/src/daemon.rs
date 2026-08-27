@@ -29,6 +29,10 @@ pub struct Daemon {
     events: broadcast::Sender<Arc<Event>>,
     deltas: broadcast::Sender<Arc<TreeDelta>>,
     review_workspaces: Mutex<HashMap<ReviewId, WorkspaceId>>,
+    /// Cancelled by `Request::Shutdown`, ctrl-c, or the idle timer.
+    shutdown: tokio_util::sync::CancellationToken,
+    /// Open connections, for the idle timer.
+    connections: std::sync::atomic::AtomicUsize,
     pub build: BuildInfo,
 }
 
@@ -37,6 +41,20 @@ impl std::fmt::Debug for Daemon {
         f.debug_struct("Daemon")
             .field("build", &self.build)
             .finish_non_exhaustive()
+    }
+}
+
+/// Decrements the connection count on drop.
+#[derive(Debug)]
+pub struct ConnectionGuard {
+    daemon: Arc<Daemon>,
+}
+
+impl Drop for ConnectionGuard {
+    fn drop(&mut self) {
+        self.daemon
+            .connections
+            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
@@ -103,8 +121,32 @@ impl Daemon {
             events,
             deltas,
             review_workspaces: Mutex::new(HashMap::new()),
+            shutdown: tokio_util::sync::CancellationToken::new(),
+            connections: std::sync::atomic::AtomicUsize::new(0),
             build,
         }))
+    }
+
+    /// Token every accept loop and background task watches.
+    #[must_use]
+    pub fn shutdown(&self) -> &tokio_util::sync::CancellationToken {
+        &self.shutdown
+    }
+
+    /// Currently open client connections.
+    #[must_use]
+    pub fn connections(&self) -> usize {
+        self.connections.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Count a connection for its lifetime.
+    #[must_use]
+    pub fn track_connection(self: &Arc<Self>) -> ConnectionGuard {
+        self.connections
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        ConnectionGuard {
+            daemon: Arc::clone(self),
+        }
     }
 
     /// Direct access to the core, for tests and diagnostics. Mutations must

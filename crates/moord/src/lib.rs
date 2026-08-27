@@ -15,10 +15,12 @@
 pub mod client;
 pub mod codec;
 pub mod connection;
+pub mod contexts;
 pub mod daemon;
 pub mod dispatch;
 pub mod handshake;
 pub mod ids;
+pub mod launch;
 pub mod ops;
 pub mod render_text;
 pub mod server;

@@ -3,7 +3,6 @@
 //! clients pipeline rarely and the daemon connection is shared, so
 //! serialising keeps event long-polls from interleaving with other calls.
 
-use std::path::PathBuf;
 use std::time::Duration;
 
 use moor_protocol::{
@@ -34,9 +33,11 @@ pub const MCP_VERSION: &str = "2025-06-18";
 
 /// How to reach the daemon.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Endpoint {
-    Unix(PathBuf),
-    Ws(String),
+pub struct Endpoint {
+    pub context: moor_config::Context,
+    /// Start the daemon on `initialize` if it is not running (local and
+    /// ssh contexts), so an agent can always get going.
+    pub autostart: bool,
 }
 
 /// Identity of the agent on the other end of stdio, from the environment
@@ -210,10 +211,10 @@ impl Server {
             client: self.build.clone(),
             author,
         };
-        let client = match &self.endpoint {
-            Endpoint::Unix(p) => Client::connect_unix(p, identity).await?,
-            Endpoint::Ws(url) => Client::connect_ws(url, identity).await?,
-        };
+        let client =
+            moord::contexts::connect(&self.endpoint.context, identity, self.endpoint.autostart)
+                .await
+                .map_err(|e| ToolError::Invalid(format!("connecting to daemon: {e}")))?;
         let daemon = client.welcome.daemon.clone();
         self.ops = Some(Ops::new(client));
         Ok(json!({

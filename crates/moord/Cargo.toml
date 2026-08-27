@@ -30,6 +30,7 @@ notify.workspace = true
 tokio-tungstenite = "0.30.0"
 futures-util = "0.3.34"
 fastrand = "2.5.0"
+moor-config = { workspace = true }
 
 [dev-dependencies]
 moor-test-support.workspace = true

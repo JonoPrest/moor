@@ -287,6 +287,9 @@ pub enum Request {
         client_seq: ClientSeq,
         mutation: Mutation,
     },
+    /// Ask the daemon to exit once this reply is sent. Used by
+    /// `moor daemon stop`; the daemon is restarted on demand.
+    Shutdown,
 }
 
 impl Request {
@@ -307,7 +310,8 @@ impl Request {
             | Request::RenderChunk { .. }
             | Request::Subscribe { .. }
             | Request::Unsubscribe { .. }
-            | Request::Mutate { .. } => ResponseShape::Single,
+            | Request::Mutate { .. }
+            | Request::Shutdown => ResponseShape::Single,
         }
     }
 }
@@ -367,6 +371,7 @@ pub enum Response {
     Committed {
         event: Event,
     },
+    ShuttingDown,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumDiscriminants)]

@@ -2,17 +2,19 @@
 //! printer over [`moord::ops::Ops`]; `--json` prints the protocol values
 //! verbatim for scripting.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::{Context, bail};
+use anyhow::{Context as _, bail};
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use moor_config::Context;
 use moor_protocol::{
     AgentVia, Anchor, Author, BuildInfo, ClientId, CommentKind, Event, EventBody, Mutation,
     NonEmpty, RefSpec, RenderOpts, RepoId, RepoPath, ReviewId, ReviewTarget, Seq, Side, Since,
     SubscribeScope, ThreadId, WorkspaceId,
 };
-use moord::client::{Client, Identity};
+use moord::client::Identity;
+use moord::contexts::{self, Status};
 use moord::ops::Ops;
 use moord::render_text;
 use serde::Serialize;
@@ -21,15 +23,25 @@ use std::fmt::Write as _;
 #[derive(Debug, Parser)]
 #[command(name = "moor", version, about)]
 struct Cli {
-    /// Daemon unix socket. Default: `<data-dir>/moord.sock`.
+    /// Named context from the config file (see `moor context`). Default:
+    /// the current one, or an implicit local daemon.
+    #[arg(long, short = 'c', env = "MOOR_CONTEXT", global = true)]
+    context: Option<String>,
+    /// Config file. Default: `$XDG_CONFIG_HOME/moor/config.toml`.
+    #[arg(long, env = "MOOR_CONFIG", global = true)]
+    config: Option<PathBuf>,
+    /// Ad-hoc local context: this daemon socket. Overrides `--context`.
     #[arg(long, env = "MOOR_SOCKET", global = true)]
     socket: Option<PathBuf>,
-    /// Daemon WebSocket URL (`ws://host:port`); overrides `--socket`.
+    /// Ad-hoc context: a daemon WebSocket URL (`ws://host:port`).
     #[arg(long, env = "MOOR_WS_URL", global = true)]
     ws: Option<String>,
-    /// Where state lives, used only to find the default socket.
+    /// Ad-hoc local context: data dir (socket at `<data-dir>/moord.sock`).
     #[arg(long, env = "MOOR_DATA_DIR", global = true)]
     data_dir: Option<PathBuf>,
+    /// Fail instead of starting the daemon when it is not running.
+    #[arg(long, global = true)]
+    no_autostart: bool,
     /// Print protocol values as JSON instead of text.
     #[arg(long, global = true)]
     json: bool,
@@ -45,6 +57,12 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Cmd {
+    /// Named daemons to talk to (local, ssh, websocket), like kubectl contexts.
+    #[command(subcommand)]
+    Context(ContextCmd),
+    /// Start, stop or inspect the current context's daemon.
+    #[command(subcommand)]
+    Daemon(DaemonCmd),
     /// Workspaces and their repos.
     #[command(subcommand)]
     Workspace(WorkspaceCmd),
@@ -64,7 +82,7 @@ enum Cmd {
         ignore_whitespace: bool,
         /// Context lines.
         #[arg(short = 'U', long, default_value_t = 3)]
-        context: u32,
+        context_lines: u32,
     },
     /// A whole file at the review's head (or base).
     Show {
@@ -93,6 +111,59 @@ enum Cmd {
         #[arg(long)]
         since: Option<u64>,
     },
+}
+
+#[derive(Debug, Subcommand)]
+enum ContextCmd {
+    /// Contexts and which is current.
+    List,
+    /// The current context's name and details.
+    Show,
+    /// Make a context current.
+    Use {
+        name: String,
+    },
+    /// A daemon on this machine.
+    AddLocal {
+        name: String,
+        #[arg(long)]
+        data_dir: Option<PathBuf>,
+        #[arg(long)]
+        socket: Option<PathBuf>,
+    },
+    /// A daemon on another machine via `ssh HOST moord --stdio`.
+    AddSsh {
+        name: String,
+        /// Host as understood by your ssh config (`user@host`, alias).
+        host: String,
+        /// Remote `moord` binary. Default: `moord` on the remote PATH.
+        #[arg(long)]
+        moord: Option<String>,
+        /// Extra arguments for the remote daemon, e.g. `--data-dir /x`.
+        #[arg(long = "arg")]
+        args: Vec<String>,
+    },
+    /// A daemon already listening for WebSocket clients.
+    AddWs {
+        name: String,
+        url: String,
+    },
+    Remove {
+        name: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum DaemonCmd {
+    /// Whether the daemon is running (every context with `--all`).
+    Status {
+        #[arg(long)]
+        all: bool,
+    },
+    /// Start the daemon if it is not running.
+    Start,
+    /// Ask the daemon to exit; it restarts on the next connection.
+    Stop,
 }
 
 #[derive(Debug, Subcommand)]
@@ -223,15 +294,31 @@ fn parse_ref(s: &str) -> anyhow::Result<RefSpec> {
     })
 }
 
-fn default_data_dir() -> anyhow::Result<PathBuf> {
-    if let Ok(x) = std::env::var("XDG_DATA_HOME") {
-        return Ok(PathBuf::from(x).join("moor"));
+/// The context to use: ad-hoc flags beat `--context` beats the config.
+fn resolve_context(cli: &Cli, cfg: &moor_config::Config) -> anyhow::Result<(String, Context)> {
+    if let Some(url) = &cli.ws {
+        return Ok(("--ws".into(), Context::Ws { url: url.clone() }));
     }
-    let home = std::env::var("HOME").context("HOME is not set")?;
-    Ok(PathBuf::from(home).join(".local/share/moor"))
+    if cli.socket.is_some() || cli.data_dir.is_some() {
+        return Ok((
+            "--socket".into(),
+            Context::Local {
+                data_dir: cli.data_dir.clone(),
+                socket: cli.socket.clone(),
+            },
+        ));
+    }
+    Ok(cfg.resolve(cli.context.as_deref())?)
 }
 
-async fn connect(cli: &Cli) -> anyhow::Result<Ops> {
+fn config_path(cli: &Cli) -> anyhow::Result<PathBuf> {
+    match &cli.config {
+        Some(p) => Ok(p.clone()),
+        None => Ok(moor_config::Config::default_path()?),
+    }
+}
+
+fn identity(cli: &Cli) -> Identity {
     let machine = gethostname::gethostname().to_string_lossy().into_owned();
     let name = cli
         .user
@@ -249,30 +336,33 @@ async fn connect(cli: &Cli) -> anyhow::Result<Ops> {
         None => Author::Human { name, machine },
     };
     let (ts, r) = moord::ids::fresh_parts();
-    let identity = Identity {
+    Identity {
         client_id: ClientId::from_parts(ts, r),
         client: BuildInfo {
             name: "moor".into(),
             version: env!("CARGO_PKG_VERSION").into(),
         },
         author,
-    };
-    let client = if let Some(url) = &cli.ws {
-        Client::connect_ws(url, identity).await?
-    } else {
-        let socket = match &cli.socket {
-            Some(s) => s.clone(),
-            None => cli
-                .data_dir
-                .clone()
-                .map_or_else(default_data_dir, Ok)?
-                .join("moord.sock"),
-        };
-        Client::connect_unix(&socket, identity)
-            .await
-            .with_context(|| format!("connecting to {} (is moord running?)", socket.display()))?
-    };
+    }
+}
+
+async fn connect(cli: &Cli, ctx: &Context) -> anyhow::Result<Ops> {
+    let client = contexts::connect(ctx, identity(cli), !cli.no_autostart)
+        .await
+        .with_context(|| format!("connecting to {}", ctx.describe()))?;
     Ok(Ops::new(client))
+}
+
+/// One line of `daemon status --json`.
+#[derive(Debug, Serialize)]
+struct Row<'a> {
+    context: &'a str,
+    target: &'a str,
+    status: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    daemon: Option<&'a BuildInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<&'a str>,
 }
 
 /// `review show` output: the snapshot plus the changed files.
@@ -356,8 +446,18 @@ fn anchor_text(a: &Anchor) -> String {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let json = cli.json;
-    let mut ops = connect(&cli).await?;
+    let cfg_path = config_path(&cli)?;
+    let mut cfg = moor_config::Config::load(&cfg_path)?;
+    if let Cmd::Context(c) = cli.cmd {
+        return context_cmd(&mut cfg, &cfg_path, cli.context.as_deref(), c, json);
+    }
+    let (name, ctx) = resolve_context(&cli, &cfg)?;
+    if let Cmd::Daemon(c) = cli.cmd {
+        return daemon_cmd(&cfg, &name, &ctx, c, json).await;
+    }
+    let mut ops = connect(&cli, &ctx).await?;
     match cli.cmd {
+        Cmd::Context(_) | Cmd::Daemon(_) => unreachable!("handled above"),
         Cmd::Workspace(c) => workspace(&mut ops, c, json).await,
         Cmd::Review(c) => review(&mut ops, c, json).await,
         Cmd::Comment(c) => comment(&mut ops, c, json).await,
@@ -521,11 +621,11 @@ async fn content(ops: &Ops, cmd: Cmd, json: bool) -> anyhow::Result<()> {
             path,
             repo,
             ignore_whitespace,
-            context,
+            context_lines,
         } => {
             let render_opts = RenderOpts {
                 ignore_whitespace,
-                context_lines: context,
+                context_lines,
             };
             let (file, header, chunks) = ops.diff(review, repo, &path, render_opts).await?;
             emit(json, &(&file, &header, &chunks), || {
@@ -657,5 +757,189 @@ async fn events(
             };
         }
         Ok(())
+    }
+}
+
+fn context_cmd(
+    cfg: &mut moor_config::Config,
+    path: &Path,
+    selected: Option<&str>,
+    cmd: ContextCmd,
+    json: bool,
+) -> anyhow::Result<()> {
+    match cmd {
+        ContextCmd::List => emit(json, cfg, || {
+            let current = cfg.current_name();
+            let mut rows: Vec<String> = cfg
+                .contexts
+                .iter()
+                .map(|(n, c)| {
+                    format!(
+                        "{} {n}\t{}",
+                        if n == current { "*" } else { " " },
+                        c.describe()
+                    )
+                })
+                .collect();
+            if !cfg.contexts.contains_key(moor_config::DEFAULT_CONTEXT) {
+                rows.insert(
+                    0,
+                    format!(
+                        "{} {}\tlocal (implicit)",
+                        if current == moor_config::DEFAULT_CONTEXT {
+                            "*"
+                        } else {
+                            " "
+                        },
+                        moor_config::DEFAULT_CONTEXT
+                    ),
+                );
+            }
+            rows.join("\n")
+        }),
+        ContextCmd::Show => {
+            let (name, ctx) = cfg.resolve(selected)?;
+            emit(json, &(&name, &ctx), || {
+                format!("{name}\t{}", ctx.describe())
+            })
+        }
+        ContextCmd::Use { name } => {
+            cfg.use_context(&name)?;
+            cfg.save(path)?;
+            emit(json, &name, || format!("current context: {name}"))
+        }
+        ContextCmd::AddLocal {
+            name,
+            data_dir,
+            socket,
+        } => add(cfg, path, &name, &Context::Local { data_dir, socket }, json),
+        ContextCmd::AddSsh {
+            name,
+            host,
+            moord,
+            args,
+        } => add(
+            cfg,
+            path,
+            &name,
+            &Context::Ssh {
+                host,
+                moord,
+                args,
+                ssh: None,
+            },
+            json,
+        ),
+        ContextCmd::AddWs { name, url } => add(cfg, path, &name, &Context::Ws { url }, json),
+        ContextCmd::Remove { name } => {
+            let removed = cfg.remove(&name)?;
+            cfg.save(path)?;
+            emit(json, &removed, || format!("removed {name}"))
+        }
+    }
+}
+
+/// Add (or replace) a context; the first one added becomes current.
+fn add(
+    cfg: &mut moor_config::Config,
+    path: &Path,
+    name: &str,
+    ctx: &Context,
+    json: bool,
+) -> anyhow::Result<()> {
+    let first = cfg.contexts.is_empty();
+    cfg.contexts.insert(name.to_string(), ctx.clone());
+    if first {
+        cfg.current = Some(name.to_string());
+    }
+    cfg.save(path)?;
+    emit(json, &(&name, &ctx), || {
+        format!(
+            "added {name}\t{}{}",
+            ctx.describe(),
+            if first { " (now current)" } else { "" }
+        )
+    })
+}
+
+async fn daemon_cmd(
+    cfg: &moor_config::Config,
+    name: &str,
+    ctx: &Context,
+    cmd: DaemonCmd,
+    json: bool,
+) -> anyhow::Result<()> {
+    match cmd {
+        DaemonCmd::Status { all } => {
+            let mut targets: Vec<(String, Context)> = if all {
+                let mut v: Vec<(String, Context)> = cfg
+                    .contexts
+                    .iter()
+                    .map(|(n, c)| (n.clone(), c.clone()))
+                    .collect();
+                if !cfg.contexts.contains_key(moor_config::DEFAULT_CONTEXT) {
+                    v.insert(0, cfg.resolve(Some(moor_config::DEFAULT_CONTEXT))?);
+                }
+                v
+            } else {
+                vec![(name.to_string(), ctx.clone())]
+            };
+            let mut rows = Vec::new();
+            for (n, c) in targets.drain(..) {
+                rows.push((n, c.describe(), contexts::status(&c).await));
+            }
+            let json_rows: Vec<Row<'_>> = rows
+                .iter()
+                .map(|(n, t, s)| Row {
+                    context: n,
+                    target: t,
+                    status: match s {
+                        Status::Running { .. } => "running",
+                        Status::Stopped => "stopped",
+                        Status::Unreachable { .. } => "unreachable",
+                    },
+                    daemon: match s {
+                        Status::Running { daemon } => Some(daemon),
+                        _ => None,
+                    },
+                    reason: match s {
+                        Status::Unreachable { reason } => Some(reason),
+                        _ => None,
+                    },
+                })
+                .collect();
+            emit(json, &json_rows, || {
+                rows.iter()
+                    .map(|(n, t, s)| {
+                        let st = match s {
+                            Status::Running { daemon } => {
+                                format!("running ({} {})", daemon.name, daemon.version)
+                            }
+                            Status::Stopped => "stopped".into(),
+                            Status::Unreachable { reason } => format!("unreachable: {reason}"),
+                        };
+                        format!("{n}\t{t}\t{st}")
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+        }
+        DaemonCmd::Start => {
+            let started = contexts::start(ctx).await?;
+            emit(json, &started, || {
+                if started {
+                    "started"
+                } else {
+                    "already running"
+                }
+                .into()
+            })
+        }
+        DaemonCmd::Stop => {
+            let stopped = contexts::stop(ctx).await?;
+            emit(json, &stopped, || {
+                if stopped { "stopping" } else { "not running" }.into()
+            })
+        }
     }
 }

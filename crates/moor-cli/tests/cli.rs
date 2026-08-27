@@ -1,6 +1,6 @@
 //! `moor` against a daemon running in this test process (plan 2.6).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use assert_cmd::Command;
@@ -197,8 +197,152 @@ fn errors_are_reported_not_panicked() {
         .stderr(predicate::str::contains("NotFound"));
     let mut c = Command::cargo_bin("moor").unwrap();
     c.env("MOOR_SOCKET", "/tmp/definitely-not-a-moord.sock")
-        .args(["workspace", "list"])
+        .args(["--no-autostart", "workspace", "list"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("is moord running"));
+        .stderr(predicate::str::contains("not running"));
+}
+
+/// Contexts live in the config file; `daemon` manages the daemon of the
+/// current one, including auto-start on first use and an ssh context whose
+/// remote side is exercised through a stand-in `ssh`.
+#[test]
+#[allow(clippy::too_many_lines)] // one scenario end to end
+fn contexts_and_daemon_lifecycle() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = dir.path().join("config.toml");
+    let data = dir.path().join("data");
+    let socket = std::env::temp_dir().join(format!(
+        "moor-ctx-{}-{}.sock",
+        std::process::id(),
+        N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    let moor = || {
+        let mut c = Command::cargo_bin("moor").unwrap();
+        c.env("MOOR_CONFIG", &cfg)
+            .env("MOOR_USER", "ada")
+            .env_remove("MOOR_SOCKET")
+            .env_remove("MOOR_AGENT");
+        c
+    };
+    let out = |args: &[&str]| -> String {
+        let a = moor().args(args).assert().success();
+        String::from_utf8(a.get_output().stdout.clone())
+            .unwrap()
+            .trim()
+            .to_string()
+    };
+
+    // Empty config: the implicit local context is current.
+    assert!(out(&["context", "list"]).starts_with("* local\tlocal (implicit)"));
+    // First added context becomes current.
+    assert!(
+        out(&[
+            "context",
+            "add-local",
+            "box",
+            "--data-dir",
+            data.to_str().unwrap(),
+            "--socket",
+            socket.to_str().unwrap()
+        ])
+        .ends_with("(now current)")
+    );
+    out(&["context", "add-ws", "shared", "ws://127.0.0.1:1/"]);
+    let list = out(&["context", "list"]);
+    assert!(list.contains("* box\tlocal data_dir="), "{list}");
+    assert!(list.contains("  shared\tws ws://127.0.0.1:1/"), "{list}");
+    assert!(out(&["context", "show"]).starts_with("box\t"));
+    assert!(
+        std::fs::read_to_string(&cfg)
+            .unwrap()
+            .contains("current = \"box\"")
+    );
+
+    // Nothing running yet; a plain command auto-starts the daemon.
+    assert_eq!(
+        out(&["daemon", "status"]),
+        format!("box\t{}\tstopped", ctx_desc(&data, &socket))
+    );
+    moor()
+        .args(["--no-autostart", "workspace", "list"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("not running"));
+    let ws = out(&["workspace", "add", "w"]);
+    assert!(out(&["daemon", "status"]).ends_with("running (moord 0.1.0)"));
+    assert_eq!(out(&["daemon", "start"]), "already running");
+    assert!(out(&["daemon", "status", "--all"]).contains("shared\tws ws://127.0.0.1:1/\tstopped"));
+
+    // Selecting another context by flag, then by `use`.
+    assert!(out(&["-c", "shared", "context", "show"]).starts_with("shared\t"));
+    out(&["context", "use", "shared"]);
+    moor()
+        .args(["daemon", "stop"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("managed elsewhere"));
+    out(&["context", "use", "box"]);
+
+    // An ssh context: `ssh` is replaced by a script that ignores the host
+    // and runs the same daemon's proxy locally.
+    let fake_ssh = dir.path().join("fake-ssh.sh");
+    std::fs::write(
+        &fake_ssh,
+        format!(
+            "#!/bin/sh\nshift 2\nexec {} --data-dir {} --socket {} \"$@\"\n",
+            moord_bin().display(),
+            data.display(),
+            socket.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(
+        &fake_ssh,
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .unwrap();
+    let text = std::fs::read_to_string(&cfg).unwrap()
+        + &format!(
+            "\n[contexts.remote]\ntype = \"Ssh\"\nhost = \"ignored\"\nssh = \"{}\"\n",
+            fake_ssh.display()
+        );
+    std::fs::write(&cfg, text).unwrap();
+    assert!(out(&["-c", "remote", "daemon", "status"]).ends_with("running (moord 0.1.0)"));
+    assert!(out(&["-c", "remote", "workspace", "list"]).contains(&ws));
+
+    // Stop through the ssh context; the local context sees it stopped;
+    // start through ssh brings it back (remote side auto-starts).
+    assert_eq!(out(&["-c", "remote", "daemon", "stop"]), "stopping");
+    let start = std::time::Instant::now();
+    while !out(&["daemon", "status"]).ends_with("stopped") {
+        assert!(start.elapsed() < std::time::Duration::from_secs(10));
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert_eq!(out(&["-c", "remote", "daemon", "stop"]), "not running");
+    assert_eq!(out(&["-c", "remote", "daemon", "start"]), "started");
+    assert!(out(&["daemon", "status"]).ends_with("running (moord 0.1.0)"));
+    assert_eq!(out(&["daemon", "stop"]), "stopping");
+    let start = std::time::Instant::now();
+    while !out(&["daemon", "status"]).ends_with("stopped") {
+        assert!(start.elapsed() < std::time::Duration::from_secs(10));
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+
+    out(&["context", "remove", "shared"]);
+    assert!(!out(&["context", "list"]).contains("shared"));
+}
+
+fn ctx_desc(data: &Path, socket: &Path) -> String {
+    format!(
+        "local data_dir={} socket={}",
+        data.display(),
+        socket.display()
+    )
+}
+
+/// The `moord` built alongside `moor`.
+fn moord_bin() -> PathBuf {
+    let moor = PathBuf::from(env!("CARGO_BIN_EXE_moor"));
+    moor.parent().unwrap().join("moord")
 }

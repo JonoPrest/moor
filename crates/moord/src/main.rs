@@ -8,8 +8,8 @@ use clap::Parser;
 use moor_protocol::BuildInfo;
 use moor_review_core::DataDir;
 use moord::Daemon;
-use moord::server::{UnixServer, WsServer, serve_stdio};
-use tokio_util::sync::CancellationToken;
+use moord::launch::{DaemonSpec, ensure_daemon, proxy_stdio};
+use moord::server::{UnixServer, WsServer};
 
 /// The Moor daemon.
 #[derive(Debug, Parser)]
@@ -21,10 +21,17 @@ struct Args {
     /// Socket to listen on. Default: `<data-dir>/moord.sock`.
     #[arg(long, env = "MOOR_SOCKET")]
     socket: Option<PathBuf>,
-    /// Serve one client on stdin/stdout instead of listening
-    /// (`ssh host moord --stdio`).
+    /// Proxy stdin/stdout to the daemon on `--socket`, starting it if
+    /// needed (`ssh host moord --stdio`).
     #[arg(long)]
     stdio: bool,
+    /// Like `--stdio` but exit with status 3 instead of starting a daemon
+    /// when none is running. Lets a client probe or stop a remote daemon.
+    #[arg(long, conflicts_with = "stdio")]
+    stdio_if_running: bool,
+    /// Exit after this many seconds with no client connected.
+    #[arg(long, env = "MOOR_IDLE_EXIT")]
+    idle_exit: Option<u64>,
     /// Also listen for WebSocket clients on this address, e.g.
     /// `127.0.0.1:7677`. Off unless given.
     #[arg(long, env = "MOOR_WS")]
@@ -51,6 +58,27 @@ async fn main() -> anyhow::Result<()> {
         None => default_data_dir()?,
     };
     let socket = args.socket.unwrap_or_else(|| data_dir.join("moord.sock"));
+
+    if args.stdio || args.stdio_if_running {
+        // Proxy to the one daemon on this machine, starting it if needed.
+        // An auto-started daemon retires itself after half an hour idle.
+        let spec = DaemonSpec {
+            idle_exit: Some(args.idle_exit.unwrap_or(1800)),
+            ws: args.ws,
+            socket,
+            ..DaemonSpec::for_data_dir(data_dir.clone())
+        };
+        if args.stdio {
+            ensure_daemon(&spec)
+                .await
+                .with_context(|| "starting the daemon")?;
+        } else if !moord::launch::is_listening(&spec.socket).await {
+            std::process::exit(3);
+        }
+        proxy_stdio(&spec.socket).await?;
+        return Ok(());
+    }
+
     let daemon = Daemon::open(
         &DataDir::new(&data_dir),
         BuildInfo {
@@ -60,22 +88,35 @@ async fn main() -> anyhow::Result<()> {
     )
     .with_context(|| format!("opening data dir {}", data_dir.display()))?;
 
-    if args.stdio {
-        serve_stdio(daemon).await?;
-        return Ok(());
-    }
-
     let server =
         UnixServer::bind(&socket).with_context(|| format!("binding {}", socket.display()))?;
     tracing::info!(socket = %socket.display(), data_dir = %data_dir.display(), "listening");
     let watcher = moord::watcher::Watcher::start(Arc::clone(&daemon));
-    let shutdown = CancellationToken::new();
+    let shutdown = daemon.shutdown().clone();
     let signal = shutdown.clone();
     tokio::spawn(async move {
         let _ = tokio::signal::ctrl_c().await;
         tracing::info!("shutting down");
         signal.cancel();
     });
+    if let Some(idle) = args.idle_exit {
+        let idle = std::time::Duration::from_secs(idle);
+        let d = Arc::clone(&daemon);
+        let token = shutdown.clone();
+        tokio::spawn(async move {
+            let mut quiet_since = tokio::time::Instant::now();
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                if d.connections() > 0 {
+                    quiet_since = tokio::time::Instant::now();
+                } else if quiet_since.elapsed() >= idle {
+                    tracing::info!(idle_secs = idle.as_secs(), "idle; exiting");
+                    token.cancel();
+                    return;
+                }
+            }
+        });
+    }
     let ws = match args.ws {
         Some(addr) => {
             let ws = WsServer::bind(addr)
