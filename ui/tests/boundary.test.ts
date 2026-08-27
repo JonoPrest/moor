@@ -7,8 +7,9 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 // Compiled by `pnpm rescript` before the tests run (see CI).
 import * as Registry from "../src/protocol/Registry.res.mjs";
+import * as ClientRegistry from "../src/view/ClientRegistry.res.mjs";
 
-const fixtures = join(__dirname, "..", "..", "fixtures", "protocol");
+const fixturesRoot = join(__dirname, "..", "..", "fixtures");
 
 /** Sort object keys recursively so JSON compares byte-for-byte. */
 const canonical = (v: unknown): unknown => {
@@ -23,29 +24,42 @@ const canonical = (v: unknown): unknown => {
   return v;
 };
 
-const types = readdirSync(fixtures).filter((d) => !d.startsWith("."));
+type Reg = {
+  names: string[];
+  roundtrip: (type: string, json: unknown) => { TAG: string; _0: unknown };
+};
 
-describe("protocol fixtures round-trip through the Sury schemas", () => {
-  it("has a schema for every fixture type", () => {
-    const missing = types.filter((t) => !Registry.names.includes(t));
-    expect(missing).toEqual([]);
-  });
+const suites: Array<[string, Reg]> = [
+  ["protocol", Registry as unknown as Reg],
+  ["client", ClientRegistry as unknown as Reg],
+];
 
-  it("has a fixture directory for every schema", () => {
-    const extra = Registry.names.filter((n: string) => !types.includes(n));
-    expect(extra).toEqual([]);
-  });
+for (const [set, registry] of suites) {
+  const fixtures = join(fixturesRoot, set);
+  const types = readdirSync(fixtures).filter((d) => !d.startsWith("."));
 
-  for (const type of types) {
-    const files = readdirSync(join(fixtures, type)).filter((f) => f.endsWith(".json"));
-    for (const file of files) {
-      it(`${type}/${file}`, () => {
-        const json = JSON.parse(readFileSync(join(fixtures, type, file), "utf8"));
-        const result = Registry.roundtrip(type, json);
-        // ReScript `result`: {TAG: "Ok", _0} | {TAG: "Error", _0}
-        if (result.TAG !== "Ok") throw new Error(result._0);
-        expect(JSON.stringify(canonical(result._0))).toBe(JSON.stringify(canonical(json)));
-      });
+  describe(`${set} fixtures round-trip through the Sury schemas`, () => {
+    it("has a schema for every fixture type", () => {
+      const missing = types.filter((t) => !registry.names.includes(t));
+      expect(missing).toEqual([]);
+    });
+
+    it("has a fixture directory for every schema", () => {
+      const extra = registry.names.filter((n) => !types.includes(n));
+      expect(extra).toEqual([]);
+    });
+
+    for (const type of types) {
+      const files = readdirSync(join(fixtures, type)).filter((f) => f.endsWith(".json"));
+      for (const file of files) {
+        it(`${type}/${file}`, () => {
+          const json = JSON.parse(readFileSync(join(fixtures, type, file), "utf8"));
+          const result = registry.roundtrip(type, json);
+          // ReScript `result`: {TAG: "Ok", _0} | {TAG: "Error", _0}
+          if (result.TAG !== "Ok") throw new Error(String(result._0));
+          expect(JSON.stringify(canonical(result._0))).toBe(JSON.stringify(canonical(json)));
+        });
+      }
     }
-  }
-});
+  });
+}
