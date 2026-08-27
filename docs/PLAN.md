@@ -56,6 +56,7 @@ Goal: headless engine. Given repos on disk, create workspaces/reviews, produce r
 ### 1.4 Git engine (`moor_review_core::git`)
 - `Repo::open(path)`, `resolve(RefSpec) -> ResolvedRef`, `tree(CommitOid)`, `blob(BlobOid)`, `commits_between(base, head)`.
 - `WorkingTree` snapshot: hash working files into a virtual tree (`WorkTreeSnapshot { tree_oid, dirty: [path] }`); unchanged files reuse index OIDs.
+- `tree_snapshot(root: TreeOid) -> TreeSnapshot` (full recursive walk, flat sorted entries) and `tree_delta(from, to)`; working-tree snapshot yields a synthetic root OID.
 - `changed_files(base, head) -> [FileChange { path, kind: Added|Deleted|Modified|Renamed{from}, old: Option<BlobOid>, new: Option<BlobOid> }]`.
 - Tests with `moor-test-support` repos: each `RefSpec` variant resolves; renames detected; working-tree snapshot reflects unstaged edits and untracked files; binary files flagged.
 
@@ -100,7 +101,8 @@ Goal: `moord` running, multiple clients connected, events streaming, MCP working
 
 ### 2.3 File watcher
 - `notify` per repo; debounce; triggers `resolve_targets` for working-tree reviews.
-- Tests: edit file → `ReviewTargetsResolved` emitted once for a burst of writes; no event when content unchanged.
+- Working-tree changes also emit `TreeDelta` to subscribers of that ref.
+- Tests: edit file → `ReviewTargetsResolved` emitted once for a burst of writes; no event when content unchanged; create/delete file → single `TreeDelta` with the right entries.
 
 ### 2.4 WebSocket transport
 - Same codec over `tokio-tungstenite`; enables browser client later.
@@ -134,7 +136,8 @@ Goal: sans-I/O client that models everything the UI needs; proven under races.
 - `ContentCache` keyed by OID / `(base_oid, head_oid, opts, chunk_index)`; entries are headers and chunks, never whole files; two tiers, each LRU with a byte budget.
 - Memory tier in `client-core`; open-review headers and open-file chunks pinned. Disk tier via `Persist`/`Load` effects to the host KV; memory eviction writes through; memory miss → `Load` from disk → only then `Send` to daemon.
 - Host KV implementations: Tauri = redb file under the app data dir; browser = IndexedDB; TUI = redb file.
-- Prefetch policy: on review open request all headers and the first chunk of each file; on file open request viewport chunk then ±2; on tree navigation request sibling entries.
+- `TreeSnapshot` cached by `root_oid`, pinned while its ref is open; `TreeDelta` applied in place for working-tree refs.
+- Prefetch policy: on review open request tree snapshots for all target refs, then all headers and the first chunk of each file; on file open request viewport chunk then ±2; on tree navigation request sibling entries.
 - Viewport tracking: `Action::Viewport { file, first_row, last_row }` drives chunk requests; requests for chunks no longer near the viewport are cancelled (not sent if still queued).
 - Tests: memory hit → no effects; memory miss + disk hit → exactly one `Load`, no `Send`; full miss → `Load` then `Send`, concurrent misses deduped; eviction respects both budgets and writes through; pinned entries survive pressure; restart simulation (new `ClientCore` over same KV) serves previous review without `Send`; scrolling a 100k-line file requests only viewport ±2 chunks and never more than N in flight.
 
@@ -149,8 +152,9 @@ Goal: sans-I/O client that models everything the UI needs; proven under races.
 
 ### 3.5 ViewModel
 - Merged file tree, current file rows + comment overlays, thread list, review conversation, commit stepper, progress.
+- Explorer model built from `TreeSnapshot`: nested tree, expand state, breadcrumbs, fuzzy path index; all client-local.
 - Comment→row placement from anchors.
-- Tests: `insta` snapshots of `ViewModel` for scenario scripts; placement tests for each `Anchor` variant incl. `Outdated`.
+- Tests: `insta` snapshots of `ViewModel` for scenario scripts; placement tests for each `Anchor` variant incl. `Outdated`; expanding any folder or fuzzy-searching produces zero `Send` effects; opening a file produces exactly the header + viewport chunk requests.
 
 Exit criteria: wasm target check passes for `moor-client-core`; simulator suite green.
 
@@ -176,7 +180,7 @@ Goal: usable desktop app.
 - Review list / create (any base vs any head, multi-repo).
 - Merged file tree with progress.
 - Diff view: virtualized rows over `total_rows` (`@tanstack/react-virtual`), chunk fetch by index with placeholder rows, unified/split, expanders, inline comment composer, threads, outdated collapse.
-- File explorer over any ref with file-level comments.
+- File explorer over any ref: instant expand/collapse from the snapshot, fuzzy file search, file-level comments.
 - Review conversation panel (review-level comments, agent request cards).
 - Commit stepper.
 - Suggestions with apply.

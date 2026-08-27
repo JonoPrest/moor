@@ -176,7 +176,24 @@ list with no diff rows.
 Comment → row placement is done in `moor-client-core` (anchor `blob_oid + lines` → row by
 `line_no` per side) so the daemon's render model stays comment-agnostic and cacheable.
 
-### 4.7 Transports
+### 4.7 Tree snapshots (file explorer)
+
+The explorer must never load per folder. The daemon serves a whole recursive listing in one
+message, keyed by the root tree OID:
+
+```
+TreeSnapshot { root_oid, entries: [TreeEntry { path, kind: File | Dir | Symlink | Submodule,
+                                                oid, size }] }   flat, sorted, one pass to nest
+TreeDelta    { from_root, to_root, added: [TreeEntry], removed: [path], changed: [TreeEntry] }
+```
+
+- `tree_snapshot(repo, ref)`; for reviews the daemon sends snapshots for every target ref (base
+  and head) on open. Cached by `root_oid`; pinned while the ref is open.
+- Working-tree refs get `TreeDelta`s from the watcher instead of repeated full snapshots.
+- Fallback for very large repos (> ~200k entries, configurable): depth-limited snapshot plus lazy
+  subtrees keyed by their own tree OID — same caching, not upfront.
+
+### 4.8 Transports
 
 - **Unix socket**, length-prefixed JSON frames. Multiplexed: `Request{id}` / `Response{id}` / `Event{seq}`.
 - **WebSocket**, same frames, for browser clients.
@@ -214,7 +231,7 @@ Two tiers, both LRU with a **byte budget**:
 
 Both budgets are configurable. Because keys are OIDs, on-disk entries never need invalidation; the disk tier is only ever trimmed by LRU or cleared explicitly.
 
-Cache entries are render **chunks**, not whole files (§4.6). Chunks of the open file are pinned while it is open; on close they return to normal LRU.
+Cache entries are `TreeSnapshot`s (§4.7), render headers and render **chunks** (§4.6), never whole files. Chunks of the open file are pinned while it is open; on close they return to normal LRU.
 
 ### 5.2 Optimistic mutations
 
@@ -231,7 +248,13 @@ Ephemeral UI state (hover, focus) lives in the UI. Navigational state (open file
 
 Working-tree reviews auto-refresh, but `moor-client-core` will not swap in a new render model while the user has an open comment editor. Incoming `ReviewTargetsResolved` events are queued; when the draft is submitted or discarded, the queue is drained, the comment is re-anchored against the new head, and the view updates. The UI shows a subtle "changes pending" indicator while held.
 
-### 5.5 Multi-repo tree
+### 5.5 File explorer
+
+Folder expand/collapse, breadcrumbs and fuzzy file search (`Cmd+P`) operate entirely on the
+cached `TreeSnapshot` — no requests. Only opening a file fetches content (header + chunks),
+which is then cached. Switching ref prefetches that ref's snapshot.
+
+### 5.6 Multi-repo tree
 
 A review across repos presents one merged file tree with each repo as a top-level root (`repo-a/…`, `repo-b/…`). Progress ("N of M files viewed"), comment lists and navigation are review-wide, not per repo.
 
