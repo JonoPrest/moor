@@ -179,6 +179,10 @@ Exit criteria: wasm target check passes for `moor-client-core`; simulator suite 
 
 Goal: usable desktop app.
 
+### 4.0 Scaffold
+- `ui/` with ReScript 11 + React + Vite; Tailwind v4 through `@tailwindcss/vite`; `src/styles/app.css` holds `@theme` tokens (light/dark, diff add/remove/context, syntax palette) and the semantic row/cell/span classes (§6.6); `@source` covers `src/**/*.res`.
+- CI: ReScript build + `vitest`; a test asserts every `SpanClass`, `Row` kind and `Cell` side has a class in `app.css` (parse the CSS, compare to the protocol fixtures).
+
 ### 4.1 Sury schemas + boundary test (§6.3)
 - `ui/src/protocol/*.res` hand-written Sury schemas for `ViewModel`, `Action`, and everything they contain.
 - Test: for each `fixtures/protocol/**.json`, parse with Sury, serialize, canonicalise, compare. Run in CI; a missing schema for a new fixture fails.

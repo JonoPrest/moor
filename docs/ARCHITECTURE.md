@@ -65,6 +65,7 @@ ui/              ReScript + React + Vite. Shared by Tauri and browser.
   src/core/      Core.res interface + CoreTauri.res / CoreWasm.res adapters
   src/protocol/  Protocol.res — hand-written Sury schemas mirroring the Rust types
   src/components/
+  src/styles/    app.css — Tailwind v4 entry: `@theme` tokens + semantic diff classes
 ```
 
 Dependency rule: `moor-protocol` ← everything. `moor-client-core` never depends on `moor-review-core`. Nothing in `moor-client-core` or `moor-protocol` may use tokio, std I/O, threads, `Instant`, or non-`js` `rand` (enforced by a CI `cargo check --target wasm32-unknown-unknown`).
@@ -369,6 +370,10 @@ Context = Global | ReviewList | Tree | Diff | Thread | Composer | CommitStepper 
 
 The UI renders the daemon's render model (§4.6) plus `moor-client-core` overlays as a virtualized list (`@tanstack/react-virtual`). Unified vs split is a view option on the same rows. Review-level comments render in a review "conversation" panel; file-level comments render at the top of the file view.
 
+### 6.6 Styling
+
+Tailwind v4 via `@tailwindcss/vite`; no CSS-in-JS, no runtime style computation. Utilities style the chrome (panels, review list, tree, hint bar, help overlay). The render model (§4.6) is styled through a **small semantic class set** — one class per `Row` kind, `Cell` side and `SpanClass` (`row-add`, `cell-old`, `span-kw`, …) defined once in `app.css` with `@utility`/`@layer components` — so a 10k-row virtualized diff carries short class names, not repeated utility strings. Colours (light/dark, add/remove/context, syntax palette) are `@theme` CSS variables, one token list the TUI palette can mirror. Because focus is core state (§6.4), focused rows/panels get `data-focused` and are styled with `data-[focused]:` variants, never `:focus`. `.res` sources are listed via `@source` so class scanning sees them.
+
 ## 7. Agent integration
 
 - Agents connect via MCP (or `moor` CLI) with `Author::Agent{...}` provenance. Provenance is a structured field, not a tag.
@@ -423,6 +428,7 @@ Suspected bottlenecks with a ready solution, deliberately **not** built until a 
 | 16 | Daemon concurrency | one writer thread (mutations + re-anchoring, strictly serialised) and the tokio blocking pool for reads/renders against the shared `Core`; events fan out via a broadcast channel, connections filter by scope |
 | 17 | Client cache when daemon is local | memory tier only; disk tier for remote daemons (§5.1) |
 | 18 | Daemon lifecycle | one daemon per machine; `moord --stdio` is a proxy that auto-starts it; clients hold named contexts (local/ssh/ws) and can probe/start/stop; ws contexts are unmanaged; no persisted current context/workspace — selection is per process, workspace/repo default from cwd | herdr-style remotes without a second store opener; kubectl-style switching for the app |
+| 19 | UI styling | Tailwind v4 (Vite plugin); utilities for chrome, semantic class set + `@theme` tokens for diff rows, `data-focused` variants (§6.6) | cheap rows at 10k lines; one palette for web and TUI |
 | 15 | Evolution | semver `ProtocolVersion` negotiated in `Hello`/`Welcome`, on every `Envelope`; integer `SchemaVersion` in redb `meta` with forward-only migrations (§4.9) |
 
 ### Deferred
