@@ -266,8 +266,9 @@ fn apply_edits(
         match e {
             Edit::Insert { at, count } => {
                 let at = at.min(out.len() as u32);
-                // Inserting at index `at` shifts lines >= at+1 (1-based).
-                if at + 1 > *protect.start() && at < *protect.end() {
+                // The inserted line lands at 1-based position at+1; that is
+                // inside the window when it is between its ends inclusive.
+                if protect.contains(&(at + 1)) {
                     continue;
                 }
                 for k in 0..count {

@@ -10,7 +10,7 @@ A daemon-backed code review tool. Comments are *moored* to content (blobs), not 
 
 ## Status
 
-Milestone 1.1–1.2 done: Cargo workspace, CI, `moor-protocol` (all wire types + JSON fixtures), `moor-test-support` (real-git `RepoBuilder`). 1.3 done: redb event store with schema versioning. 1.4 done: git engine (gix + git CLI). **Milestone 1 complete** (protocol, store, git engine, render model, reviews, comments + anchoring, `Core` façade). Next: Milestone 2 — `moord` daemon.
+Milestone 1.1–1.2 done: Cargo workspace, CI, `moor-protocol` (all wire types + JSON fixtures), `moor-test-support` (real-git `RepoBuilder`). 1.3 done: redb event store with schema versioning. 1.4 done: git engine (gix + git CLI). **Milestone 1 complete** (protocol, store, git engine, render model, reviews, comments + anchoring, `Core` façade). Milestone 2.1–2.2 done: `moord` (length-prefixed JSON frames, version handshake, unix-socket/stdio server, subscriptions with gap replay, streamed `open_review`, async `moord::client`). Next: 2.3 file watcher, 2.4 WebSocket, 2.5 MCP, 2.6 CLI.
 
 ## Read
 

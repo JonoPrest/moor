@@ -1058,6 +1058,7 @@ enum_fixture!(
             client_id: client_id(),
             protocol: ProtocolVersion::CURRENT,
             client: client_build(),
+            author: human_author(),
         },
         ClientMsg::Request {
             id: RequestId::new(1),
@@ -1427,7 +1428,8 @@ struct_fixture!(
     Envelope::current(ClientMsg::Hello {
         client_id: client_id(),
         protocol: ProtocolVersion::CURRENT,
-        client: client_build()
+        client: client_build(),
+        author: human_author(),
     })
 );
 struct_fixture!(

@@ -5,6 +5,7 @@ members = [
     "crates/moor-protocol-fixtures",
     "crates/moor-review-core",
     "crates/moor-test-support",
+    "crates/moord",
     "xtask",
 ]
 
@@ -19,6 +20,7 @@ moor-protocol = { path = "crates/moor-protocol" }
 moor-protocol-fixtures = { path = "crates/moor-protocol-fixtures" }
 moor-review-core = { path = "crates/moor-review-core" }
 moor-test-support = { path = "crates/moor-test-support" }
+moord = { path = "crates/moord" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -29,6 +31,12 @@ anyhow = "1"
 proptest = "1"
 insta = { version = "1", features = ["json"] }
 tempfile = "3"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "sync", "macros", "time", "signal", "process", "io-std"] }
+tokio-util = "0.7"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4", features = ["derive", "env"] }
+gethostname = "1"
 
 [workspace.lints.rust]
 missing_debug_implementations = "deny"

@@ -8,10 +8,9 @@
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter};
 
-use crate::domain::Comment;
 use crate::domain::{
-    Anchor, CommentKind, CommitInfo, RefSpec, RenderOpts, ResolvedTarget, Review, ReviewStatus,
-    ReviewTarget, Thread, TreeDelta, TreeSnapshot, ViewedMark, Workspace,
+    Anchor, Author, Comment, CommentKind, CommitInfo, RefSpec, RenderOpts, ResolvedTarget, Review,
+    ReviewStatus, ReviewTarget, Thread, TreeDelta, TreeSnapshot, ViewedMark, Workspace,
 };
 use crate::events::Event;
 use crate::ids::{
@@ -32,6 +31,8 @@ pub enum ClientMsg {
         client_id: ClientId,
         protocol: ProtocolVersion,
         client: BuildInfo,
+        /// Who every mutation on this connection is attributed to.
+        author: Author,
     },
     Request {
         id: RequestId,
