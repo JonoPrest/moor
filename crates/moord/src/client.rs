@@ -60,7 +60,16 @@ pub struct Client {
     next_id: AtomicU64,
     pending: Arc<Mutex<HashMap<RequestId, Pending>>>,
     unsolicited: Mutex<mpsc::UnboundedReceiver<Unsolicited>>,
+    /// The demux task. Aborted on drop so the read half is released; with
+    /// a split stream (stdio) the peer only sees EOF once both halves go.
+    reader: tokio::task::AbortHandle,
     pub welcome: Welcome,
+}
+
+impl Drop for Client {
+    fn drop(&mut self) {
+        self.reader.abort();
+    }
 }
 
 impl std::fmt::Debug for Pending {
@@ -172,7 +181,7 @@ impl Client {
         let pending: Arc<Mutex<HashMap<RequestId, Pending>>> = Arc::default();
         let (un_tx, un_rx) = mpsc::unbounded_channel();
         let demux = Arc::clone(&pending);
-        tokio::spawn(async move {
+        let reader = tokio::spawn(async move {
             loop {
                 let Ok(Some(env)) = transport::recv_msg::<_, ServerMsg>(&mut rd).await else {
                     break;
@@ -180,13 +189,15 @@ impl Client {
                 dispatch(&demux, &un_tx, env.msg).await;
             }
             demux.lock().await.clear();
-        });
+        })
+        .abort_handle();
 
         Ok(Self {
             out,
             next_id: AtomicU64::new(1),
             pending,
             unsolicited: Mutex::new(un_rx),
+            reader,
             welcome,
         })
     }

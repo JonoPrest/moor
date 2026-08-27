@@ -137,14 +137,14 @@ fn start_on(repo: TestRepo, transport: Transport) -> Harness {
     }
 }
 
+/// Distinct socket names per test in this process; the clock alone collides.
+static SOCKET_N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 fn ulid_ish() -> String {
     format!(
         "{}-{}",
         std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
+        SOCKET_N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     )
 }
 

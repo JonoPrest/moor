@@ -50,6 +50,9 @@ async fn mutate(c: &Client, seq: u64, m: Mutation) {
     assert!(matches!(r, Response::Committed { .. }));
 }
 
+/// Distinct socket names per test in this process; the clock alone collides.
+static SOCKET_N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 fn build() -> BuildInfo {
     BuildInfo {
         name: "test".into(),
@@ -67,10 +70,7 @@ async fn start() -> Harness {
     let socket = std::env::temp_dir().join(format!(
         "moorw-{}-{}.sock",
         std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
+        SOCKET_N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
     let daemon = Daemon::open(&DataDir::new(dir.path()), build()).unwrap();
     let server = UnixServer::bind(&socket).unwrap();
