@@ -13,6 +13,7 @@ external listen: (string, event => unit) => promise<unit => unit> = "listen"
 /// The event the host emits patches on, and the commands it exposes.
 let viewEvent = "view"
 let dispatchCommand = "dispatch"
+let keyCommand = "key"
 let attachCommand = "attach"
 
 let make = (~onError: string => unit=e => Console.error(e)): Core.t => {
@@ -36,6 +37,16 @@ let make = (~onError: string => unit=e => Console.error(e)): Core.t => {
           | _ => "failed"
           },
         )
+        Promise.resolve()
+      })
+      ->ignore
+    },
+    key: chord => {
+      let args = JSON.Encode.object(Dict.fromArray([("chord", Keys.toJson(chord))]))
+      invoke(keyCommand, args)
+      ->Promise.then(_ => Promise.resolve())
+      ->Promise.catch(_ => {
+        onError("key failed")
         Promise.resolve()
       })
       ->ignore

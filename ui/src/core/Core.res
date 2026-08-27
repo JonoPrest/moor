@@ -6,6 +6,8 @@ type unsubscribe = unit => unit
 type t = {
   /// Send a user intent to the core.
   dispatch: Action.t => unit,
+  /// Send a key chord (outside text inputs) for the core's keymap.
+  key: Keys.keyChord => unit,
   /// Called with the current model now and after every patch.
   subscribe: (View.viewModel => unit) => unsubscribe,
   /// Ask the host for every section (a UI that just attached).

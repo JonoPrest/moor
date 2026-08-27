@@ -40,6 +40,10 @@ let schemas: dict<S.t<unknown>> = Dict.fromArray([
   ("Overrides", erase(View.overrides)),
   ("ViewDelta", erase(View.viewDelta)),
   ("ViewPatch", erase(View.ViewPatch.schema)),
+  ("KeyChord", erase(Keys.keyChord)),
+  ("KeyCode", erase(Keys.KeyCode.schema)),
+  ("NamedKey", erase(Keys.NamedKey.schema)),
+  ("Modifiers", erase(Keys.modifiers)),
 ])
 
 let names: array<string> = Dict.keysToArray(schemas)

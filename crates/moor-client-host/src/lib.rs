@@ -13,7 +13,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use moor_client_core::{
-    Action, CacheConfig, ClientCore, Config, Effect, IdSeed, Input, TransportEvent, ViewPatch,
+    Action, CacheConfig, ClientCore, Config, Effect, IdSeed, Input, KeyChord, TransportEvent,
+    ViewPatch,
 };
 use moor_protocol::{Author, BuildInfo, ClientId, ClientMsg, Envelope, ServerMsg};
 use moord::codec;
@@ -146,6 +147,8 @@ pub struct Handle {
 #[derive(Debug)]
 enum Command {
     Dispatch(Action),
+    /// A key chord outside a text input; the core resolves it (§6.4).
+    Key(KeyChord),
     /// Emit every section (a UI that just attached).
     Attach,
 }
@@ -154,6 +157,11 @@ impl Handle {
     /// Queue an action for the core. Returns `false` once the host is gone.
     pub fn dispatch(&self, action: Action) -> bool {
         self.actions.send(Command::Dispatch(action)).is_ok()
+    }
+
+    /// Queue a key chord for the core's keymap.
+    pub fn key(&self, chord: KeyChord) -> bool {
+        self.actions.send(Command::Key(chord)).is_ok()
     }
 
     /// Ask for every section to be emitted.
@@ -241,6 +249,7 @@ impl Host {
                 () = shutdown.cancelled() => break,
                 cmd = actions.recv() => match cmd {
                     Some(Command::Dispatch(action)) => self.feed(Input::User(action), &incoming_tx),
+                    Some(Command::Key(chord)) => self.feed(Input::Key(chord), &incoming_tx),
                     Some(Command::Attach) => {
                         if self.patches.send(self.core.view().full_patches()).is_err() {
                             break;

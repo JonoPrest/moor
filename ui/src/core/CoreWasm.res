@@ -6,6 +6,7 @@ let make = (~onError: string => unit=e => Console.error(e)): Core.t => {
   let store = Core.Store.make()
   {
     dispatch: _ => onError("CoreWasm: not implemented (see PLAN 'Later')"),
+    key: _ => onError("CoreWasm: not implemented (see PLAN 'Later')"),
     subscribe: listener => Core.Store.subscribe(store, listener),
     attach: () => (),
   }

@@ -23,6 +23,7 @@ vi.mock("@tauri-apps/api/event", () => ({ listen }));
 const CoreTauri = await import("../src/core/CoreTauri.res.mjs");
 const Core = await import("../src/core/Core.res.mjs");
 const CoreWasm = await import("../src/core/CoreWasm.res.mjs");
+const Keys = await import("../src/view/Keys.res.mjs");
 
 const fixtures = join(__dirname, "..", "..", "fixtures", "client");
 const patchFixtures = () =>
@@ -82,6 +83,23 @@ describe("CoreTauri", () => {
     core.attach();
     await tick();
     expect(invoke).toHaveBeenCalledWith("attach", {});
+  });
+
+  it("sends key chords as invoke(key, {chord}) in the fixture shape", async () => {
+    const core = CoreTauri.make();
+    await tick();
+    const chord = Keys.ofBrowser({ key: "p", ctrlKey: true, altKey: false, shiftKey: false, metaKey: false });
+    expect(chord).toBeDefined();
+    core.key(chord);
+    await tick();
+    const expected = JSON.parse(readFileSync(join(fixtures, "KeyChord", "default.json"), "utf8"));
+    expect(invoke).toHaveBeenCalledWith("key", { chord: expected });
+    // Named keys keep shift; printable ones imply it; modifiers alone are nothing.
+    const enter = Keys.ofBrowser({ key: "Enter", ctrlKey: false, altKey: false, shiftKey: true, metaKey: false });
+    expect(Keys.toJson(enter)).toEqual({ key: { type: "Named", key: "Enter" }, mods: { ctrl: false, alt: false, shift: true, meta: false } });
+    const upper = Keys.ofBrowser({ key: "G", ctrlKey: false, altKey: false, shiftKey: true, metaKey: false });
+    expect(Keys.toJson(upper)).toEqual({ key: { type: "Char", c: "G" }, mods: { ctrl: false, alt: false, shift: false, meta: false } });
+    expect(Keys.ofBrowser({ key: "Shift", ctrlKey: false, altKey: false, shiftKey: true, metaKey: false })).toBeUndefined();
   });
 
   it("keeps every IPC message under 64 KB in a scripted session", async () => {

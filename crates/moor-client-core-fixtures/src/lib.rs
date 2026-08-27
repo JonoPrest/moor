@@ -158,6 +158,10 @@ registry!(
     Overrides,
     ViewDelta,
     ViewPatch,
+    KeyChord,
+    KeyCode,
+    NamedKey,
+    Modifiers,
 );
 
 /// All fixtures of all registered types.
@@ -608,6 +612,41 @@ enum_fixture!(
         },
         Action::StepCommit { selected: Some(0) },
     ]
+);
+unit_enum_fixture!(NamedKey, "NamedKey");
+struct_fixture!(
+    Modifiers,
+    "Modifiers",
+    Modifiers {
+        ctrl: true,
+        alt: false,
+        shift: true,
+        meta: false,
+    }
+);
+enum_fixture!(
+    KeyCode,
+    KeyCodeKind,
+    "KeyCode",
+    [
+        KeyCode::Char { c: 'g' },
+        KeyCode::Named {
+            key: NamedKey::Enter,
+        },
+    ]
+);
+struct_fixture!(
+    KeyChord,
+    "KeyChord",
+    KeyChord {
+        key: KeyCode::Char { c: 'p' },
+        mods: Modifiers {
+            ctrl: true,
+            alt: false,
+            shift: false,
+            meta: false,
+        },
+    }
 );
 enum_fixture!(
     ViewPatch,

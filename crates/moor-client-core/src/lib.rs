@@ -63,7 +63,8 @@ pub use focus::{Focus, FocusKind, NoTarget, PAGE_ROWS, clamp as clamp_focus, vis
 pub use ids::IdSeed;
 pub use keymap::{
     Binding, Command, Conflict, Context, HelpEntry, HelpGroup, HelpView, Hint, KeyChord, KeyCode,
-    KeyParseError, KeySeq, Keymap, Lookup, Modifiers, NamedKey, Override, Overrides, label,
+    KeyCodeKind, KeyParseError, KeySeq, Keymap, Lookup, Modifiers, NamedKey, Override, Overrides,
+    label,
 };
 pub use patch::{ViewPatch, ViewPatchKind};
 pub use view::{

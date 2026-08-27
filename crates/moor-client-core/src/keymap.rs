@@ -88,7 +88,10 @@ pub enum NamedKey {
     End,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, strum::EnumDiscriminants,
+)]
+#[strum_discriminants(name(KeyCodeKind), derive(Hash, EnumIter))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum KeyCode {
     Char { c: char },
