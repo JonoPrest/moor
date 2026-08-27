@@ -372,7 +372,7 @@ Suspected bottlenecks with a ready solution, deliberately **not** built until a 
 | 8 | Working-tree changes | auto-refresh, debounced; client defers while a comment draft is open (§5.4) |
 | 9 | Agent event delivery | subscribe via MCP |
 | 11 | MCP transport | stdio shim proxying to daemon first; direct ws later |
-| 12 | Multi-repo review UI | merged tree with repo roots (§5.5) |
+| 12 | Multi-repo review UI | merged tree with repo roots (§5.6) |
 | 14 | Highlighter | syntect |
 
 ### Deferred
