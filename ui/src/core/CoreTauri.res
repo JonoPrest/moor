@@ -1,0 +1,54 @@
+// Tauri adapter (ARCHITECTURE §6.2): `invoke("dispatch", {action})` out,
+// `listen("view")` in. The host emits `view` events whose payload is an
+// array of `ViewPatch`; `invoke("attach")` asks it to emit every section.
+
+type event = {payload: JSON.t}
+
+@module("@tauri-apps/api/core")
+external invoke: (string, JSON.t) => promise<JSON.t> = "invoke"
+
+@module("@tauri-apps/api/event")
+external listen: (string, event => unit) => promise<unit => unit> = "listen"
+
+/// The event the host emits patches on, and the commands it exposes.
+let viewEvent = "view"
+let dispatchCommand = "dispatch"
+let attachCommand = "attach"
+
+let make = (~onError: string => unit=e => Console.error(e)): Core.t => {
+  let store = Core.Store.make()
+  let _ = listen(viewEvent, ev =>
+    switch Core.patchesOfJson(ev.payload) {
+    | Ok(patches) => Core.Store.apply(store, patches)
+    | Error(e) => onError("view event: " ++ e)
+    }
+  )
+  {
+    dispatch: action => {
+      let args = JSON.Encode.object(Dict.fromArray([("action", Core.actionToJson(action))]))
+      invoke(dispatchCommand, args)
+      ->Promise.then(_ => Promise.resolve())
+      ->Promise.catch(exn => {
+        onError(
+          "dispatch: " ++
+          switch exn {
+          | Exn.Error(e) => Exn.message(e)->Option.getOr("failed")
+          | _ => "failed"
+          },
+        )
+        Promise.resolve()
+      })
+      ->ignore
+    },
+    subscribe: listener => Core.Store.subscribe(store, listener),
+    attach: () => {
+      invoke(attachCommand, JSON.Encode.object(Dict.make()))
+      ->Promise.then(_ => Promise.resolve())
+      ->Promise.catch(_ => {
+        onError("attach failed")
+        Promise.resolve()
+      })
+      ->ignore
+    },
+  }
+}
