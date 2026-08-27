@@ -160,6 +160,7 @@ Goal: sans-I/O client that models everything the UI needs; proven under races.
 ### 3.5 ViewModel
 - Merged file tree, current file rows + comment overlays, thread list, review conversation, commit stepper, progress.
 - Explorer model built from `TreeSnapshot`: nested tree, expand state, breadcrumbs, fuzzy path index; all client-local.
+- `ViewPrefs { layout, ignore_whitespace, context_lines }`, persisted; `Action::SetLayout` emits only `Render`, never `Send`.
 - Viewed state derivation (`Viewed | ChangedSinceViewed | Unviewed`) and collapse behaviour; progress counts.
 - Commit stepper view from `CommitInfo`.
 - Comment→row placement from anchors.
@@ -188,12 +189,12 @@ Goal: usable desktop app.
 ### 4.4 Screens
 - Review list / create (any base vs any head, multi-repo).
 - Merged file tree with progress.
-- Diff view: virtualized rows over `total_rows` (`@tanstack/react-virtual`), chunk fetch by index with placeholder rows, unified/split, hide-whitespace toggle, expanders, inline comment composer, threads, outdated collapse, per-file "viewed" checkbox that collapses the file and a "changed since viewed" badge.
+- Diff view: virtualized rows over `total_rows` (`@tanstack/react-virtual`), chunk fetch by index with placeholder rows, unified/split toggle (persisted, instant), hide-whitespace toggle, expanders, inline comment composer, threads, outdated collapse, per-file "viewed" checkbox that collapses the file and a "changed since viewed" badge.
 - File explorer over any ref: instant expand/collapse from the snapshot, fuzzy file search, file-level comments.
 - Review conversation panel (review-level comments, agent request cards).
 - Commit stepper with commit panel: subject, full body, author and committer with relative + absolute times, parent links.
 - Suggestions with apply.
-- Tests: ReScript component tests for row rendering (each `Row` variant), placeholder → chunk swap, composer state; Playwright smoke against the Tauri dev build for the core flow, including opening a 10k-line file and scrolling end-to-end without a long task > 100 ms.
+- Tests: ReScript component tests for row rendering (each `Row` variant in both unified and split layout), placeholder → chunk swap, composer state; Playwright smoke against the Tauri dev build for the core flow, including opening a 10k-line file and scrolling end-to-end without a long task > 100 ms.
 
 ### 4.5 Polish
 - Keyboard nav, "changes pending" indicator, remote connection UX (ssh target picker).

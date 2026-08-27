@@ -11,7 +11,7 @@ Status: **draft v1** — core decisions resolved (§10).
 - Clients work over **SSH** to a remote daemon with no perceptible latency: all navigation and typing is served from a local cache; only mutations and cache misses touch the wire.
 - **GitHub-style diff review** plus a **file explorer** over any ref, in one UI.
 - Review **any base against any head** (branch, commit, tag, working tree), and **step through commits** within a range, seeing each commit's full message, author and dates.
-- **Hide whitespace** diffing as a toggle, and **mark as viewed** per file that auto-clears when that file changes in a later head.
+- **Split (side-by-side) or unified** diff layout, switchable instantly; **hide whitespace** diffing as a toggle, and **mark as viewed** per file that auto-clears when that file changes in a later head.
 - A **workspace** groups multiple git repos; one review can span repos.
 - **Comments** are first-class, persisted, content-anchored, and record provenance (human vs agent, and which agent/session).
 - Comments can be **inline** (lines of a blob), **file-level** (a whole file, whether or not it is in the diff), or **review-level** (like a non-inline GitHub PR comment).
