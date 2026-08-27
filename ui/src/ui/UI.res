@@ -47,7 +47,8 @@ module Button = {
     | Secondary => "btn"
     | Ghost => "btn btn-ghost"
     }
-    <button className ?title onClick={_ => onClick()}> {React.string(label)} </button>
+    // Explicit type: inside a <form> a bare <button> would submit it.
+    <button type_="button" className ?title onClick={_ => onClick()}> {React.string(label)} </button>
   }
 }
 
@@ -73,6 +74,21 @@ module Badge = {
     }
     <span className> {React.string(text)} </span>
   }
+}
+
+module Select = {
+  /// A native select over `(value, label)` options.
+  @react.component
+  let make = (~value: string, ~options: array<(string, string)>, ~onChange: string => unit, ~ariaLabel=?) =>
+    <select
+      className="text-input"
+      value
+      ?ariaLabel
+      onChange={ev => onChange(ReactEvent.Form.target(ev)["value"])}>
+      {options
+      ->Array.map(((v, label)) => <option key=v value=v> {React.string(label)} </option>)
+      ->React.array}
+    </select>
 }
 
 module TextInput = {

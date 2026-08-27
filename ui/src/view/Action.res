@@ -7,7 +7,14 @@ open Ids
 type t =
   | @as("Connect") Connect({})
   | @as("Disconnect") Disconnect({})
+  | @as("ListWorkspaces") ListWorkspaces({})
   | @as("ListReviews") ListReviews({@as("workspace_id") workspaceId: workspaceId})
+  | @as("CreateReview")
+  CreateReview({
+      @as("workspace_id") workspaceId: workspaceId,
+      title: string,
+      targets: array<Domain.ReviewTarget.t>,
+    })
   | @as("OpenReview") OpenReview({@as("review_id") reviewId: reviewId})
   | @as("CloseReview") CloseReview({})
   | @as("DraftOpened") DraftOpened({anchor: Domain.Anchor.t})

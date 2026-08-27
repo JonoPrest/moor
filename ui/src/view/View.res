@@ -271,6 +271,7 @@ module Command = {
     | Connect
     | Disconnect
     | Commits
+    | Refresh
 }
 
 /// A key sequence in its text form (`"g g"`, `"ctrl+p"`).
@@ -332,6 +333,7 @@ module ViewModel = {
     help: @s.null option<HelpView.t>,
     connection: ConnectionView.t,
     @as("last_error") lastError: @s.null option<Rpc.RpcError.t>,
+    workspaces: array<Domain.Workspace.t>,
     reviews: array<Domain.Review.t>,
     review: @s.null option<OpenReview.t>,
     draft: @s.null option<Draft.t>,
@@ -352,6 +354,7 @@ module ViewModel = {
     help: None,
     connection: Disconnected({}),
     lastError: None,
+    workspaces: [],
     reviews: [],
     review: None,
     draft: None,
@@ -366,7 +369,8 @@ module ViewPatch = {
   type t =
     | @as("Connection")
     Connection({connection: ConnectionView.t, @as("last_error") lastError: @s.null option<Rpc.RpcError.t>})
-    | @as("ReviewList") ReviewList({reviews: array<Domain.Review.t>})
+    | @as("ReviewList")
+    ReviewList({workspaces: array<Domain.Workspace.t>, reviews: array<Domain.Review.t>})
     | @as("Tree") Tree({tree: TreeView.t})
     | @as("Diff") Diff({diff: @s.null option<DiffView.t>, prefs: ViewPrefs.t})
     | @as("Threads") Threads({threads: array<ThreadView.t>})
@@ -382,7 +386,7 @@ module ViewPatch = {
   let apply = (model: ViewModel.t, patch: t): ViewModel.t =>
     switch patch {
     | Connection({connection, lastError}) => {...model, connection, lastError}
-    | ReviewList({reviews}) => {...model, reviews}
+    | ReviewList({workspaces, reviews}) => {...model, workspaces, reviews}
     | Tree({tree}) => {...model, tree}
     | Diff({diff, prefs}) => {...model, diff, prefs}
     | Threads({threads}) => {...model, threads}

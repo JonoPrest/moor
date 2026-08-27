@@ -3,12 +3,20 @@
 open View
 
 @react.component
-let make = (~reviews: array<Domain.Review.t>, ~focus: Focus.t, ~dispatch: Action.t => unit) => {
+let make = (
+  ~reviews: array<Domain.Review.t>,
+  ~workspaces: array<Domain.Workspace.t>,
+  ~focus: Focus.t,
+  ~dispatch: Action.t => unit,
+) => {
   let focusedIndex = switch focus {
   | ReviewList({index}) => Some(index)
   | _ => None
   }
-  <UI.Panel title="Reviews">
+  <UI.Panel
+    title="Reviews"
+    actions={<UI.Button label="refresh (R)" kind=Ghost onClick={() => dispatch(ListWorkspaces({}))} />}>
+    <NewReview workspaces dispatch />
     {Array.length(reviews) == 0
       ? <UI.Empty text="No reviews yet." />
       : <ul role="list">

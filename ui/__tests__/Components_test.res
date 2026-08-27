@@ -168,3 +168,59 @@ describe("DiffView (viewed)", () => {
     expect(Element.querySelector(container, ".diff-collapsed"))->toBeNull
   })
 })
+
+describe("RefSpecText", () => {
+  test("parses every ref spec form and prints it back", () => {
+    let cases = [
+      ("main", Some(Domain.RefSpec.Branch({name: "main"}))),
+      ("branch:feature/x", Some(Branch({name: "feature/x"}))),
+      ("tag:v1.0", Some(Tag({name: "v1.0"}))),
+      ("commit:" ++ String.repeat("a", 40), Some(Commit({oid: String.repeat("a", 40)}))),
+      ("commit:abc", None),
+      ("worktree", Some(WorkingTree({}))),
+      ("HEAD", Some(Head({}))),
+      ("upstream", Some(Upstream({}))),
+      ("", None),
+    ]
+    cases->Array.forEach(((text, want)) => expect(RefSpecText.parse(text))->toEqual(want))
+    [
+      Domain.RefSpec.Branch({name: "main"}),
+      Tag({name: "v1"}),
+      WorkingTree({}),
+      Head({}),
+      Upstream({}),
+    ]->Array.forEach(spec => expect(RefSpecText.parse(RefSpecText.print(spec)))->toEqual(Some(spec)))
+  })
+})
+
+describe("NewReview", () => {
+  test("creates a multi-repo review with parsed targets", () => {
+    let dispatch = fn()
+    let ws = Fixtures.parse(Domain.Workspace.schema, "protocol", "Workspace", "default")
+    let _ = render(<NewReview workspaces=[ws] dispatch />)
+    FireEvent.click(Screen.getByText("New review"))
+    FireEvent.change(Screen.getByPlaceholderText("Title"), {"target": {"value": "  Parser  "}})
+    FireEvent.click(Screen.getByText("+ target"))
+    FireEvent.click(Screen.getByText("Create"))
+    let calls = mock(dispatch).calls
+    switch calls->Array.getUnsafe(0)->Array.getUnsafe(0) {
+    | Action.CreateReview({workspaceId, title, targets}) => {
+        expect(workspaceId)->toBe(ws.id)
+        expect(title)->toBe("Parser")
+        expect(Array.length(targets))->toBe(2)
+        expect((targets->Array.getUnsafe(0)).base)->toEqual(Domain.RefSpec.Branch({name: "main"}))
+        expect((targets->Array.getUnsafe(0)).head)->toEqual(Domain.RefSpec.WorkingTree({}))
+      }
+    | _ => expect(false)->toBe(true)
+    }
+  })
+
+  test("does not submit without a title", () => {
+    let dispatch = fn()
+    let ws = Fixtures.parse(Domain.Workspace.schema, "protocol", "Workspace", "default")
+    let _ = render(<NewReview workspaces=[ws] dispatch />)
+    FireEvent.click(Screen.getByText("New review"))
+    FireEvent.click(Screen.getByText("Create"))
+    expect(dispatch)->not_->toHaveBeenCalled
+  })
+})

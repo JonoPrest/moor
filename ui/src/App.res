@@ -84,7 +84,7 @@ module Shell = {
     let left = if Array.length(model.tree.roots) > 0 {
       <Tree tree=model.tree focus=model.focus dispatch />
     } else {
-      <ReviewList reviews=model.reviews focus=model.focus dispatch />
+      <ReviewList reviews=model.reviews workspaces=model.workspaces focus=model.focus dispatch />
     }
     <main className="app-shell">
       <div className="app-body">

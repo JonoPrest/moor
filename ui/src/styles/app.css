@@ -168,6 +168,12 @@
   .diff-empty {
     @apply flex flex-1 items-center justify-center text-muted;
   }
+  .new-review {
+    @apply p-2;
+  }
+  .new-review-target {
+    @apply my-1 flex gap-1;
+  }
   .diff-collapsed {
     @apply px-3 py-2 text-sm text-muted;
   }
