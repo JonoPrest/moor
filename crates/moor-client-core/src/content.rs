@@ -485,17 +485,11 @@ impl ClientCore {
         };
         let mut sections = Vec::new();
         match (key, value) {
-            (CacheKey::Tree { root }, CacheValue::Tree { .. }) => {
-                if self.open_review_trees().contains(&root) {
-                    sections.push(ViewSection::Tree);
-                }
-            }
             (CacheKey::Header { render }, CacheValue::Header { header }) => {
                 if let Some(open) = &mut self.view.review
                     && !open.files.contains(&render)
                 {
                     open.files.push(render.clone());
-                    sections.extend([ViewSection::Tree, ViewSection::Progress]);
                 }
                 if after == AfterHeader::WantChunks {
                     self.want_chunks_for(&render, &header, effects);
@@ -511,7 +505,10 @@ impl ClientCore {
                     sections.push(ViewSection::Diff);
                 }
             }
-            (CacheKey::Tree { .. }, CacheValue::Header { .. } | CacheValue::Chunk { .. })
+            // Trees: the explorer is derived from the cache after every input.
+            // Mismatched shapes are checked before insertion.
+            (CacheKey::Tree { .. }, CacheValue::Tree { .. })
+            | (CacheKey::Tree { .. }, CacheValue::Header { .. } | CacheValue::Chunk { .. })
             | (CacheKey::Header { .. }, CacheValue::Tree { .. } | CacheValue::Chunk { .. })
             | (CacheKey::Chunk { .. }, CacheValue::Tree { .. } | CacheValue::Header { .. }) => {
                 // Shapes are checked before insertion; nothing to show.
@@ -535,14 +532,6 @@ impl ClientCore {
                 open.open_file.as_ref().is_some_and(|f| f.render == *render)
             }
         }
-    }
-
-    fn open_review_trees(&self) -> Vec<TreeOid> {
-        self.view
-            .review
-            .as_ref()
-            .map(|r| r.trees.clone())
-            .unwrap_or_default()
     }
 
     fn open_file(&self) -> Option<&OpenFile> {
@@ -677,7 +666,7 @@ impl ClientCore {
         review_id: ReviewId,
         files: Vec<FileChange>,
         effects: &mut Vec<Effect>,
-    ) -> Vec<ViewSection> {
+    ) {
         let opts = self.content.config.render_opts;
         let renders: Vec<RenderKey> = files
             .into_iter()
@@ -689,7 +678,7 @@ impl ClientCore {
             })
             .collect();
         let Some(open) = &mut self.view.review else {
-            return Vec::new();
+            return;
         };
         open.files.clone_from(&renders);
         if let Some(f) = &open.open_file
@@ -716,7 +705,6 @@ impl ClientCore {
                 self.want_chunks_for(&render, &header, effects);
             }
         }
-        vec![ViewSection::Tree, ViewSection::Progress]
     }
 
     /// Keep only pins the open review (and its open file) still needs.
@@ -871,12 +859,10 @@ impl ClientCore {
         };
         let snapshot = apply_delta(snapshot, delta);
         let mut effects = Vec::new();
-        let mut sections = Vec::new();
         if let Some(open) = &mut self.view.review
             && let Some(slot) = open.trees.iter_mut().find(|t| **t == delta.from_root)
         {
             *slot = delta.to_root;
-            sections.push(ViewSection::Tree);
         }
         self.arrived(
             CacheKey::Tree {
@@ -886,15 +872,6 @@ impl ClientCore {
             Arrival::Response,
             &mut effects,
         );
-        // `arrived` renders `Tree` itself when the root is the review's; the
-        // section list above only matters when it was not.
-        if !sections.is_empty()
-            && !effects
-                .iter()
-                .any(|e| matches!(e, Effect::Render(d) if d.sections.contains(&ViewSection::Tree)))
-        {
-            effects.push(crate::render(&sections));
-        }
         effects
     }
 }

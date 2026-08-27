@@ -2,10 +2,12 @@
 //! names the sections that changed.
 
 use moor_protocol::{
-    Anchor, ClientSeq, EventBody, Review, ReviewSnapshot, RpcError, TreeOid, ViewSection,
+    Anchor, ClientSeq, EventBody, RenderOpts, Review, ReviewSnapshot, RpcError, TreeOid,
+    ViewSection,
 };
 
 use crate::cache::RenderKey;
+use crate::explorer::{Progress, TreeView};
 use serde::{Deserialize, Serialize};
 use strum::EnumDiscriminants;
 
@@ -99,11 +101,57 @@ impl OpenReview {
     }
 }
 
-/// Everything the UI needs, kept identical across hosts. 3.5 fills in the
-/// tree, diff rows, thread list and stepper.
+/// How diff rows are laid out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+pub enum Layout {
+    #[default]
+    Unified,
+    Split,
+}
+
+/// User preferences, persisted in the host KV under [`ViewPrefs::KEY`].
+/// `ignore_whitespace` / `context_lines` are the render options every
+/// request uses, so changing them re-keys the render cache.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ViewPrefs {
+    pub layout: Layout,
+    pub ignore_whitespace: bool,
+    pub context_lines: u32,
+}
+
+impl ViewPrefs {
+    /// Host KV key the preferences live under.
+    pub const KEY: &'static str = "moor/prefs";
+
+    #[must_use]
+    pub fn render_opts(self) -> RenderOpts {
+        RenderOpts {
+            ignore_whitespace: self.ignore_whitespace,
+            context_lines: self.context_lines,
+        }
+    }
+}
+
+impl Default for ViewPrefs {
+    fn default() -> Self {
+        let opts = RenderOpts::default();
+        Self {
+            layout: Layout::Unified,
+            ignore_whitespace: opts.ignore_whitespace,
+            context_lines: opts.context_lines,
+        }
+    }
+}
+
+/// Everything the UI needs, kept identical across hosts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct ViewModel {
+    pub prefs: ViewPrefs,
+    /// Explorer over the open review's head trees (§5.5); empty otherwise.
+    pub tree: TreeView,
+    pub progress: Progress,
     pub connection: ConnectionView,
     /// Last request error the daemon returned; cleared on (re)subscribe.
     pub last_error: Option<RpcError>,

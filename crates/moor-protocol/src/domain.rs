@@ -388,7 +388,9 @@ impl Default for RenderOpts {
 /// exist, so there is no `Option<old> + Option<new>` pair to keep consistent.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, EnumDiscriminants)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[strum_discriminants(name(ChangeKindKind), derive(EnumIter, Hash))]
+// The discriminant is a view type too (explorer "change" badge), hence serde
+// on it; unit-only, so it is a bare string on the wire.
+#[strum_discriminants(name(ChangeKindKind), derive(EnumIter, Hash, Serialize, Deserialize))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum ChangeKind {
     Added {

@@ -510,12 +510,7 @@ fn events_update_only_what_they_touch() {
         .unwrap();
     assert_eq!(
         rendered(&effects),
-        vec![
-            ViewSection::Tree,
-            ViewSection::Diff,
-            ViewSection::Threads,
-            ViewSection::Draft
-        ]
+        vec![ViewSection::Diff, ViewSection::Threads, ViewSection::Draft]
     );
     assert!(core.view().review.is_none());
     assert_eq!(
@@ -712,6 +707,35 @@ fn action_strategy() -> impl Strategy<Value = Action> {
             last_row: b,
         }),
         Just(Action::CloseFile),
+        prop_oneof![Just(None), Just(Some("src".to_string()))].prop_map(|p| Action::ToggleDir {
+            repo_id: repo_id(),
+            path: p.map(|p| moor_protocol::RepoPath::new(p).unwrap()),
+        }),
+        prop_oneof![Just(None), Just(Some("a".to_string()))]
+            .prop_map(|query| Action::FileSearch { query }),
+        prop_oneof![
+            Just(moor_client_core::Layout::Unified),
+            Just(moor_client_core::Layout::Split)
+        ]
+        .prop_map(|layout| Action::SetLayout { layout }),
+        (any::<bool>(), 0u32..6).prop_map(|(ignore_whitespace, context_lines)| {
+            Action::SetRenderOpts {
+                ignore_whitespace,
+                context_lines,
+            }
+        }),
+        Just(Action::MarkViewed {
+            file: FileRef {
+                repo_id: repo_id(),
+                path: moor_protocol::RepoPath::new("a.rs").unwrap(),
+            }
+        }),
+        Just(Action::UnmarkViewed {
+            file: FileRef {
+                repo_id: repo_id(),
+                path: moor_protocol::RepoPath::new("a.rs").unwrap(),
+            }
+        }),
     ]
 }
 

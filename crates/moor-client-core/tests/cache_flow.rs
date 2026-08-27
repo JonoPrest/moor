@@ -497,14 +497,13 @@ fn streamed_open_fills_and_pins_the_cache_and_renders_once_at_end() {
             ViewSection::Threads,
             ViewSection::Conversation,
             ViewSection::Draft,
-            ViewSection::Tree, // tree 1
-            ViewSection::Tree, // tree 2
-            ViewSection::Tree, // header a.rs
+            // tree 1 is the base tree: the explorer shows heads, so no render
+            ViewSection::Tree, // tree 2 (derived)
+            ViewSection::Tree, // header a.rs (derived)
             ViewSection::Progress,
-            ViewSection::Tree, // header b.rs
+            ViewSection::Tree, // header b.rs (derived)
             ViewSection::Progress,
-            ViewSection::Tree, // stream end
-            ViewSection::Diff,
+            ViewSection::Diff, // stream end
         ]
     );
     // Nothing goes to the daemon or disk: the stream brought everything.
@@ -540,19 +539,23 @@ fn memory_hit_produces_no_effects_but_a_render() {
             last_row: 20,
         }))
         .unwrap();
+    // Only renders: the diff/focus, and the tree (breadcrumbs, open mark).
+    assert!(requests(&effects).is_empty());
+    assert!(loads(&effects).is_empty());
     assert_eq!(
-        effects,
-        vec![Effect::Render(moor_client_core::ViewDelta::new(&[
-            ViewSection::Diff,
-            ViewSection::Focus
-        ]))]
+        rendered(&effects),
+        vec![ViewSection::Diff, ViewSection::Focus, ViewSection::Tree]
+    );
+    assert_eq!(
+        core.view().tree.breadcrumbs,
+        vec![repo_id().to_string(), "b.rs".to_string()]
     );
     assert!(core.cache().is_pinned(&chunk_key("b.rs", 0)));
     // Closing the file releases the chunk pin but keeps the header pinned.
     let effects = core.handle(Input::User(Action::CloseFile)).unwrap();
     assert_eq!(
         rendered(&effects),
-        vec![ViewSection::Diff, ViewSection::Focus]
+        vec![ViewSection::Diff, ViewSection::Focus, ViewSection::Tree]
     );
     assert!(!core.cache().is_pinned(&chunk_key("b.rs", 0)));
     assert!(core.cache().is_pinned(&header_key("b.rs")));
@@ -1257,10 +1260,11 @@ fn close_review_releases_pins_and_drops_queued_fetches() {
     assert_eq!(
         rendered(&effects),
         vec![
-            ViewSection::Tree,
             ViewSection::Diff,
             ViewSection::Threads,
-            ViewSection::Draft
+            ViewSection::Draft,
+            ViewSection::Tree,
+            ViewSection::Progress,
         ]
     );
     assert_eq!(core.content_queued(), 0);
@@ -1292,4 +1296,214 @@ fn stored_answers_for_unknown_keys_are_rejected() {
     let _ = ClientMsg::Cancel {
         id: RequestId::new(1),
     };
+}
+
+// ---- 3.5: explorer, prefs, viewed marks ----------------------------------
+
+#[test]
+fn explorer_is_derived_from_head_trees_and_never_sends() {
+    let mut core = subscribed(local());
+    open_streamed(&mut core);
+    let tree = &core.view().tree;
+    assert_eq!(tree.roots.len(), 1);
+    let moor_client_core::TreeNode::Dir {
+        children,
+        changed_below,
+        expanded,
+        ..
+    } = &tree.roots[0]
+    else {
+        panic!("root is a dir");
+    };
+    assert!(!expanded);
+    assert_eq!(*changed_below, 2);
+    let names: Vec<&str> = children
+        .iter()
+        .map(|n| match n {
+            moor_client_core::TreeNode::Dir { name, .. }
+            | moor_client_core::TreeNode::File { name, .. } => name.as_str(),
+        })
+        .collect();
+    // Head tree (tree 2) has a.rs, b.rs, c.rs; a.rs and b.rs are changed.
+    assert_eq!(names, vec!["a.rs", "b.rs", "c.rs"]);
+    let moor_client_core::TreeNode::File { change, viewed, .. } = &children[2] else {
+        panic!("file");
+    };
+    assert_eq!(*change, None);
+    assert_eq!(*viewed, moor_client_core::ViewedState::Unviewed);
+    assert_eq!(
+        core.view().progress,
+        moor_client_core::Progress {
+            viewed: 0,
+            changed_since_viewed: 0,
+            total: 2
+        }
+    );
+
+    // Expanding and searching are local: renders only.
+    let effects = core
+        .handle(Input::User(Action::ToggleDir {
+            repo_id: repo_id(),
+            path: None,
+        }))
+        .unwrap();
+    assert!(requests(&effects).is_empty() && loads(&effects).is_empty());
+    assert_eq!(rendered(&effects), vec![ViewSection::Tree]);
+    let moor_client_core::TreeNode::Dir { expanded, .. } = &core.view().tree.roots[0] else {
+        panic!("root is a dir");
+    };
+    assert!(expanded);
+    let effects = core
+        .handle(Input::User(Action::FileSearch {
+            query: Some("brs".into()),
+        }))
+        .unwrap();
+    assert!(requests(&effects).is_empty() && loads(&effects).is_empty());
+    let search = core.view().tree.search.as_ref().unwrap();
+    assert_eq!(search.query, "brs");
+    assert_eq!(search.hits[0].file, file("b.rs"));
+    // A query that matches nothing yields no hits; closing clears it.
+    core.handle(Input::User(Action::FileSearch {
+        query: Some("zzz".into()),
+    }))
+    .unwrap();
+    assert!(core.view().tree.search.as_ref().unwrap().hits.is_empty());
+    let effects = core
+        .handle(Input::User(Action::FileSearch { query: None }))
+        .unwrap();
+    assert_eq!(rendered(&effects), vec![ViewSection::Tree]);
+    assert!(core.view().tree.search.is_none());
+    // Nothing changed → nothing rendered (no empty renders either).
+    let effects = core
+        .handle(Input::User(Action::FileSearch { query: None }))
+        .unwrap();
+    assert!(effects.is_empty());
+}
+
+#[test]
+fn mark_viewed_is_optimistic_and_drives_progress() {
+    let mut core = subscribed(local());
+    open_streamed(&mut core);
+    let effects = core
+        .handle(Input::User(Action::MarkViewed { file: file("a.rs") }))
+        .unwrap();
+    let (_, request) = requests(&effects)[0].clone();
+    assert!(matches!(
+        request,
+        Request::Mutate {
+            mutation: moor_protocol::Mutation::MarkViewed { .. },
+            ..
+        }
+    ));
+    assert_eq!(
+        rendered(&effects),
+        vec![
+            ViewSection::Progress,
+            ViewSection::Tree,
+            ViewSection::Progress
+        ]
+    );
+    assert_eq!(core.view().progress.viewed, 1);
+    assert_eq!(core.view().review.as_ref().unwrap().pending.len(), 1);
+    // Unknown file / agent viewer are typed errors.
+    assert_eq!(
+        core.handle(Input::User(Action::MarkViewed {
+            file: file("nope.rs")
+        })),
+        Err(CoreError::UnknownFile(file("nope.rs")))
+    );
+    let effects = core
+        .handle(Input::User(Action::UnmarkViewed { file: file("a.rs") }))
+        .unwrap();
+    assert_eq!(requests(&effects).len(), 1);
+    assert_eq!(core.view().progress.viewed, 0);
+}
+
+#[test]
+fn prefs_are_loaded_once_on_connect_persisted_on_change_and_re_key_renders() {
+    let mut core = ClientCore::new(config(local()));
+    let effects = core.handle(Input::User(Action::Connect)).unwrap();
+    assert_eq!(
+        loads(&effects),
+        vec![moor_client_core::ViewPrefs::KEY.to_string()]
+    );
+    // Stored prefs: split layout, whitespace ignored.
+    let stored = moor_client_core::ViewPrefs {
+        layout: moor_client_core::Layout::Split,
+        ignore_whitespace: true,
+        context_lines: 5,
+    };
+    let effects = core
+        .handle(Input::Stored {
+            key: moor_client_core::ViewPrefs::KEY.into(),
+            value: Some(serde_json::to_vec(&stored).unwrap()),
+        })
+        .unwrap();
+    assert_eq!(rendered(&effects), vec![ViewSection::Diff]);
+    assert!(persists(&effects).is_empty(), "loading does not write back");
+    assert_eq!(core.view().prefs, stored);
+    assert_eq!(core.cache_config().render_opts, stored.render_opts());
+    // Absent / corrupt values keep the defaults, silently.
+    let mut fresh = ClientCore::new(config(local()));
+    fresh.handle(Input::User(Action::Connect)).unwrap();
+    let effects = fresh
+        .handle(Input::Stored {
+            key: moor_client_core::ViewPrefs::KEY.into(),
+            value: Some(b"garbage".to_vec()),
+        })
+        .unwrap();
+    assert!(effects.is_empty());
+    assert_eq!(fresh.view().prefs, moor_client_core::ViewPrefs::default());
+
+    // Layout changes render and persist, never send.
+    let mut core = subscribed(local());
+    open_streamed(&mut core);
+    let effects = core
+        .handle(Input::User(Action::SetLayout {
+            layout: moor_client_core::Layout::Split,
+        }))
+        .unwrap();
+    assert!(requests(&effects).is_empty());
+    assert_eq!(
+        persists(&effects),
+        vec![moor_client_core::ViewPrefs::KEY.to_string()]
+    );
+    assert_eq!(rendered(&effects), vec![ViewSection::Diff]);
+    // Render options re-key every render: the file list is fetched again
+    // with the new opts and the tree empties until it lands.
+    let effects = core
+        .handle(Input::User(Action::SetRenderOpts {
+            ignore_whitespace: true,
+            context_lines: 3,
+        }))
+        .unwrap();
+    let reqs = requests(&effects);
+    assert_eq!(reqs.len(), 1);
+    assert!(matches!(reqs[0].1, Request::ListFiles { .. }));
+    assert_eq!(
+        persists(&effects),
+        vec![moor_client_core::ViewPrefs::KEY.to_string()]
+    );
+    assert!(core.view().review.as_ref().unwrap().files.is_empty());
+    let effects = core
+        .handle(Input::Server(ServerMsg::Response {
+            id: reqs[0].0,
+            response: Response::Files {
+                files: vec![change("a.rs")],
+            },
+        }))
+        .unwrap();
+    let (_, request) = requests(&effects)
+        .into_iter()
+        .find(|(_, r)| matches!(r, Request::FileRender { .. }))
+        .unwrap();
+    let Request::FileRender { opts, .. } = request else {
+        panic!()
+    };
+    assert!(opts.ignore_whitespace);
+    // Reconnecting does not load the prefs again.
+    core.handle(Input::Transport(TransportEvent::Disconnected))
+        .unwrap();
+    let effects = core.handle(Input::User(Action::Connect)).unwrap();
+    assert!(loads(&effects).is_empty());
 }

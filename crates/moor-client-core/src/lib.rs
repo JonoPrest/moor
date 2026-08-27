@@ -25,6 +25,7 @@ mod cache;
 mod connection;
 mod content;
 mod events;
+mod explorer;
 mod ids;
 mod view;
 
@@ -32,9 +33,9 @@ use std::collections::BTreeMap;
 
 use moor_protocol::{
     Anchor, Author, BuildInfo, ClientId, ClientMsg, ClientSeq, CommentId, CommentKind, Event,
-    EventBody, Mutation, ProtocolVersion, Request, RequestId, Response, ReviewId, ReviewSnapshot,
-    RpcError, Seq, ServerMsg, Since, StreamItem, SubscribeScope, ThreadId, Timestamp, ViewSection,
-    WorkspaceId,
+    EventBody, Mutation, ProtocolVersion, RenderTarget, RepoId, RepoPath, Request, RequestId,
+    Response, ReviewId, ReviewSnapshot, RpcError, Seq, ServerMsg, Since, StreamItem,
+    SubscribeScope, ThreadId, Timestamp, ViewSection, WorkspaceId,
 };
 use strum::EnumDiscriminants;
 
@@ -44,8 +45,15 @@ pub use content::{CacheConfig, DiskTier, DiskTierKind, FileRef, PREFETCH_RADIUS}
 pub use events::{
     EventMeta, MutationError, MutationErrorKind, apply_body, local_event, thread_id_of,
 };
+pub use explorer::{
+    MAX_HITS, Progress, SearchHit, SearchView, TreeNode, TreeNodeKind, TreeView, ViewedState,
+    viewed_state,
+};
 pub use ids::IdSeed;
-pub use view::{ConnectionView, Draft, OpenFile, OpenReview, PendingEvent, ViewDelta, ViewModel};
+pub use view::{
+    ConnectionView, Draft, Layout, OpenFile, OpenReview, PendingEvent, ViewDelta, ViewModel,
+    ViewPrefs,
+};
 
 pub use moor_protocol as protocol;
 
@@ -128,6 +136,30 @@ pub enum Action {
         last_row: u32,
     },
     CloseFile,
+    /// Expand or collapse a directory of the explorer (`None` = repo root).
+    ToggleDir {
+        repo_id: RepoId,
+        path: Option<RepoPath>,
+    },
+    /// Open (`Some`) or close (`None`) the fuzzy file search.
+    FileSearch {
+        query: Option<String>,
+    },
+    SetLayout {
+        layout: Layout,
+    },
+    /// Change the render options; re-keys every render, so the open
+    /// review's headers are fetched again.
+    SetRenderOpts {
+        ignore_whitespace: bool,
+        context_lines: u32,
+    },
+    MarkViewed {
+        file: FileRef,
+    },
+    UnmarkViewed {
+        file: FileRef,
+    },
 }
 
 /// Something the host must do for the core.
@@ -182,6 +214,10 @@ pub enum CoreError {
     /// The mutation would be rejected by the daemon; nothing was sent.
     #[error(transparent)]
     Mutation(#[from] MutationError),
+    /// Only humans mark files viewed (`Mutation::MarkViewed` is
+    /// `Forbidden` for agents).
+    #[error("only a human viewer can mark files viewed")]
+    NotHuman,
     #[error("nothing was loaded under key {0:?}")]
     UnknownKey(Key),
     #[error("the daemon rejected the handshake: {0:?}")]
@@ -287,6 +323,9 @@ pub struct ClientCore {
     committed: Option<ReviewSnapshot>,
     /// Mutations sent and not yet echoed by the daemon, in send order.
     pending: Vec<Pending>,
+    explorer: explorer::ExplorerState,
+    /// `Effect::Load` for the prefs issued; answered or not.
+    prefs_loaded: bool,
 }
 
 /// A mutation applied locally and awaiting the daemon's echo.
@@ -319,6 +358,8 @@ impl ClientCore {
             content,
             committed: None,
             pending: Vec::new(),
+            explorer: explorer::ExplorerState::default(),
+            prefs_loaded: false,
         }
     }
 
@@ -345,16 +386,118 @@ impl ClientCore {
 
     /// Apply one input. `Err` means nothing changed and nothing is to be done.
     pub fn handle(&mut self, input: Input) -> Result<Vec<Effect>, CoreError> {
-        match input {
-            Input::User(action) => self.user(action),
-            Input::Server(msg) => self.server(msg),
-            Input::Transport(ev) => Ok(self.transport(ev)),
-            Input::Stored { key, value } => self.stored(key, value),
+        let mut effects = match input {
+            Input::User(action) => self.user(action)?,
+            Input::Server(msg) => self.server(msg)?,
+            Input::Transport(ev) => self.transport(ev),
+            Input::Stored { key, value } if key == ViewPrefs::KEY => self.prefs_stored(value),
+            Input::Stored { key, value } => self.stored(key, value)?,
             Input::Tick(ms) => {
                 self.now = self.now.max(ms);
-                Ok(Vec::new())
+                Vec::new()
+            }
+        };
+        let derived = self.derive();
+        if !derived.is_empty() {
+            effects.push(render(&derived));
+        }
+        Ok(effects)
+    }
+
+    /// Recompute the parts of the view that are functions of core state
+    /// (explorer, progress) and report which changed.
+    fn derive(&mut self) -> Vec<ViewSection> {
+        let mut sections = Vec::new();
+        let (tree, progress) = match (&self.view.review, &self.committed) {
+            (Some(open), Some(_)) => {
+                let heads: Vec<moor_protocol::TreeOid> = open
+                    .snapshot
+                    .resolved
+                    .as_ref()
+                    .map(|r| r.iter().map(|t| t.head.tree).collect())
+                    .unwrap_or_default();
+                let trees: Vec<&moor_protocol::TreeSnapshot> = heads
+                    .iter()
+                    .filter_map(|root| {
+                        match self.content.cache.peek(&CacheKey::Tree { root: *root }) {
+                            Some(CacheValue::Tree { snapshot }) => Some(snapshot),
+                            Some(CacheValue::Header { .. } | CacheValue::Chunk { .. }) | None => {
+                                None
+                            }
+                        }
+                    })
+                    .collect();
+                let open_file = open.open_file.as_ref().map(|f| FileRef {
+                    repo_id: f.render.repo_id,
+                    path: f.render.path.clone(),
+                });
+                let inputs = explorer::ExplorerInputs {
+                    snapshot: &open.snapshot,
+                    trees,
+                    files: &open.files,
+                    open_file: open_file.as_ref(),
+                    viewer: &self.config.author,
+                    state: &self.explorer,
+                };
+                (
+                    explorer::build(&inputs),
+                    explorer::progress(&open.snapshot, &self.config.author, &open.files),
+                )
+            }
+            (None, _) | (Some(_), None) => (TreeView::default(), Progress::default()),
+        };
+        if tree != self.view.tree {
+            self.view.tree = tree;
+            sections.push(ViewSection::Tree);
+        }
+        if progress != self.view.progress {
+            self.view.progress = progress;
+            sections.push(ViewSection::Progress);
+        }
+        sections
+    }
+
+    /// The stored preferences arrived (or were absent).
+    fn prefs_stored(&mut self, value: Option<Vec<u8>>) -> Vec<Effect> {
+        self.prefs_loaded = true;
+        let Some(prefs) = value.and_then(|b| serde_json::from_slice::<ViewPrefs>(&b).ok()) else {
+            return Vec::new();
+        };
+        if prefs == self.view.prefs {
+            return Vec::new();
+        }
+        self.apply_prefs(prefs, false)
+    }
+
+    /// Install `prefs`; persist when `save`. A render-option change re-keys
+    /// every render, so the open review's file list is fetched again.
+    fn apply_prefs(&mut self, prefs: ViewPrefs, save: bool) -> Vec<Effect> {
+        let before = self.view.prefs;
+        self.view.prefs = prefs;
+        let mut effects = Vec::new();
+        if save {
+            effects.push(Effect::Persist {
+                key: ViewPrefs::KEY.to_owned(),
+                value: serde_json::to_vec(&prefs).unwrap_or_default(),
+            });
+        }
+        let sections = vec![ViewSection::Diff];
+        if prefs.render_opts() != before.render_opts() {
+            self.content.config.render_opts = prefs.render_opts();
+            if let Some(open) = &mut self.view.review {
+                let review_id = open.snapshot.review.id;
+                open.files.clear();
+                open.open_file = None;
+                if let Connection::Subscribed { .. } = self.connection {
+                    effects.push(self.request(
+                        Request::ListFiles { review_id },
+                        InFlight::ListFiles { review_id },
+                    ));
+                }
             }
         }
+        effects.push(render(&sections));
+        effects
     }
 
     fn wrong_state(&self, input: InputKind) -> CoreError {
@@ -375,7 +518,15 @@ impl ClientCore {
                         last_seq,
                     };
                     self.view.connection = ConnectionView::Connecting;
-                    Ok(vec![Effect::Connect, render(&[ViewSection::Connection])])
+                    let mut effects = vec![Effect::Connect, render(&[ViewSection::Connection])];
+                    if !self.prefs_loaded {
+                        // Once per core: the host answers with `Input::Stored`.
+                        self.prefs_loaded = true;
+                        effects.push(Effect::Load {
+                            key: ViewPrefs::KEY.to_owned(),
+                        });
+                    }
+                    Ok(effects)
                 }
                 Connection::Connecting { .. } | Connection::Subscribed { .. } => {
                     Err(self.wrong_state(InputKind::User))
@@ -416,7 +567,6 @@ impl ClientCore {
                 let mut effects = Vec::new();
                 self.close_review(&mut effects);
                 effects.push(render(&[
-                    ViewSection::Tree,
                     ViewSection::Diff,
                     ViewSection::Threads,
                     ViewSection::Draft,
@@ -429,6 +579,44 @@ impl ClientCore {
                 last_row,
             } => self.viewport(file, first_row, last_row),
             Action::CloseFile => self.close_file(),
+            Action::ToggleDir { repo_id, path } => {
+                if self.view.review.is_none() {
+                    return Err(CoreError::NoOpenReview);
+                }
+                let key = (repo_id, path);
+                if !self.explorer.expanded.remove(&key) {
+                    self.explorer.expanded.insert(key);
+                }
+                // The tree itself is derived after this returns.
+                Ok(Vec::new())
+            }
+            Action::FileSearch { query } => {
+                if self.view.review.is_none() {
+                    return Err(CoreError::NoOpenReview);
+                }
+                self.explorer.search = query;
+                Ok(Vec::new())
+            }
+            Action::SetLayout { layout } => {
+                let prefs = ViewPrefs {
+                    layout,
+                    ..self.view.prefs
+                };
+                Ok(self.apply_prefs(prefs, true))
+            }
+            Action::SetRenderOpts {
+                ignore_whitespace,
+                context_lines,
+            } => {
+                let prefs = ViewPrefs {
+                    ignore_whitespace,
+                    context_lines,
+                    ..self.view.prefs
+                };
+                Ok(self.apply_prefs(prefs, true))
+            }
+            Action::MarkViewed { file } => self.mark_viewed(file, true),
+            Action::UnmarkViewed { file } => self.mark_viewed(file, false),
             Action::DraftOpened { anchor } => {
                 if self.view.review.is_none() {
                     return Err(CoreError::NoOpenReview);
@@ -527,6 +715,62 @@ impl ClientCore {
         }
     }
 
+    /// Mark or unmark `file` viewed at its current head blob. The event body
+    /// needs the blob, which only the file list knows, so it is built here
+    /// rather than by `local_event`.
+    fn mark_viewed(&mut self, file: FileRef, viewed: bool) -> Result<Vec<Effect>, CoreError> {
+        self.require_subscribed()?;
+        let Some(open) = &self.view.review else {
+            return Err(CoreError::NoOpenReview);
+        };
+        let review_id = open.snapshot.review.id;
+        let Some(human) = self.config.author.as_human() else {
+            return Err(CoreError::NotHuman);
+        };
+        let Some(render) = open
+            .files
+            .iter()
+            .find(|k| k.repo_id == file.repo_id && k.path == file.path)
+        else {
+            return Err(CoreError::UnknownFile(file));
+        };
+        let blob_oid = match &render.target {
+            RenderTarget::Diff { change } => change.new_blob(),
+            RenderTarget::Blob { oid } => Some(*oid),
+        };
+        let (mutation, body) = if viewed {
+            (
+                Mutation::MarkViewed {
+                    review_id,
+                    repo_id: file.repo_id,
+                    path: file.path.clone(),
+                },
+                EventBody::FileViewed {
+                    review_id,
+                    repo_id: file.repo_id,
+                    path: file.path,
+                    viewer: human,
+                    blob_oid,
+                },
+            )
+        } else {
+            (
+                Mutation::UnmarkViewed {
+                    review_id,
+                    repo_id: file.repo_id,
+                    path: file.path.clone(),
+                },
+                EventBody::FileUnviewed {
+                    review_id,
+                    repo_id: file.repo_id,
+                    path: file.path,
+                    viewer: human,
+                },
+            )
+        };
+        Ok(self.mutate_with(mutation, body))
+    }
+
     /// Apply `mutation` optimistically and send it. Rejected (nothing sent,
     /// nothing shown) when the daemon would reject it against the current
     /// view, pending mutations included.
@@ -537,6 +781,12 @@ impl ClientCore {
         };
         let meta = self.meta_now();
         let body = local_event(&open.snapshot, &meta, &mutation)?;
+        Ok(self.mutate_with(mutation, body))
+    }
+
+    /// `mutate` with the optimistic event already built and validated.
+    fn mutate_with(&mut self, mutation: Mutation, body: EventBody) -> Vec<Effect> {
+        let meta = self.meta_now();
         let client_seq = self.next_client_seq;
         self.next_client_seq = client_seq.next();
         self.pending.push(Pending {
@@ -554,7 +804,7 @@ impl ClientCore {
             InFlight::Mutate { client_seq },
         );
         let sections = self.rebase();
-        Ok(vec![send, render(&sections)])
+        vec![send, render(&sections)]
     }
 
     /// Rebuild the shown snapshot as `committed` plus every pending event,
@@ -738,7 +988,7 @@ impl ClientCore {
                 match waiting {
                     InFlight::OpenReview { .. } => {
                         if self.view.review.is_some() {
-                            effects.push(render(&[ViewSection::Tree, ViewSection::Diff]));
+                            effects.push(render(&[ViewSection::Diff]));
                         }
                     }
                     InFlight::FileRender { render, .. } => {
@@ -1036,8 +1286,7 @@ impl ClientCore {
             (InFlight::ListFiles { review_id }, Response::Files { files }) => {
                 let mut effects = Vec::new();
                 if self.open_mut(review_id).is_some() {
-                    let sections = self.review_files(review_id, files, &mut effects);
-                    effects.push(render(&sections));
+                    self.review_files(review_id, files, &mut effects);
                 }
                 effects
             }
@@ -1159,12 +1408,7 @@ impl ClientCore {
                 }
                 if self.open_mut(*review_id).is_some() {
                     self.close_review(&mut effects);
-                    sections.extend([
-                        ViewSection::Tree,
-                        ViewSection::Diff,
-                        ViewSection::Threads,
-                        ViewSection::Draft,
-                    ]);
+                    sections.extend([ViewSection::Diff, ViewSection::Threads, ViewSection::Draft]);
                 }
             }
             EventBody::ReviewTargetsResolved { review_id, .. }
