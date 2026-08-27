@@ -38,7 +38,7 @@ Goal: headless engine. Given repos on disk, create workspaces/reviews, produce r
 
 ### 1.2 `moor-protocol` types
 - IDs (ULID-backed newtypes, `Display`/`FromStr`), OIDs, `Seq`.
-- Domain: `Workspace`, `Repo`, `Review`, `ReviewTarget`, `RefSpec`, `Comment`, `Author`, `Anchor`, `CommentKind`, `CommentState`, `Thread`.
+- Domain: `Workspace`, `Repo`, `Review`, `ReviewTarget`, `RefSpec`, `Comment`, `Author`, `Anchor`, `CommentKind`, `CommentState`, `Thread`, `CommitInfo`, `ViewedMark`, `RenderOpts`.
 - Events: `Event { seq, ts, author, client_id, client_seq, body: EventBody }` and each `EventBody` variant.
 - Render model: `Row`, `Cell`, `Span`, `FileRender`, `DiffSummary`.
 - RPC: `ClientMsg`, `ServerMsg`, `Request`/`Response` per method, `SubscribeScope`, `OpenReviewItem` stream items, `ReviewSnapshot`, `ViewDelta` sections.
@@ -54,7 +54,7 @@ Goal: headless engine. Given repos on disk, create workspaces/reviews, produce r
 - Tests: append/read; views match a fold over the log (`proptest`: random event sequences, compare `rebuild_views` vs incremental); reopen after drop preserves everything; tombstoned review excluded from listings; concurrent appenders get strictly increasing `Seq`.
 
 ### 1.4 Git engine (`moor_review_core::git`)
-- `Repo::open(path)`, `resolve(RefSpec) -> ResolvedRef`, `tree(CommitOid)`, `blob(BlobOid)`, `commits_between(base, head)`.
+- `Repo::open(path)`, `resolve(RefSpec) -> ResolvedRef`, `tree(CommitOid)`, `blob(BlobOid)`, `commits_between(base, head) -> [CommitInfo]` (full message body, author/committer signatures with times).
 - `WorkingTree` snapshot: hash working files into a virtual tree (`WorkTreeSnapshot { tree_oid, dirty: [path] }`); unchanged files reuse index OIDs.
 - `tree_snapshot(root: TreeOid) -> TreeSnapshot` (full recursive walk, flat sorted entries) and `tree_delta(from, to)`; working-tree snapshot yields a synthetic root OID.
 - `changed_files(base, head) -> [FileChange { path, kind: Added|Deleted|Modified|Renamed{from}, old: Option<BlobOid>, new: Option<BlobOid> }]`.
@@ -62,15 +62,16 @@ Goal: headless engine. Given repos on disk, create workspaces/reviews, produce r
 
 ### 1.5 Diff + render model (`moor_review_core::render`)
 - `render_file(old: Option<&[u8]>, new: Option<&[u8]>, lang, opts) -> (FileRenderHeader, impl Iterator<RenderChunk>)`.
-- Pipeline: `imara-diff` hunks → pair `-`/`+` into `Modified` → intra-line ranges → context collapsing with `Expander` → syntect spans (whole-file pass, size-capped) → split into ~500-row chunks.
+- Pipeline: (optional whitespace-normalised line view for `ignore_whitespace`) → `imara-diff` hunks → pair `-`/`+` into `Modified` → intra-line ranges → context collapsing with `Expander` → syntect spans (whole-file pass, size-capped) → split into ~500-row chunks. Whitespace-only files collapse to a single marker row.
 - `render_blob(bytes, lang)` for explorer views (all `Context` rows), same chunked shape.
 - Content-keyed disk cache `(old_oid, new_oid, opts_hash, chunk_index)`; header cached separately.
-- Tests: `insta` snapshots for a corpus (add/delete/modify/rename/whitespace-only/binary/huge/no-trailing-newline/CRLF); invariants via `proptest`: every source line appears exactly once on its side, line numbers monotonic, spans within cell bounds, `Expander.hidden` sums to the omitted count, chunks concatenate to `total_rows` with no gaps; unified and split derive from the same rows. Benchmark: 10k-line and 100k-line files, header returned < 50 ms, first chunk < 200 ms; above the cap `highlighted == false`.
+- Tests: `insta` snapshots for a corpus (add/delete/modify/rename/whitespace-only/binary/huge/no-trailing-newline/CRLF), each rendered with and without `ignore_whitespace`; with it on, re-indenting a block yields zero `Modified` rows while the text in rows is unchanged; invariants via `proptest`: every source line appears exactly once on its side, line numbers monotonic, spans within cell bounds, `Expander.hidden` sums to the omitted count, chunks concatenate to `total_rows` with no gaps; unified and split derive from the same rows. Benchmark: 10k-line and 100k-line files, header returned < 50 ms, first chunk < 200 ms; above the cap `highlighted == false`.
 
 ### 1.6 Reviews (`moor_review_core::review`)
 - `create_review(workspace, NonEmpty<ReviewTarget>)`, `resolve_targets(review) -> ResolvedTargets` (emits `ReviewTargetsResolved` only when OIDs change), `files(review) -> merged tree`, `commits(review)` for commit stepping, `file_render(review, repo, path)`.
 - Merged tree: repo roots at top level; deterministic ordering.
-- Tests: multi-repo review yields one tree with both roots; commit stepping produces `base=parent` sub-reviews; re-resolve is idempotent (no duplicate events).
+- `mark_viewed(review, repo, path)` / `unmark_viewed` emit `FileViewed{blob_oid}`/`FileUnviewed`; rejected for `Author::Agent`.
+- Tests: multi-repo review yields one tree with both roots; commit stepping produces `base=parent` sub-reviews and `CommitInfo` carries full body/author/times incl. merge commits; re-resolve is idempotent (no duplicate events); viewed mark survives a head move that doesn't touch the file and is reported `ChangedSinceViewed` when it does; agent `mark_viewed` is a typed error.
 
 ### 1.7 Comments + anchoring (`moor_review_core::comments`)
 - `add_comment`, `reply`, `edit`, `delete`, `resolve_thread`, `unresolve_thread`; all emit events, all validate against current review state (e.g. `Lines` range within blob length).
@@ -159,6 +160,8 @@ Goal: sans-I/O client that models everything the UI needs; proven under races.
 ### 3.5 ViewModel
 - Merged file tree, current file rows + comment overlays, thread list, review conversation, commit stepper, progress.
 - Explorer model built from `TreeSnapshot`: nested tree, expand state, breadcrumbs, fuzzy path index; all client-local.
+- Viewed state derivation (`Viewed | ChangedSinceViewed | Unviewed`) and collapse behaviour; progress counts.
+- Commit stepper view from `CommitInfo`.
 - Comment→row placement from anchors.
 - Tests: `insta` snapshots of `ViewModel` for scenario scripts; placement tests for each `Anchor` variant incl. `Outdated`; expanding any folder or fuzzy-searching produces zero `Send` effects; opening a file produces exactly the header + viewport chunk requests.
 
@@ -185,10 +188,10 @@ Goal: usable desktop app.
 ### 4.4 Screens
 - Review list / create (any base vs any head, multi-repo).
 - Merged file tree with progress.
-- Diff view: virtualized rows over `total_rows` (`@tanstack/react-virtual`), chunk fetch by index with placeholder rows, unified/split, expanders, inline comment composer, threads, outdated collapse.
+- Diff view: virtualized rows over `total_rows` (`@tanstack/react-virtual`), chunk fetch by index with placeholder rows, unified/split, hide-whitespace toggle, expanders, inline comment composer, threads, outdated collapse, per-file "viewed" checkbox that collapses the file and a "changed since viewed" badge.
 - File explorer over any ref: instant expand/collapse from the snapshot, fuzzy file search, file-level comments.
 - Review conversation panel (review-level comments, agent request cards).
-- Commit stepper.
+- Commit stepper with commit panel: subject, full body, author and committer with relative + absolute times, parent links.
 - Suggestions with apply.
 - Tests: ReScript component tests for row rendering (each `Row` variant), placeholder → chunk swap, composer state; Playwright smoke against the Tauri dev build for the core flow, including opening a 10k-line file and scrolling end-to-end without a long task > 100 ms.
 

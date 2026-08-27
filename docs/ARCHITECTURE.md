@@ -10,7 +10,8 @@ Status: **draft v1** — core decisions resolved (§10).
 - Multiple **clients** (desktop, browser, TUI, CLI, agents) attach to the daemon over the same protocol.
 - Clients work over **SSH** to a remote daemon with no perceptible latency: all navigation and typing is served from a local cache; only mutations and cache misses touch the wire.
 - **GitHub-style diff review** plus a **file explorer** over any ref, in one UI.
-- Review **any base against any head** (branch, commit, tag, working tree), and **step through commits** within a range.
+- Review **any base against any head** (branch, commit, tag, working tree), and **step through commits** within a range, seeing each commit's full message, author and dates.
+- **Hide whitespace** diffing as a toggle, and **mark as viewed** per file that auto-clears when that file changes in a later head.
 - A **workspace** groups multiple git repos; one review can span repos.
 - **Comments** are first-class, persisted, content-anchored, and record provenance (human vs agent, and which agent/session).
 - Comments can be **inline** (lines of a blob), **file-level** (a whole file, whether or not it is in the diff), or **review-level** (like a non-inline GitHub PR comment).
@@ -85,7 +86,7 @@ anchors_by_blob:   (repo, blob_oid) → [comment_id]   for fast re-anchoring
 workspaces:        workspace_id → Workspace
 ```
 
-Event kinds (initial set): `WorkspaceCreated/Updated`, `RepoAttached/Detached`, `ReviewCreated/Updated/Deleted`, `ReviewTargetsResolved` (snapshot of resolved OIDs), `CommentCreated/Edited/Deleted`, `ThreadResolved/Unresolved`, `ReviewRequested`, `SuggestionApplied`.
+Event kinds (initial set): `WorkspaceCreated/Updated`, `RepoAttached/Detached`, `ReviewCreated/Updated/Deleted`, `ReviewTargetsResolved` (snapshot of resolved OIDs), `CommentCreated/Edited/Deleted/Reanchored`, `ThreadResolved/Unresolved`, `FileViewed/Unviewed`, `ReviewRequested`, `SuggestionApplied`.
 
 Every event carries `{ seq, ts, author, client_id, client_seq }`. `seq` is assigned by the daemon and is the global order. Deletion is a tombstone event; a later GC pass may compact.
 
@@ -94,7 +95,7 @@ Storage engine: **redb** (pure Rust, single file, ACID).
 ### 4.3 Git engine
 
 - `gix` for object access (trees, blobs, commits, refs). Shell out to `git` for things gix does poorly (rename detection, worktree status) until it doesn't.
-- Diffing via `imara-diff`; the daemon produces both raw hunks and a **render model** (see §4.6).
+- Diffing via `imara-diff`; the daemon produces both raw hunks and a **render model** (see §4.6). `RenderOpts.ignore_whitespace` diffs a whitespace-normalised view of each line while rows carry the original text; a file whose diff is whitespace-only renders as a single collapsed "whitespace changes only" row.
 - Working tree is a first-class "ref": `RefSpec::WorkingTree`. A `notify` watcher on each repo invalidates and emits `ReviewTargetsResolved` (debounced) for reviews targeting the working tree. The daemon always emits; **holding** the refresh is a client concern (§5.4).
 - All content is addressed by OID. Diffs are cached by `(base_oid, head_oid, path, opts)`.
 
@@ -109,6 +110,19 @@ Review {
   created, status: Open | Archived
 }
 RefSpec = Branch(name) | Commit(oid) | Tag | WorkingTree | Upstream | Head
+
+CommitInfo { oid, parents, author: Sig, committer: Sig, subject, body }
+Sig        { name, email, time: Timestamp, offset }
+              returned by commits(review) for stepping; shown in full in the commit panel
+
+ViewedMark { review_id, repo_id, path, viewer: Human, blob_oid }
+              "viewed" is bound to the head blob seen; if the current head blob differs the
+              file shows as changed-since-viewed and the mark is cleared in the UI.
+              Human-only: agents cannot set it.
+
+RenderOpts { ignore_whitespace: bool, context_lines }
+              part of every render cache key; whitespace-ignored rows keep the real text,
+              only line pairing/`changed` ranges differ
 
 Comment {
   id: ulid,               client-generated → enables optimistic create
