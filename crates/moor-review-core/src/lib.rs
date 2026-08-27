@@ -1,8 +1,10 @@
-//! Moor review core: git engine, diff render model, anchoring, event store.
+//! Moor review core: event store, git engine, diff render model, anchoring.
 //!
-//! Milestone 1.3+ fills this in. The crate exists now so the workspace, lints
-//! (`wildcard_enum_match_arm`) and CI are wired from the start.
+//! Everything here is daemon-only. Public functions take and return
+//! `moor-protocol` types so every transport is a thin adapter.
 
 #![deny(clippy::wildcard_enum_match_arm)]
+
+pub mod store;
 
 pub use moor_protocol as protocol;

@@ -10,7 +10,7 @@ A daemon-backed code review tool. Comments are *moored* to content (blobs), not 
 
 ## Status
 
-Milestone 1.1–1.2 done: Cargo workspace, CI, `moor-protocol` (all wire types + JSON fixtures), `moor-test-support` (real-git `RepoBuilder`). Next: 1.3 event store.
+Milestone 1.1–1.2 done: Cargo workspace, CI, `moor-protocol` (all wire types + JSON fixtures), `moor-test-support` (real-git `RepoBuilder`). 1.3 done: redb event store with schema versioning. Next: 1.4 git engine.
 
 ## Read
 
