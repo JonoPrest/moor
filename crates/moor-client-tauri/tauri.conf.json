@@ -4,10 +4,7 @@
   "version": "0.1.0",
   "identifier": "dev.moor.desktop",
   "build": {
-    "frontendDist": "../../ui/dist",
-    "devUrl": "http://localhost:5173",
-    "beforeDevCommand": "pnpm --dir ../../ui dev",
-    "beforeBuildCommand": "pnpm --dir ../../ui build"
+    "frontendDist": "../../ui/dist"
   },
   "app": {
     "windows": [{ "title": "moor", "width": 1400, "height": 900 }],

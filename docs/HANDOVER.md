@@ -66,9 +66,10 @@ Written 2026-08-27 at the end of the session that finished Milestone 3 and
   socket via `moor-config` → `moord::contexts::local_spec` +
   `ensure_daemon` (autostart), KV at `app_data_dir()/kv.redb`, seed from
   `fastrand`. `moor-desktop [context]`; only `Local` contexts work (ssh/ws
-  → `SetupError::NotLocal`, see 4.6). Dev: `cargo tauri dev` is not
-  installed; `pnpm --dir ui build` then `cargo run -p moor-client-tauri`
-  serves `ui/dist`. Icon is a placeholder square. Smoke-tested by hand:
+  → `SetupError::NotLocal`, see 4.6). Run: `pnpm --dir ui build` then
+  `cargo run -p moor-client-tauri` (serves the embedded `ui/dist`; no
+  `devUrl` is configured, because with one a debug build loads
+  `localhost:5173` and shows a blank page unless `vite` is running). Icon is a placeholder square. Smoke-tested by hand:
   launches, daemon autostarts, no panic; Playwright still not wired.
   Gotcha: `moor_client_host::spawn` calls `tokio::spawn`, and Tauri's
   `setup` runs outside its runtime — `start_host` enters
