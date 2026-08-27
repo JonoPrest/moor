@@ -171,6 +171,9 @@
   .new-review {
     @apply p-2;
   }
+  .new-review-hint {
+    @apply mt-2 text-sm text-muted;
+  }
   .new-review-target {
     @apply my-1 flex gap-1;
   }

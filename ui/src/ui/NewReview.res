@@ -101,9 +101,21 @@ let make = (~workspaces: array<Workspace.t>, ~dispatch: Action.t => unit) => {
             | None => ()
             }}
         />
-        <UI.Button label="Create" kind=Primary onClick=submit />
+        {switch workspace->Option.flatMap(firstRepo) {
+        | Some(_) => <UI.Button label="Create" kind=Primary onClick=submit />
+        | None => React.null
+        }}
         <UI.Button label="Cancel" kind=Ghost onClick={() => setOpen(_ => false)} />
       </UI.Box>
+      {switch workspace->Option.flatMap(firstRepo) {
+      | Some(_) => React.null
+      | None =>
+        <p className="new-review-hint">
+          {React.string(
+            "No repositories to review. Attach one first: `moor workspace add <name>` (prints an id) then `moor workspace attach <id> [path]`, and refresh (R).",
+          )}
+        </p>
+      }}
     </form>
   }
 }

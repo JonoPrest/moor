@@ -225,6 +225,17 @@ describe("NewReview", () => {
   })
 })
 
+describe("NewReview (no repos)", () => {
+  test("explains how to attach a repo instead of offering Create", () => {
+    let dispatch = fn()
+    let _ = render(<NewReview workspaces=[] dispatch />)
+    FireEvent.click(Screen.getByText("New review"))
+    expect(Array.length(Screen.queryAllByText("Create")))->toBe(0)
+    let _ = Screen.getByTextRe(%re("/workspace attach/"))
+    expect(dispatch)->not_->toHaveBeenCalled
+  })
+})
+
 describe("Tree (viewed)", () => {
   test("the per-file checkbox marks and unmarks viewed without moving focus", () => {
     let dispatch = fn()

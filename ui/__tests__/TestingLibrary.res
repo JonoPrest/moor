@@ -11,6 +11,10 @@ module Screen = {
   external getByText: string => element = "getByText"
   @module("@testing-library/react") @scope("screen")
   external getByPlaceholderText: string => element = "getByPlaceholderText"
+  @module("@testing-library/react") @scope("screen")
+  external queryAllByText: string => array<element> = "queryAllByText"
+  @module("@testing-library/react") @scope("screen")
+  external getByTextRe: RegExp.t => element = "getByText"
 }
 
 module FireEvent = {
