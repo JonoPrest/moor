@@ -572,6 +572,115 @@ fn mismatched_and_unknown_responses_are_typed() {
     );
 }
 
+#[test]
+fn draft_anchors_at_the_head_seen_when_opened_and_the_daemon_reanchors() {
+    use moor_protocol::{BlobOid, CommentState, ContextHash, LineNo, LineRange, RepoPath, Side};
+    let id = ReviewId::from_parts(4, 1);
+    let mut core = subscribed(1);
+    open(&mut core, id);
+    core.handle(Input::Tick(1_000)).unwrap();
+    let anchor_at = |fill: u8, line: u32| Anchor::Lines {
+        repo_id: repo_id(),
+        path: RepoPath::new("src/lib.rs").unwrap(),
+        side: Side::Head,
+        blob_oid: BlobOid::new(Oid::from_bytes([fill; 20])),
+        lines: LineRange::single(LineNo::new(line).unwrap()),
+        context_hash: ContextHash::new(7),
+    };
+    // The host opens the editor against the head it is showing (blob 1).
+    core.handle(Input::User(Action::DraftOpened {
+        anchor: anchor_at(1, 10),
+    }))
+    .unwrap();
+    // The working tree moves on while the user types: held back.
+    let effects = core
+        .handle(Input::Server(ServerMsg::Event {
+            event: event(
+                2,
+                EventBody::ReviewTargetsResolved {
+                    review_id: id,
+                    targets: resolved(2),
+                },
+            ),
+        }))
+        .unwrap();
+    assert_eq!(rendered(&effects), vec![ViewSection::Draft]);
+    assert!(core.view().pending_refresh);
+    assert_eq!(core.view().review.as_ref().unwrap().snapshot.resolved, None);
+
+    // Submit: the mutation carries the anchor from draft-open time, the
+    // refresh lands afterwards, and the optimistic comment shows.
+    let effects = core
+        .handle(Input::User(Action::DraftSubmitted {
+            body: "on the old head".into(),
+        }))
+        .unwrap();
+    let (req, request) = sent_request(&effects).unwrap();
+    let Request::Mutate {
+        client_seq,
+        mutation: Mutation::AddComment {
+            anchor, comment_id, ..
+        },
+    } = request
+    else {
+        panic!("expected AddComment, got {request:?}");
+    };
+    assert_eq!(anchor, anchor_at(1, 10));
+    let open = core.view().review.as_ref().unwrap();
+    assert_eq!(open.snapshot.resolved, Some(resolved(2)));
+    assert_eq!(open.pending.len(), 1);
+    assert_eq!(open.snapshot.comments[0].anchor, anchor_at(1, 10));
+    assert_eq!(open.snapshot.comments[0].state, CommentState::Live);
+
+    // The daemon commits it as-is (echo retires the pending entry)...
+    let committed = Event {
+        seq: Seq::new(3),
+        ts: Timestamp::from_millis(1_000),
+        author: config().author,
+        client_id: core.client_id(),
+        client_seq,
+        body: EventBody::CommentCreated {
+            comment: core.view().review.as_ref().unwrap().snapshot.comments[0].clone(),
+        },
+    };
+    let effects = core
+        .handle(Input::Server(ServerMsg::Response {
+            id: req,
+            response: Response::Committed { event: committed },
+        }))
+        .unwrap();
+    assert_eq!(rendered(&effects), vec![ViewSection::Threads]);
+    assert!(core.view().review.as_ref().unwrap().pending.is_empty());
+    assert_eq!(core.pending_count(), 0);
+
+    // ...then re-anchors it against the new head: mapped to blob 2, line 12,
+    // or marked outdated when it cannot be mapped.
+    let effects = core
+        .handle(Input::Server(ServerMsg::Event {
+            event: event(
+                4,
+                EventBody::CommentReanchored {
+                    review_id: id,
+                    comment_id,
+                    anchor: anchor_at(2, 12),
+                    state: CommentState::Outdated {
+                        last_good_anchor: anchor_at(1, 10),
+                    },
+                },
+            ),
+        }))
+        .unwrap();
+    assert_eq!(rendered(&effects), vec![ViewSection::Threads]);
+    let c = &core.view().review.as_ref().unwrap().snapshot.comments[0];
+    assert_eq!(c.anchor, anchor_at(2, 12));
+    assert_eq!(
+        c.state,
+        CommentState::Outdated {
+            last_good_anchor: anchor_at(1, 10)
+        }
+    );
+}
+
 // ---- proptest: random input sequences never panic; rejections are no-ops ----
 
 fn review_id_strategy() -> impl Strategy<Value = ReviewId> {
