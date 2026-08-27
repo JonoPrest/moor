@@ -67,6 +67,8 @@ pub enum Command {
     Disconnect,
     /// Fetch the commit list for the focused repo.
     Commits,
+    /// Re-list workspaces and reviews.
+    Refresh,
 }
 
 /// A named key that is not a character.
@@ -390,6 +392,7 @@ impl Keymap {
             b(X::ReviewList, keys!("g g"), C::GoTop, false),
             b(X::ReviewList, keys!("G"), C::GoBottom, false),
             b(X::ReviewList, keys!("enter"), C::Open, true),
+            b(X::ReviewList, keys!("R"), C::Refresh, false),
             // Tree
             b(X::Tree, keys!("j"), C::MoveDown, true),
             b(X::Tree, keys!("k"), C::MoveUp, true),
@@ -639,6 +642,7 @@ pub fn label(command: Command) -> &'static str {
         Command::Connect => "connect",
         Command::Disconnect => "disconnect",
         Command::Commits => "commits",
+        Command::Refresh => "refresh",
     }
 }
 

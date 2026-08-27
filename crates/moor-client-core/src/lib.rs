@@ -38,9 +38,9 @@ use std::collections::BTreeMap;
 
 use moor_protocol::{
     Anchor, Author, BuildInfo, ClientId, ClientMsg, ClientSeq, CommentId, CommentKind, Event,
-    EventBody, Mutation, ProtocolVersion, RenderTarget, RepoId, RepoPath, Request, RequestId,
-    Response, ReviewId, ReviewSnapshot, RpcError, Seq, ServerMsg, Since, StreamItem,
-    SubscribeScope, ThreadId, Timestamp, ViewSection, WorkspaceId,
+    EventBody, Mutation, NonEmpty, ProtocolVersion, RenderTarget, RepoId, RepoPath, Request,
+    RequestId, Response, ReviewId, ReviewSnapshot, ReviewTarget, RpcError, Seq, ServerMsg, Since,
+    StreamItem, SubscribeScope, ThreadId, Timestamp, ViewSection, WorkspaceId,
 };
 use serde::{Deserialize, Serialize};
 use strum::EnumDiscriminants;
@@ -119,8 +119,18 @@ pub enum TransportEvent {
 pub enum Action {
     Connect,
     Disconnect,
+    /// Refresh the workspace list (and, on its answer, every review list).
+    /// Done automatically on subscribe.
+    ListWorkspaces,
     ListReviews {
         workspace_id: WorkspaceId,
+    },
+    /// Create a review; the id is minted by the core. Not optimistic: the
+    /// `ReviewCreated` event adds it to the list.
+    CreateReview {
+        workspace_id: WorkspaceId,
+        title: String,
+        targets: NonEmpty<ReviewTarget>,
     },
     OpenReview {
         review_id: ReviewId,
@@ -289,7 +299,10 @@ pub enum CoreError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum InFlight {
     Subscribe,
-    ListReviews,
+    ListWorkspaces,
+    ListReviews {
+        workspace_id: WorkspaceId,
+    },
     /// Streamed open (local daemon): snapshot, trees, headers, first chunks.
     OpenReview {
         review_id: ReviewId,
@@ -327,7 +340,8 @@ impl InFlight {
             | InFlight::FileRender { .. }
             | InFlight::RenderChunk { .. } => true,
             InFlight::Subscribe
-            | InFlight::ListReviews
+            | InFlight::ListWorkspaces
+            | InFlight::ListReviews { .. }
             | InFlight::OpenReview { .. }
             | InFlight::ReviewSnapshot { .. }
             | InFlight::ListFiles { .. }
@@ -345,7 +359,8 @@ impl InFlight {
             }),
             InFlight::RenderChunk { key } => Some(key.clone()),
             InFlight::Subscribe
-            | InFlight::ListReviews
+            | InFlight::ListWorkspaces
+            | InFlight::ListReviews { .. }
             | InFlight::OpenReview { .. }
             | InFlight::ReviewSnapshot { .. }
             | InFlight::ListFiles { .. }
@@ -521,6 +536,8 @@ impl ClientCore {
 
     /// Recompute the parts of the view that are functions of core state
     /// (explorer, progress) and report which changed.
+    // One block per derived panel; splitting would hide what is derived.
+    #[allow(clippy::too_many_lines)]
     fn derive(&mut self) -> Vec<ViewSection> {
         let mut sections = Vec::new();
         let (tree, progress) = match (&self.view.review, &self.committed) {
@@ -546,8 +563,15 @@ impl ClientCore {
                     repo_id: f.render.repo_id,
                     path: f.render.path.clone(),
                 });
+                let repo_names: Vec<(RepoId, String)> = self
+                    .view
+                    .workspaces
+                    .iter()
+                    .flat_map(|w| w.repos.iter().map(|r| (r.id, r.display_name.clone())))
+                    .collect();
                 let inputs = explorer::ExplorerInputs {
                     snapshot: &open.snapshot,
+                    repo_names: &repo_names,
                     trees,
                     files: &open.files,
                     open_file: open_file.as_ref(),
@@ -780,11 +804,40 @@ impl ClientCore {
                     Ok(vec![Effect::Disconnect])
                 }
             },
+            Action::ListWorkspaces => {
+                self.require_subscribed()?;
+                Ok(vec![self.request(
+                    Request::ListWorkspaces,
+                    InFlight::ListWorkspaces,
+                )])
+            }
             Action::ListReviews { workspace_id } => {
                 self.require_subscribed()?;
                 Ok(vec![self.request(
                     Request::ListReviews { workspace_id },
-                    InFlight::ListReviews,
+                    InFlight::ListReviews { workspace_id },
+                )])
+            }
+            Action::CreateReview {
+                workspace_id,
+                title,
+                targets,
+            } => {
+                self.require_subscribed()?;
+                let review_id = self.ids.review_id(self.now);
+                let client_seq = self.next_client_seq;
+                self.next_client_seq = client_seq.next();
+                Ok(vec![self.request(
+                    Request::Mutate {
+                        client_seq,
+                        mutation: Mutation::CreateReview {
+                            review_id,
+                            workspace_id,
+                            title,
+                            targets,
+                        },
+                    },
+                    InFlight::Mutate { client_seq },
                 )])
             }
             Action::OpenReview { review_id } => {
@@ -1375,7 +1428,8 @@ impl ClientCore {
                         self.content_done(&mut effects);
                     }
                     InFlight::Subscribe
-                    | InFlight::ListReviews
+                    | InFlight::ListWorkspaces
+                    | InFlight::ListReviews { .. }
                     | InFlight::ReviewSnapshot { .. }
                     | InFlight::ListFiles { .. }
                     | InFlight::ListCommits { .. }
@@ -1581,7 +1635,8 @@ impl ClientCore {
             ) => return Err(unexpected("Header or Chunk")),
             (
                 InFlight::Subscribe
-                | InFlight::ListReviews
+                | InFlight::ListWorkspaces
+                | InFlight::ListReviews { .. }
                 | InFlight::ReviewSnapshot { .. }
                 | InFlight::ListFiles { .. }
                 | InFlight::ListCommits { .. }
@@ -1637,11 +1692,32 @@ impl ClientCore {
                         )
                     })
                     .collect();
+                // The review list is the union of every workspace's reviews;
+                // start with the workspaces.
+                effects.push(self.request(Request::ListWorkspaces, InFlight::ListWorkspaces));
                 effects.push(render(&[ViewSection::Connection]));
                 effects
             }
-            (InFlight::ListReviews, Response::Reviews { reviews }) => {
-                self.view.reviews = reviews;
+            (InFlight::ListWorkspaces, Response::Workspaces { workspaces }) => {
+                let ids: Vec<WorkspaceId> = workspaces.iter().map(|w| w.id).collect();
+                self.view.workspaces = workspaces;
+                let mut effects: Vec<Effect> = ids
+                    .into_iter()
+                    .map(|workspace_id| {
+                        self.request(
+                            Request::ListReviews { workspace_id },
+                            InFlight::ListReviews { workspace_id },
+                        )
+                    })
+                    .collect();
+                effects.push(render(&[ViewSection::ReviewList]));
+                effects
+            }
+            (InFlight::ListReviews { workspace_id }, Response::Reviews { reviews }) => {
+                // Replace this workspace's reviews, keep the others'.
+                self.view.reviews.retain(|r| r.workspace_id != workspace_id);
+                self.view.reviews.extend(reviews);
+                self.view.reviews.sort_by_key(|r| r.created);
                 vec![render(&[ViewSection::ReviewList])]
             }
             (InFlight::ReviewSnapshot { review_id }, Response::ReviewSnapshot { snapshot }) => {
@@ -1746,7 +1822,8 @@ impl ClientCore {
             (waiting, _) => {
                 let expected = match waiting {
                     InFlight::Subscribe => "Subscribed",
-                    InFlight::ListReviews => "Reviews",
+                    InFlight::ListWorkspaces => "Workspaces",
+                    InFlight::ListReviews { .. } => "Reviews",
                     InFlight::OpenReview { .. } | InFlight::FileRender { .. } => "StreamItem",
                     InFlight::ReviewSnapshot { .. } => "ReviewSnapshot",
                     InFlight::ListFiles { .. } => "Files",
@@ -1764,6 +1841,8 @@ impl ClientCore {
 
     /// Fold a committed event into the view: the review list first, then the
     /// open review's committed snapshot, then the pending list on top.
+    // One arm per event; splitting would hide the exhaustive match.
+    #[allow(clippy::too_many_lines)]
     fn apply_event(&mut self, event: Event) -> Vec<Effect> {
         let mut sections = Vec::new();
         let mut effects = Vec::new();
@@ -1814,6 +1893,48 @@ impl ClientCore {
                     vec![render(&sections)]
                 };
             }
+            EventBody::WorkspaceCreated { workspace } => {
+                self.view.workspaces.retain(|w| w.id != workspace.id);
+                self.view.workspaces.push(workspace.clone());
+                sections.push(ViewSection::ReviewList);
+            }
+            EventBody::WorkspaceUpdated { workspace_id, name } => {
+                if let Some(w) = self
+                    .view
+                    .workspaces
+                    .iter_mut()
+                    .find(|w| w.id == *workspace_id)
+                {
+                    w.name.clone_from(name);
+                    sections.push(ViewSection::ReviewList);
+                }
+            }
+            EventBody::RepoAttached { workspace_id, repo } => {
+                if let Some(w) = self
+                    .view
+                    .workspaces
+                    .iter_mut()
+                    .find(|w| w.id == *workspace_id)
+                {
+                    w.repos.retain(|r| r.id != repo.id);
+                    w.repos.push(repo.clone());
+                    sections.push(ViewSection::ReviewList);
+                }
+            }
+            EventBody::RepoDetached {
+                workspace_id,
+                repo_id,
+            } => {
+                if let Some(w) = self
+                    .view
+                    .workspaces
+                    .iter_mut()
+                    .find(|w| w.id == *workspace_id)
+                {
+                    w.repos.retain(|r| r.id != *repo_id);
+                    sections.push(ViewSection::ReviewList);
+                }
+            }
             EventBody::ReviewTargetsResolved { .. }
             | EventBody::CommentCreated { .. }
             | EventBody::CommentEdited { .. }
@@ -1824,11 +1945,7 @@ impl ClientCore {
             | EventBody::FileViewed { .. }
             | EventBody::FileUnviewed { .. }
             | EventBody::ReviewRequested { .. }
-            | EventBody::SuggestionApplied { .. }
-            | EventBody::WorkspaceCreated { .. }
-            | EventBody::WorkspaceUpdated { .. }
-            | EventBody::RepoAttached { .. }
-            | EventBody::RepoDetached { .. } => {}
+            | EventBody::SuggestionApplied { .. } => {}
         }
         let concerns_open = event
             .body

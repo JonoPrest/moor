@@ -30,5 +30,23 @@
       "workspace_id": "01HF7YAT000000000000000001"
     }
   ],
-  "type": "ReviewList"
+  "type": "ReviewList",
+  "workspaces": [
+    {
+      "id": "01HF7YAT000000000000000001",
+      "name": "hacks",
+      "repos": [
+        {
+          "display_name": "moor",
+          "id": "01HF7YAT000000000000000002",
+          "path": "/home/ada/src/moor"
+        },
+        {
+          "display_name": "envio",
+          "id": "01HF7YAT000000000000000003",
+          "path": "/home/ada/src/envio"
+        }
+      ]
+    }
+  ]
 }

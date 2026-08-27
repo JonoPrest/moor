@@ -307,7 +307,8 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 | Command::ToggleHelp
                 | Command::Connect
                 | Command::Disconnect
-                | Command::Commits => false,
+                | Command::Commits
+                | Command::Refresh => false,
             };
             let found = if forward {
                 rows.iter().find(|r| r.index > row && wanted(r))
@@ -597,6 +598,7 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
         Command::ToggleHelp => Ok(Action::ToggleHelp),
         Command::Connect => Ok(Action::Connect),
         Command::Disconnect => Ok(Action::Disconnect),
+        Command::Refresh => Ok(Action::ListWorkspaces),
         Command::Commits => {
             let file = target_file(view, focus);
             let repo_id = match (file, view.review.as_ref()) {

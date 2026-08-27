@@ -553,8 +553,14 @@ enum_fixture!(
     [
         Action::Connect,
         Action::Disconnect,
+        Action::ListWorkspaces,
         Action::ListReviews {
             workspace_id: proto::<Workspace>()?.id,
+        },
+        Action::CreateReview {
+            workspace_id: proto::<Workspace>()?.id,
+            title: "Keyboard-first client core".into(),
+            targets: proto::<Review>()?.targets,
         },
         Action::OpenReview {
             review_id: review_id()?,
@@ -667,6 +673,7 @@ enum_fixture!(
             last_error: Some(proto_named::<RpcError>("NotFound")?),
         },
         ViewPatch::ReviewList {
+            workspaces: vec![proto::<Workspace>()?],
             reviews: vec![proto::<Review>()?],
         },
         ViewPatch::Tree {
@@ -719,6 +726,7 @@ struct_fixture!(
         help: None,
         connection: ConnectionView::Subscribed,
         last_error: None,
+        workspaces: vec![proto::<Workspace>()?],
         reviews: vec![proto::<Review>()?],
         review: Some(local::<OpenReview>()?),
         draft: Some(local::<Draft>()?),

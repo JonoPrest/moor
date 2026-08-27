@@ -271,6 +271,7 @@ expression: core.view()
     "type": "Subscribed"
   },
   "last_error": null,
+  "workspaces": [],
   "reviews": [
     {
       "id": "00000000040000000000000001",

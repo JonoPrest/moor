@@ -353,8 +353,9 @@ fn every_action_is_reachable_from_a_binding() {
     // choice, a scroll position — though `Open` also produces Viewport).
     let host_only: BTreeSet<ActionKind> = [
         ActionKind::DraftSubmitted,
-        ActionKind::Reply,       // `r` opens a reply draft; the text is host's
-        ActionKind::EditComment, // edit text is host's
+        ActionKind::Reply,        // `r` opens a reply draft; the text is host's
+        ActionKind::EditComment,  // edit text is host's
+        ActionKind::CreateReview, // title and targets come from a form
         ActionKind::ListReviews,
         ActionKind::FileSearch, // produced (with an empty query) — see below
     ]

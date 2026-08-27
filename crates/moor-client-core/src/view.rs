@@ -3,7 +3,7 @@
 
 use moor_protocol::{
     Anchor, ClientSeq, EventBody, RenderOpts, Review, ReviewSnapshot, RpcError, ThreadId, TreeOid,
-    ViewSection,
+    ViewSection, Workspace,
 };
 
 use crate::cache::RenderKey;
@@ -175,6 +175,9 @@ pub struct ViewModel {
     pub connection: ConnectionView,
     /// Last request error the daemon returned; cleared on (re)subscribe.
     pub last_error: Option<RpcError>,
+    /// Workspaces and their repos, listed on subscribe; the review list is
+    /// the union of every workspace's reviews.
+    pub workspaces: Vec<Workspace>,
     pub reviews: Vec<Review>,
     pub review: Option<OpenReview>,
     pub draft: Option<Draft>,

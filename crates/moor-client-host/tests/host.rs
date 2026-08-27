@@ -242,7 +242,7 @@ async fn connect_and_open(
     until(
         rx,
         seen,
-        |p| matches!(p, ViewPatch::ReviewList { reviews } if reviews.len() == 1),
+        |p| matches!(p, ViewPatch::ReviewList { reviews, .. } if reviews.len() == 1),
     )
     .await;
     assert!(handle.dispatch(Action::OpenReview {

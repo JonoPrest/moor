@@ -2,7 +2,7 @@
 //! (`IdSeed`) and the current time on every `Input::Tick`; ids are ULIDs of
 //! that time plus a counter-mixed hash of the seed.
 
-use moor_protocol::CommentId;
+use moor_protocol::{CommentId, ReviewId};
 
 /// 128 bits of host-supplied entropy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -25,6 +25,11 @@ impl IdGen {
     pub(crate) fn comment_id(&mut self, now_ms: u64) -> CommentId {
         self.counter += 1;
         CommentId::from_parts(now_ms, self.random())
+    }
+
+    pub(crate) fn review_id(&mut self, now_ms: u64) -> ReviewId {
+        self.counter += 1;
+        ReviewId::from_parts(now_ms, self.random())
     }
 
     /// `splitmix64` over the seed and counter, two lanes for 128 bits; the

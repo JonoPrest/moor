@@ -443,8 +443,16 @@ impl Sim {
                     response: Response::Files { files: Vec::new() },
                 },
             ),
-            Request::ListWorkspaces
-            | Request::ListReviews { .. }
+            Request::ListWorkspaces => self.push_down(
+                peer,
+                ServerMsg::Response {
+                    id,
+                    response: Response::Workspaces {
+                        workspaces: Vec::new(),
+                    },
+                },
+            ),
+            Request::ListReviews { .. }
             | Request::GetReview { .. }
             | Request::ResolveTargets { .. }
             | Request::ListCommits { .. }

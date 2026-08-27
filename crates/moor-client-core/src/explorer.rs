@@ -100,6 +100,9 @@ pub(crate) struct ExplorerState {
 /// Inputs the tree is derived from.
 pub(crate) struct ExplorerInputs<'a> {
     pub(crate) snapshot: &'a ReviewSnapshot,
+    /// Repo display names by id, from the workspaces; roots fall back to
+    /// the id when a repo is unknown.
+    pub(crate) repo_names: &'a [(RepoId, String)],
     /// Head tree per repo, when cached.
     pub(crate) trees: Vec<&'a TreeSnapshot>,
     pub(crate) files: &'a [RenderKey],
@@ -214,7 +217,11 @@ pub(crate) fn build(inputs: &ExplorerInputs<'_>) -> TreeView {
             let children = nest(inputs, repo_id, &leaves, None);
             let changed_below = count_changed(&children);
             TreeNode::Dir {
-                name: repo_id.to_string(),
+                name: inputs
+                    .repo_names
+                    .iter()
+                    .find(|(id, _)| *id == repo_id)
+                    .map_or_else(|| repo_id.to_string(), |(_, n)| n.clone()),
                 repo_id,
                 path: None,
                 expanded: inputs.state.expanded.contains(&(repo_id, None)),
@@ -224,7 +231,12 @@ pub(crate) fn build(inputs: &ExplorerInputs<'_>) -> TreeView {
         })
         .collect();
     let breadcrumbs = inputs.open_file.map_or_else(Vec::new, |f| {
-        std::iter::once(f.repo_id.to_string())
+        let root = inputs
+            .repo_names
+            .iter()
+            .find(|(id, _)| *id == f.repo_id)
+            .map_or_else(|| f.repo_id.to_string(), |(_, n)| n.clone());
+        std::iter::once(root)
             .chain(f.path.components().map(str::to_owned))
             .collect()
     });
