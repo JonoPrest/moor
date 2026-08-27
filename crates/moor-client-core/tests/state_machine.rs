@@ -409,7 +409,7 @@ fn draft_lifecycle_defers_refresh_and_submits_one_add_comment() {
             ViewSection::Threads,
             ViewSection::Draft,
             ViewSection::Diff,
-            ViewSection::Threads, // pending comment re-applied over the refresh
+            ViewSection::Conversation, // the comment is review-anchored
         ]
     );
     let open = core.view().review.as_ref().unwrap();
@@ -482,7 +482,10 @@ fn events_update_only_what_they_touch() {
             ),
         }))
         .unwrap();
-    assert_eq!(rendered(&effects), vec![ViewSection::Threads]);
+    assert_eq!(
+        rendered(&effects),
+        vec![ViewSection::Threads, ViewSection::Conversation]
+    );
     assert_eq!(
         core.view().review.as_ref().unwrap().snapshot.comments.len(),
         1

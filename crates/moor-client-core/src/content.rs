@@ -800,7 +800,8 @@ impl ClientCore {
                 &mut effects,
             );
         }
-        effects.push(crate::render(&[ViewSection::Diff, ViewSection::Focus]));
+        // The diff rows themselves are derived after this returns.
+        effects.push(crate::render(&[ViewSection::Focus]));
         Ok(effects)
     }
 
@@ -815,7 +816,7 @@ impl ClientCore {
         self.prune_queue(|f| !matches!(f, Fetch::Chunk { .. }));
         let evicted = self.retain_review_pins();
         self.content.write_through(evicted, &mut effects);
-        effects.push(crate::render(&[ViewSection::Diff, ViewSection::Focus]));
+        effects.push(crate::render(&[ViewSection::Focus]));
         Ok(effects)
     }
 

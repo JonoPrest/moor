@@ -7,6 +7,7 @@ use moor_protocol::{
 };
 
 use crate::cache::RenderKey;
+use crate::diff::{CommitStepper, DiffView, ThreadView};
 use crate::explorer::{Progress, TreeView};
 use serde::{Deserialize, Serialize};
 use strum::EnumDiscriminants;
@@ -152,6 +153,13 @@ pub struct ViewModel {
     /// Explorer over the open review's head trees (§5.5); empty otherwise.
     pub tree: TreeView,
     pub progress: Progress,
+    /// The open file over its viewport, with comment overlays (§6.5).
+    pub diff: Option<DiffView>,
+    /// Every thread of the open review, oldest first.
+    pub threads: Vec<ThreadView>,
+    /// Review-level threads (the conversation panel).
+    pub conversation: Vec<ThreadView>,
+    pub stepper: Option<CommitStepper>,
     pub connection: ConnectionView,
     /// Last request error the daemon returned; cleared on (re)subscribe.
     pub last_error: Option<RpcError>,

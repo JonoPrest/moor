@@ -12,7 +12,8 @@
 //!   exactly as it was and produces no effects.
 //! - Draft text never enters the core. `Action::DraftOpened` /
 //!   `DraftSubmitted { body }` / `DraftDiscarded` are the only crossings.
-//! - `Effect::Render` names only the [`ViewSection`]s that changed.
+//! - `Effect::Render` names only the [`ViewSection`]s that changed, and
+//!   there is at most one per input, after every other effect.
 //! - Mutations are optimistic (§5.2): the view shows `committed + pending`;
 //!   a foreign event re-applies the pending list on top; the daemon's own
 //!   echo (matched by `client_id`/`client_seq`) retires a pending entry.
@@ -24,6 +25,7 @@
 mod cache;
 mod connection;
 mod content;
+mod diff;
 mod events;
 mod explorer;
 mod ids;
@@ -42,6 +44,10 @@ use strum::EnumDiscriminants;
 pub use cache::{Bytes, CacheKey, CacheValue, ContentCache, Evicted, RenderKey};
 pub use connection::{Connection, ConnectionKind};
 pub use content::{CacheConfig, DiskTier, DiskTierKind, FileRef, PREFETCH_RADIUS};
+pub use diff::{
+    CommitStepper, DiffRow, DiffView, PendingIds, StepperCommit, ThreadPlace, ThreadPlaceKind,
+    ThreadView, conversation, threads,
+};
 pub use events::{
     EventMeta, MutationError, MutationErrorKind, apply_body, local_event, thread_id_of,
 };
@@ -160,6 +166,14 @@ pub enum Action {
     UnmarkViewed {
         file: FileRef,
     },
+    /// Fetch the commits of one repo of the open review for the stepper.
+    ListCommits {
+        repo_id: RepoId,
+    },
+    /// Move the stepper cursor; `None` shows the whole range.
+    StepCommit {
+        selected: Option<usize>,
+    },
 }
 
 /// Something the host must do for the core.
@@ -218,6 +232,10 @@ pub enum CoreError {
     /// `Forbidden` for agents).
     #[error("only a human viewer can mark files viewed")]
     NotHuman,
+    #[error("no commit list to step through")]
+    NoStepper,
+    #[error("commit index {0} is out of range")]
+    CommitOutOfRange(usize),
     #[error("nothing was loaded under key {0:?}")]
     UnknownKey(Key),
     #[error("the daemon rejected the handshake: {0:?}")]
@@ -242,6 +260,9 @@ pub(crate) enum InFlight {
     },
     ListFiles {
         review_id: ReviewId,
+    },
+    ListCommits {
+        repo_id: RepoId,
     },
     TreeSnapshot {
         root: moor_protocol::TreeOid,
@@ -270,6 +291,7 @@ impl InFlight {
             | InFlight::OpenReview { .. }
             | InFlight::ReviewSnapshot { .. }
             | InFlight::ListFiles { .. }
+            | InFlight::ListCommits { .. }
             | InFlight::Mutate { .. } => false,
         }
     }
@@ -287,6 +309,7 @@ impl InFlight {
             | InFlight::OpenReview { .. }
             | InFlight::ReviewSnapshot { .. }
             | InFlight::ListFiles { .. }
+            | InFlight::ListCommits { .. }
             | InFlight::Mutate { .. } => None,
         }
     }
@@ -324,6 +347,7 @@ pub struct ClientCore {
     /// Mutations sent and not yet echoed by the daemon, in send order.
     pending: Vec<Pending>,
     explorer: explorer::ExplorerState,
+    stepper: Option<CommitStepper>,
     /// `Effect::Load` for the prefs issued; answered or not.
     prefs_loaded: bool,
 }
@@ -359,6 +383,7 @@ impl ClientCore {
             committed: None,
             pending: Vec::new(),
             explorer: explorer::ExplorerState::default(),
+            stepper: None,
             prefs_loaded: false,
         }
     }
@@ -397,9 +422,24 @@ impl ClientCore {
                 Vec::new()
             }
         };
-        let derived = self.derive();
-        if !derived.is_empty() {
-            effects.push(render(&derived));
+        // One `Render` per input: the union of every section touched, in
+        // first-touched order, after every other effect.
+        let mut sections: Vec<ViewSection> = Vec::new();
+        effects.retain(|e| match e {
+            Effect::Render(delta) => {
+                sections.extend(delta.sections.iter().copied());
+                false
+            }
+            Effect::Connect
+            | Effect::Disconnect
+            | Effect::Send(_)
+            | Effect::Persist { .. }
+            | Effect::Load { .. }
+            | Effect::Remove { .. } => true,
+        });
+        sections.extend(self.derive());
+        if !sections.is_empty() {
+            effects.push(render(&sections));
         }
         Ok(effects)
     }
@@ -454,7 +494,69 @@ impl ClientCore {
             self.view.progress = progress;
             sections.push(ViewSection::Progress);
         }
+        let (diff, threads) = match &self.view.review {
+            Some(open) => {
+                let pending = self.pending_ids();
+                let threads = diff::threads(&open.snapshot, &pending);
+                let diff = open.open_file.as_ref().and_then(|f| {
+                    diff::diff_view(
+                        &self.content.cache,
+                        &open.snapshot,
+                        &f.render,
+                        f.first_row,
+                        f.last_row,
+                    )
+                });
+                (diff, threads)
+            }
+            None => (None, Vec::new()),
+        };
+        if diff != self.view.diff {
+            self.view.diff = diff;
+            sections.push(ViewSection::Diff);
+        }
+        if threads != self.view.threads {
+            let conversation = diff::conversation(&threads);
+            if conversation != self.view.conversation {
+                self.view.conversation = conversation;
+                sections.push(ViewSection::Conversation);
+            }
+            self.view.threads = threads;
+            sections.push(ViewSection::Threads);
+        }
+        if self.stepper != self.view.stepper {
+            self.view.stepper.clone_from(&self.stepper);
+            sections.push(ViewSection::CommitStepper);
+        }
         sections
+    }
+
+    /// Comment and thread ids the pending mutations touch.
+    fn pending_ids(&self) -> PendingIds {
+        let mut ids = PendingIds::default();
+        for p in &self.pending {
+            match &p.body {
+                EventBody::CommentCreated { comment } => ids.comments.push(comment.id),
+                EventBody::CommentEdited { comment_id, .. }
+                | EventBody::CommentDeleted { comment_id, .. }
+                | EventBody::CommentReanchored { comment_id, .. } => ids.comments.push(*comment_id),
+                EventBody::ThreadResolved { thread_id, .. }
+                | EventBody::ThreadUnresolved { thread_id, .. } => ids.threads.push(*thread_id),
+                EventBody::ReviewCreated { .. }
+                | EventBody::ReviewUpdated { .. }
+                | EventBody::ReviewDeleted { .. }
+                | EventBody::ReviewTargetsResolved { .. }
+                | EventBody::FileViewed { .. }
+                | EventBody::FileUnviewed { .. }
+                | EventBody::ReviewRequested { .. }
+                | EventBody::SuggestionApplied { .. }
+                | EventBody::WorkspaceCreated { .. }
+                | EventBody::WorkspaceUpdated { .. }
+                | EventBody::RepoAttached { .. }
+                | EventBody::RepoDetached { .. } => {}
+            }
+        }
+        ids
     }
 
     /// The stored preferences arrived (or were absent).
@@ -566,11 +668,8 @@ impl ClientCore {
                 }
                 let mut effects = Vec::new();
                 self.close_review(&mut effects);
-                effects.push(render(&[
-                    ViewSection::Diff,
-                    ViewSection::Threads,
-                    ViewSection::Draft,
-                ]));
+                // Diff, threads, tree, progress: derived after this returns.
+                effects.push(render(&[ViewSection::Draft]));
                 Ok(effects)
             }
             Action::Viewport {
@@ -617,6 +716,26 @@ impl ClientCore {
             }
             Action::MarkViewed { file } => self.mark_viewed(file, true),
             Action::UnmarkViewed { file } => self.mark_viewed(file, false),
+            Action::ListCommits { repo_id } => {
+                let review_id = self.open_review_id()?;
+                self.require_subscribed()?;
+                Ok(vec![self.request(
+                    Request::ListCommits { review_id, repo_id },
+                    InFlight::ListCommits { repo_id },
+                )])
+            }
+            Action::StepCommit { selected } => {
+                let Some(stepper) = &mut self.stepper else {
+                    return Err(CoreError::NoStepper);
+                };
+                if let Some(i) = selected
+                    && i >= stepper.commits.len()
+                {
+                    return Err(CoreError::CommitOutOfRange(i));
+                }
+                stepper.selected = selected;
+                Ok(Vec::new())
+            }
             Action::DraftOpened { anchor } => {
                 if self.view.review.is_none() {
                     return Err(CoreError::NoOpenReview);
@@ -856,6 +975,7 @@ impl ClientCore {
         self.deferred.clear();
         self.committed = None;
         self.pending.clear();
+        self.stepper = None;
         self.review_closed(effects);
     }
 
@@ -1001,6 +1121,7 @@ impl ClientCore {
                     | InFlight::ListReviews
                     | InFlight::ReviewSnapshot { .. }
                     | InFlight::ListFiles { .. }
+                    | InFlight::ListCommits { .. }
                     | InFlight::TreeSnapshot { .. }
                     | InFlight::RenderChunk { .. }
                     | InFlight::Mutate { .. } => {
@@ -1205,6 +1326,7 @@ impl ClientCore {
                 | InFlight::ListReviews
                 | InFlight::ReviewSnapshot { .. }
                 | InFlight::ListFiles { .. }
+                | InFlight::ListCommits { .. }
                 | InFlight::TreeSnapshot { .. }
                 | InFlight::RenderChunk { .. }
                 | InFlight::Mutate { .. },
@@ -1290,6 +1412,12 @@ impl ClientCore {
                 }
                 effects
             }
+            (InFlight::ListCommits { repo_id }, Response::Commits { commits }) => {
+                if self.view.review.is_some() {
+                    self.stepper = Some(CommitStepper::from_commits(repo_id, &commits));
+                }
+                Vec::new()
+            }
             (InFlight::TreeSnapshot { root }, Response::TreeSnapshot { snapshot }) => {
                 if snapshot.root_oid != root {
                     return Err(CoreError::UnexpectedResponse {
@@ -1363,6 +1491,7 @@ impl ClientCore {
                     InFlight::OpenReview { .. } | InFlight::FileRender { .. } => "StreamItem",
                     InFlight::ReviewSnapshot { .. } => "ReviewSnapshot",
                     InFlight::ListFiles { .. } => "Files",
+                    InFlight::ListCommits { .. } => "Commits",
                     InFlight::TreeSnapshot { .. } => "TreeSnapshot",
                     InFlight::RenderChunk { .. } => "RenderChunk",
                     InFlight::Mutate { .. } => "Committed",
