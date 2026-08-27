@@ -3,609 +3,247 @@
 open Ids
 open Domain
 
-type buildInfo = {name: string, version: string}
-let buildInfo: S.t<buildInfo> = S.object(s => {
-  name: s.field("name", S.string),
-  version: s.field("version", S.string),
-})
+module BuildInfo = {
+  @schema
+  type t = {name: string, version: string}
+}
 
-type upgradeNotice = {latest: protocolVersion, message: string}
-let upgradeNotice: S.t<upgradeNotice> = S.object(s => {
-  latest: s.field("latest", protocolVersion),
-  message: s.field("message", S.string),
-})
+module UpgradeNotice = {
+  @schema
+  type t = {latest: protocolVersion, message: string}
+}
 
-type entityKind = Workspace | Repo | Review | Comment | Thread | Ref | Path | Blob | Chunk
-let entityKind: S.t<entityKind> = S.enum([
-  Workspace,
-  Repo,
-  Review,
-  Comment,
-  Thread,
-  Ref,
-  Path,
-  Blob,
-  Chunk,
-])
+module EntityKind = {
+  @schema
+  type t = Workspace | Repo | Review | Comment | Thread | Ref | Path | Blob | Chunk
+}
 
-type rpcError =
-  | NotFound({kind: entityKind, id: string})
-  | Invalid({reason: string})
-  | Forbidden({reason: string})
-  | SeqTooOld({oldest: seq})
-  | Cancelled
-  | UnsupportedProtocol({requested: protocolVersion, supported: array<protocolVersion>})
-  | VersionMismatch({negotiated: protocolVersion, received: protocolVersion})
-  | Internal({message: string})
-let rpcError: S.t<rpcError> = S.union([
-  S.object(s => {
-    s.tag("type", "NotFound")
-    NotFound({kind: s.field("kind", entityKind), id: s.field("id", S.string)})
-  }),
-  S.object(s => {
-    s.tag("type", "Invalid")
-    Invalid({reason: s.field("reason", S.string)})
-  }),
-  S.object(s => {
-    s.tag("type", "Forbidden")
-    Forbidden({reason: s.field("reason", S.string)})
-  }),
-  S.object(s => {
-    s.tag("type", "SeqTooOld")
-    SeqTooOld({oldest: s.field("oldest", seq)})
-  }),
-  S.object(s => {
-    s.tag("type", "Cancelled")
-    Cancelled
-  }),
-  S.object(s => {
-    s.tag("type", "UnsupportedProtocol")
-    UnsupportedProtocol({
-      requested: s.field("requested", protocolVersion),
-      supported: s.field("supported", S.array(protocolVersion)),
-    })
-  }),
-  S.object(s => {
-    s.tag("type", "VersionMismatch")
-    VersionMismatch({
-      negotiated: s.field("negotiated", protocolVersion),
-      received: s.field("received", protocolVersion),
-    })
-  }),
-  S.object(s => {
-    s.tag("type", "Internal")
-    Internal({message: s.field("message", S.string)})
-  }),
-])
+module RpcError = {
+  @@warning("-27")
+  @schema @tag("type")
+  type t =
+    | @as("NotFound") NotFound({kind: EntityKind.t, id: string})
+    | @as("Invalid") Invalid({reason: string})
+    | @as("Forbidden") Forbidden({reason: string})
+    | @as("SeqTooOld") SeqTooOld({oldest: seq})
+    | @as("Cancelled") Cancelled({})
+    | @as("UnsupportedProtocol")
+    UnsupportedProtocol({requested: protocolVersion, supported: array<protocolVersion>})
+    | @as("VersionMismatch")
+    VersionMismatch({negotiated: protocolVersion, received: protocolVersion})
+    | @as("Internal") Internal({message: string})
+  @@warning("+27")
+}
 
-type since = Now | After({seq: seq})
-let since: S.t<since> = S.union([
-  S.object(s => {
-    s.tag("type", "Now")
-    Now
-  }),
-  S.object(s => {
-    s.tag("type", "After")
-    After({seq: s.field("seq", seq)})
-  }),
-])
+module Since = {
+  @@warning("-27")
+  @schema @tag("type")
+  type t =
+    | @as("Now") Now({})
+    | @as("After") After({seq: seq})
+  @@warning("+27")
+}
 
-type subscribeScope =
-  | All
-  | ScopeWorkspace({workspaceId: workspaceId})
-  | ScopeReview({reviewId: reviewId})
-  | AwaitingAgent({agent: string})
-let subscribeScope: S.t<subscribeScope> = S.union([
-  S.object(s => {
-    s.tag("type", "All")
-    All
-  }),
-  S.object(s => {
-    s.tag("type", "Workspace")
-    ScopeWorkspace({workspaceId: s.field("workspace_id", workspaceId)})
-  }),
-  S.object(s => {
-    s.tag("type", "Review")
-    ScopeReview({reviewId: s.field("review_id", reviewId)})
-  }),
-  S.object(s => {
-    s.tag("type", "AwaitingAgent")
-    AwaitingAgent({agent: s.field("agent", S.string)})
-  }),
-])
+module SubscribeScope = {
+  @@warning("-27")
+  @schema @tag("type")
+  type t =
+    | @as("All") All({})
+    | @as("Workspace") Workspace({@as("workspace_id") workspaceId: workspaceId})
+    | @as("Review") Review({@as("review_id") reviewId: reviewId})
+    | @as("AwaitingAgent") AwaitingAgent({agent: string})
+  @@warning("+27")
+}
 
-type viewSection =
-  | Connection
-  | ReviewList
-  | Tree
-  | Diff
-  | Threads
-  | Conversation
-  | CommitStepper
-  | Progress
-  | Focus
-  | Hints
-  | Help
-  | Draft
-let viewSection: S.t<viewSection> = S.enum([
-  Connection,
-  ReviewList,
-  Tree,
-  Diff,
-  Threads,
-  Conversation,
-  CommitStepper,
-  Progress,
-  Focus,
-  Hints,
-  Help,
-  Draft,
-])
+module ViewSection = {
+  @schema
+  type t =
+    | Connection
+    | ReviewList
+    | Tree
+    | Diff
+    | Threads
+    | Conversation
+    | CommitStepper
+    | Progress
+    | Focus
+    | Hints
+    | Help
+    | Draft
+}
 
-type mutation =
-  | CreateWorkspace({workspaceId: workspaceId, name: string})
-  | RenameWorkspace({workspaceId: workspaceId, name: string})
-  | AttachRepo({workspaceId: workspaceId, repoId: repoId, path: string, displayName: string})
-  | DetachRepo({workspaceId: workspaceId, repoId: repoId})
-  | CreateReview({
-      reviewId: reviewId,
-      workspaceId: workspaceId,
-      title: string,
-      targets: array<reviewTarget>,
-    })
-  | UpdateReview({reviewId: reviewId, title: string, status: reviewStatus})
-  | DeleteReview({reviewId: reviewId})
-  | AddComment({
-      reviewId: reviewId,
-      commentId: commentId,
-      kind: commentKind,
-      anchor: anchor,
-      body: string,
-    })
-  | Reply({
-      reviewId: reviewId,
-      threadId: threadId,
-      commentId: commentId,
-      kind: commentKind,
-      body: string,
-    })
-  | EditComment({reviewId: reviewId, commentId: commentId, body: string})
-  | DeleteComment({reviewId: reviewId, commentId: commentId})
-  | ResolveThread({reviewId: reviewId, threadId: threadId})
-  | UnresolveThread({reviewId: reviewId, threadId: threadId})
-  | MarkViewed({reviewId: reviewId, repoId: repoId, path: string})
-  | UnmarkViewed({reviewId: reviewId, repoId: repoId, path: string})
-  | RequestReview({reviewId: reviewId, agent: string, note: string})
-  | ApplySuggestion({reviewId: reviewId, commentId: commentId})
-let mutation: S.t<mutation> = S.union([
-  S.object(s => {
-    s.tag("type", "CreateWorkspace")
-    CreateWorkspace({
-      workspaceId: s.field("workspace_id", workspaceId),
-      name: s.field("name", S.string),
-    })
-  }),
-  S.object(s => {
-    s.tag("type", "RenameWorkspace")
-    RenameWorkspace({
-      workspaceId: s.field("workspace_id", workspaceId),
-      name: s.field("name", S.string),
-    })
-  }),
-  S.object(s => {
-    s.tag("type", "AttachRepo")
+module Mutation = {
+  @schema @tag("type")
+  type t =
+    | @as("CreateWorkspace") CreateWorkspace({@as("workspace_id") workspaceId: workspaceId, name: string})
+    | @as("RenameWorkspace") RenameWorkspace({@as("workspace_id") workspaceId: workspaceId, name: string})
+    | @as("AttachRepo")
     AttachRepo({
-      workspaceId: s.field("workspace_id", workspaceId),
-      repoId: s.field("repo_id", repoId),
-      path: s.field("path", S.string),
-      displayName: s.field("display_name", S.string),
-    })
-  }),
-  S.object(s => {
-    s.tag("type", "DetachRepo")
-    DetachRepo({
-      workspaceId: s.field("workspace_id", workspaceId),
-      repoId: s.field("repo_id", repoId),
-    })
-  }),
-  S.object(s => {
-    s.tag("type", "CreateReview")
+        @as("workspace_id") workspaceId: workspaceId,
+        @as("repo_id") repoId: repoId,
+        path: string,
+        @as("display_name") displayName: string,
+      })
+    | @as("DetachRepo")
+    DetachRepo({@as("workspace_id") workspaceId: workspaceId, @as("repo_id") repoId: repoId})
+    | @as("CreateReview")
     CreateReview({
-      reviewId: s.field("review_id", reviewId),
-      workspaceId: s.field("workspace_id", workspaceId),
-      title: s.field("title", S.string),
-      targets: s.field("targets", S.array(reviewTarget)),
-    })
-  }),
-  S.object(s => {
-    s.tag("type", "UpdateReview")
-    UpdateReview({
-      reviewId: s.field("review_id", reviewId),
-      title: s.field("title", S.string),
-      status: s.field("status", reviewStatus),
-    })
-  }),
-  S.object(s => {
-    s.tag("type", "DeleteReview")
-    DeleteReview({reviewId: s.field("review_id", reviewId)})
-  }),
-  S.object(s => {
-    s.tag("type", "AddComment")
+        @as("review_id") reviewId: reviewId,
+        @as("workspace_id") workspaceId: workspaceId,
+        title: string,
+        targets: array<ReviewTarget.t>,
+      })
+    | @as("UpdateReview")
+    UpdateReview({@as("review_id") reviewId: reviewId, title: string, status: ReviewStatus.t})
+    | @as("DeleteReview") DeleteReview({@as("review_id") reviewId: reviewId})
+    | @as("AddComment")
     AddComment({
-      reviewId: s.field("review_id", reviewId),
-      commentId: s.field("comment_id", commentId),
-      kind: s.field("kind", commentKind),
-      anchor: s.field("anchor", anchor),
-      body: s.field("body", S.string),
-    })
-  }),
-  S.object(s => {
-    s.tag("type", "Reply")
+        @as("review_id") reviewId: reviewId,
+        @as("comment_id") commentId: commentId,
+        kind: CommentKind.t,
+        anchor: Anchor.t,
+        body: string,
+      })
+    | @as("Reply")
     Reply({
-      reviewId: s.field("review_id", reviewId),
-      threadId: s.field("thread_id", threadId),
-      commentId: s.field("comment_id", commentId),
-      kind: s.field("kind", commentKind),
-      body: s.field("body", S.string),
-    })
-  }),
-  S.object(s => {
-    s.tag("type", "EditComment")
-    EditComment({
-      reviewId: s.field("review_id", reviewId),
-      commentId: s.field("comment_id", commentId),
-      body: s.field("body", S.string),
-    })
-  }),
-  S.object(s => {
-    s.tag("type", "DeleteComment")
-    DeleteComment({
-      reviewId: s.field("review_id", reviewId),
-      commentId: s.field("comment_id", commentId),
-    })
-  }),
-  S.object(s => {
-    s.tag("type", "ResolveThread")
-    ResolveThread({
-      reviewId: s.field("review_id", reviewId),
-      threadId: s.field("thread_id", threadId),
-    })
-  }),
-  S.object(s => {
-    s.tag("type", "UnresolveThread")
-    UnresolveThread({
-      reviewId: s.field("review_id", reviewId),
-      threadId: s.field("thread_id", threadId),
-    })
-  }),
-  S.object(s => {
-    s.tag("type", "MarkViewed")
-    MarkViewed({
-      reviewId: s.field("review_id", reviewId),
-      repoId: s.field("repo_id", repoId),
-      path: s.field("path", S.string),
-    })
-  }),
-  S.object(s => {
-    s.tag("type", "UnmarkViewed")
-    UnmarkViewed({
-      reviewId: s.field("review_id", reviewId),
-      repoId: s.field("repo_id", repoId),
-      path: s.field("path", S.string),
-    })
-  }),
-  S.object(s => {
-    s.tag("type", "RequestReview")
-    RequestReview({
-      reviewId: s.field("review_id", reviewId),
-      agent: s.field("agent", S.string),
-      note: s.field("note", S.string),
-    })
-  }),
-  S.object(s => {
-    s.tag("type", "ApplySuggestion")
-    ApplySuggestion({
-      reviewId: s.field("review_id", reviewId),
-      commentId: s.field("comment_id", commentId),
-    })
-  }),
-])
+        @as("review_id") reviewId: reviewId,
+        @as("thread_id") threadId: threadId,
+        @as("comment_id") commentId: commentId,
+        kind: CommentKind.t,
+        body: string,
+      })
+    | @as("EditComment")
+    EditComment({@as("review_id") reviewId: reviewId, @as("comment_id") commentId: commentId, body: string})
+    | @as("DeleteComment")
+    DeleteComment({@as("review_id") reviewId: reviewId, @as("comment_id") commentId: commentId})
+    | @as("ResolveThread")
+    ResolveThread({@as("review_id") reviewId: reviewId, @as("thread_id") threadId: threadId})
+    | @as("UnresolveThread")
+    UnresolveThread({@as("review_id") reviewId: reviewId, @as("thread_id") threadId: threadId})
+    | @as("MarkViewed")
+    MarkViewed({@as("review_id") reviewId: reviewId, @as("repo_id") repoId: repoId, path: string})
+    | @as("UnmarkViewed")
+    UnmarkViewed({@as("review_id") reviewId: reviewId, @as("repo_id") repoId: repoId, path: string})
+    | @as("RequestReview")
+    RequestReview({@as("review_id") reviewId: reviewId, agent: string, note: string})
+    | @as("ApplySuggestion")
+    ApplySuggestion({@as("review_id") reviewId: reviewId, @as("comment_id") commentId: commentId})
+}
 
-type request =
-  | ListWorkspaces
-  | ListReviews({workspaceId: workspaceId})
-  | GetReview({reviewId: reviewId})
-  | ReviewSnapshot({reviewId: reviewId})
-  | ListFiles({reviewId: reviewId})
-  | OpenReview({reviewId: reviewId, opts: renderOpts})
-  | ResolveTargets({reviewId: reviewId})
-  | ListCommits({reviewId: reviewId, repoId: repoId})
-  | TreeSnapshot({repoId: repoId, ref: refSpec})
-  | FileRender({
-      reviewId: reviewId,
-      repoId: repoId,
-      path: string,
-      opts: renderOpts,
-      firstChunk: Render.chunkIndex,
-    })
-  | BlobRender({repoId: repoId, path: string, blobOid: blobOid, firstChunk: Render.chunkIndex})
-  | RenderChunk({
-      repoId: repoId,
-      path: string,
-      target: Render.renderTarget,
-      opts: renderOpts,
-      index: Render.chunkIndex,
-    })
-  | Subscribe({scope: subscribeScope, since: since})
-  | Unsubscribe({scope: subscribeScope})
-  | Mutate({clientSeq: clientSeq, mutation: mutation})
-  | Shutdown
-let request: S.t<request> = S.union([
-  S.object(s => {
-    s.tag("type", "ListWorkspaces")
-    ListWorkspaces
-  }),
-  S.object(s => {
-    s.tag("type", "ListReviews")
-    ListReviews({workspaceId: s.field("workspace_id", workspaceId)})
-  }),
-  S.object(s => {
-    s.tag("type", "GetReview")
-    GetReview({reviewId: s.field("review_id", reviewId)})
-  }),
-  S.object(s => {
-    s.tag("type", "ReviewSnapshot")
-    ReviewSnapshot({reviewId: s.field("review_id", reviewId)})
-  }),
-  S.object(s => {
-    s.tag("type", "ListFiles")
-    ListFiles({reviewId: s.field("review_id", reviewId)})
-  }),
-  S.object(s => {
-    s.tag("type", "OpenReview")
-    OpenReview({reviewId: s.field("review_id", reviewId), opts: s.field("opts", renderOpts)})
-  }),
-  S.object(s => {
-    s.tag("type", "ResolveTargets")
-    ResolveTargets({reviewId: s.field("review_id", reviewId)})
-  }),
-  S.object(s => {
-    s.tag("type", "ListCommits")
-    ListCommits({reviewId: s.field("review_id", reviewId), repoId: s.field("repo_id", repoId)})
-  }),
-  S.object(s => {
-    s.tag("type", "TreeSnapshot")
-    TreeSnapshot({repoId: s.field("repo_id", repoId), ref: s.field("ref", refSpec)})
-  }),
-  S.object(s => {
-    s.tag("type", "FileRender")
+module Request = {
+  @@warning("-27")
+  @schema @tag("type")
+  type t =
+    | @as("ListWorkspaces") ListWorkspaces({})
+    | @as("ListReviews") ListReviews({@as("workspace_id") workspaceId: workspaceId})
+    | @as("GetReview") GetReview({@as("review_id") reviewId: reviewId})
+    | @as("ReviewSnapshot") ReviewSnapshot({@as("review_id") reviewId: reviewId})
+    | @as("ListFiles") ListFiles({@as("review_id") reviewId: reviewId})
+    | @as("OpenReview") OpenReview({@as("review_id") reviewId: reviewId, opts: RenderOpts.t})
+    | @as("ResolveTargets") ResolveTargets({@as("review_id") reviewId: reviewId})
+    | @as("ListCommits")
+    ListCommits({@as("review_id") reviewId: reviewId, @as("repo_id") repoId: repoId})
+    | @as("TreeSnapshot") TreeSnapshot({@as("repo_id") repoId: repoId, @as("ref") ref_: RefSpec.t})
+    | @as("FileRender")
     FileRender({
-      reviewId: s.field("review_id", reviewId),
-      repoId: s.field("repo_id", repoId),
-      path: s.field("path", S.string),
-      opts: s.field("opts", renderOpts),
-      firstChunk: s.field("first_chunk", Render.chunkIndex),
-    })
-  }),
-  S.object(s => {
-    s.tag("type", "BlobRender")
+        @as("review_id") reviewId: reviewId,
+        @as("repo_id") repoId: repoId,
+        path: string,
+        opts: RenderOpts.t,
+        @as("first_chunk") firstChunk: Render.chunkIndex,
+      })
+    | @as("BlobRender")
     BlobRender({
-      repoId: s.field("repo_id", repoId),
-      path: s.field("path", S.string),
-      blobOid: s.field("blob_oid", blobOid),
-      firstChunk: s.field("first_chunk", Render.chunkIndex),
-    })
-  }),
-  S.object(s => {
-    s.tag("type", "RenderChunk")
+        @as("repo_id") repoId: repoId,
+        path: string,
+        @as("blob_oid") blobOid: blobOid,
+        @as("first_chunk") firstChunk: Render.chunkIndex,
+      })
+    | @as("RenderChunk")
     RenderChunk({
-      repoId: s.field("repo_id", repoId),
-      path: s.field("path", S.string),
-      target: s.field("target", Render.renderTarget),
-      opts: s.field("opts", renderOpts),
-      index: s.field("index", Render.chunkIndex),
-    })
-  }),
-  S.object(s => {
-    s.tag("type", "Subscribe")
-    Subscribe({scope: s.field("scope", subscribeScope), since: s.field("since", since)})
-  }),
-  S.object(s => {
-    s.tag("type", "Unsubscribe")
-    Unsubscribe({scope: s.field("scope", subscribeScope)})
-  }),
-  S.object(s => {
-    s.tag("type", "Mutate")
-    Mutate({clientSeq: s.field("client_seq", clientSeq), mutation: s.field("mutation", mutation)})
-  }),
-  S.object(s => {
-    s.tag("type", "Shutdown")
-    Shutdown
-  }),
-])
+        @as("repo_id") repoId: repoId,
+        path: string,
+        target: Render.RenderTarget.t,
+        opts: RenderOpts.t,
+        index: Render.chunkIndex,
+      })
+    | @as("Subscribe") Subscribe({scope: SubscribeScope.t, since: Since.t})
+    | @as("Unsubscribe") Unsubscribe({scope: SubscribeScope.t})
+    | @as("Mutate") Mutate({@as("client_seq") clientSeq: clientSeq, mutation: Mutation.t})
+    | @as("Shutdown") Shutdown({})
+  @@warning("+27")
+}
 
-type response =
-  | Workspaces({workspaces: array<workspace>})
-  | Reviews({reviews: array<review>})
-  | Review({review: review})
-  | ReviewSnapshot({snapshot: reviewSnapshot})
-  | Files({files: array<fileChange>})
-  | Resolved({targets: array<resolvedTarget>, changed: bool})
-  | Commits({commits: array<commitInfo>})
-  | TreeSnapshot({snapshot: treeSnapshot})
-  | RenderChunk({chunk: Render.renderChunk})
-  | Subscribed({seq: seq})
-  | Unsubscribed
-  | Committed({event: Events.event})
-  | ShuttingDown
-let response: S.t<response> = S.union([
-  S.object(s => {
-    s.tag("type", "Workspaces")
-    Workspaces({workspaces: s.field("workspaces", S.array(workspace))})
-  }),
-  S.object(s => {
-    s.tag("type", "Reviews")
-    Reviews({reviews: s.field("reviews", S.array(review))})
-  }),
-  S.object(s => {
-    s.tag("type", "Review")
-    Review({review: s.field("review", review)})
-  }),
-  S.object(s => {
-    s.tag("type", "ReviewSnapshot")
-    ReviewSnapshot({snapshot: s.field("snapshot", reviewSnapshot)})
-  }),
-  S.object(s => {
-    s.tag("type", "Files")
-    Files({files: s.field("files", S.array(fileChange))})
-  }),
-  S.object(s => {
-    s.tag("type", "Resolved")
-    Resolved({
-      targets: s.field("targets", S.array(resolvedTarget)),
-      changed: s.field("changed", S.bool),
-    })
-  }),
-  S.object(s => {
-    s.tag("type", "Commits")
-    Commits({commits: s.field("commits", S.array(commitInfo))})
-  }),
-  S.object(s => {
-    s.tag("type", "TreeSnapshot")
-    TreeSnapshot({snapshot: s.field("snapshot", treeSnapshot)})
-  }),
-  S.object(s => {
-    s.tag("type", "RenderChunk")
-    RenderChunk({chunk: s.field("chunk", Render.renderChunk)})
-  }),
-  S.object(s => {
-    s.tag("type", "Subscribed")
-    Subscribed({seq: s.field("seq", seq)})
-  }),
-  S.object(s => {
-    s.tag("type", "Unsubscribed")
-    Unsubscribed
-  }),
-  S.object(s => {
-    s.tag("type", "Committed")
-    Committed({event: s.field("event", Events.event)})
-  }),
-  S.object(s => {
-    s.tag("type", "ShuttingDown")
-    ShuttingDown
-  }),
-])
+module Response = {
+  @@warning("-27")
+  @schema @tag("type")
+  type t =
+    | @as("Workspaces") Workspaces({workspaces: array<Workspace.t>})
+    | @as("Reviews") Reviews({reviews: array<Review.t>})
+    | @as("Review") Review({review: Review.t})
+    | @as("ReviewSnapshot") ReviewSnapshot({snapshot: ReviewSnapshot.t})
+    | @as("Files") Files({files: array<FileChange.t>})
+    | @as("Resolved") Resolved({targets: array<ResolvedTarget.t>, changed: bool})
+    | @as("Commits") Commits({commits: array<CommitInfo.t>})
+    | @as("TreeSnapshot") TreeSnapshot({snapshot: TreeSnapshot.t})
+    | @as("RenderChunk") RenderChunk({chunk: Render.RenderChunk.t})
+    | @as("Subscribed") Subscribed({seq: seq})
+    | @as("Unsubscribed") Unsubscribed({})
+    | @as("Committed") Committed({event: Events.Event.t})
+    | @as("ShuttingDown") ShuttingDown({})
+  @@warning("+27")
+}
 
-type streamItem =
-  | ItemReviewSnapshot({snapshot: reviewSnapshot})
-  | ItemTreeSnapshot({snapshot: treeSnapshot})
-  | ItemHeader({header: Render.fileRenderHeader})
-  | ItemChunk({repoId: repoId, path: string, chunk: Render.renderChunk})
-let streamItem: S.t<streamItem> = S.union([
-  S.object(s => {
-    s.tag("type", "ReviewSnapshot")
-    ItemReviewSnapshot({snapshot: s.field("snapshot", reviewSnapshot)})
-  }),
-  S.object(s => {
-    s.tag("type", "TreeSnapshot")
-    ItemTreeSnapshot({snapshot: s.field("snapshot", treeSnapshot)})
-  }),
-  S.object(s => {
-    s.tag("type", "Header")
-    ItemHeader({header: s.field("header", Render.fileRenderHeader)})
-  }),
-  S.object(s => {
-    s.tag("type", "Chunk")
-    ItemChunk({
-      repoId: s.field("repo_id", repoId),
-      path: s.field("path", S.string),
-      chunk: s.field("chunk", Render.renderChunk),
-    })
-  }),
-])
+module StreamItem = {
+  @schema @tag("type")
+  type t =
+    | @as("ReviewSnapshot") ReviewSnapshot({snapshot: ReviewSnapshot.t})
+    | @as("TreeSnapshot") TreeSnapshot({snapshot: TreeSnapshot.t})
+    | @as("Header") Header({header: Render.FileRenderHeader.t})
+    | @as("Chunk")
+    Chunk({@as("repo_id") repoId: repoId, path: string, chunk: Render.RenderChunk.t})
+}
 
-type clientMsg =
-  | Hello({clientId: clientId, protocol: protocolVersion, client: buildInfo, author: author})
-  | ClientRequest({id: requestId, request: request})
-  | Cancel({id: requestId})
-let clientMsg: S.t<clientMsg> = S.union([
-  S.object(s => {
-    s.tag("type", "Hello")
+module ClientMsg = {
+  @schema @tag("type")
+  type t =
+    | @as("Hello")
     Hello({
-      clientId: s.field("client_id", clientId),
-      protocol: s.field("protocol", protocolVersion),
-      client: s.field("client", buildInfo),
-      author: s.field("author", author),
-    })
-  }),
-  S.object(s => {
-    s.tag("type", "Request")
-    ClientRequest({id: s.field("id", requestId), request: s.field("request", request)})
-  }),
-  S.object(s => {
-    s.tag("type", "Cancel")
-    Cancel({id: s.field("id", requestId)})
-  }),
-])
+        @as("client_id") clientId: clientId,
+        protocol: protocolVersion,
+        client: BuildInfo.t,
+        author: Author.t,
+      })
+    | @as("Request") Request({id: requestId, request: Request.t})
+    | @as("Cancel") Cancel({id: requestId})
+}
 
-type serverMsg =
-  | Welcome({
-      protocol: protocolVersion,
-      daemon: buildInfo,
-      schema: schemaVersion,
-      upgrade: option<upgradeNotice>,
-    })
-  | Rejected({error: rpcError})
-  | ServerResponse({id: requestId, response: response})
-  | StreamItem({id: requestId, item: streamItem})
-  | StreamEnd({id: requestId})
-  | Error({id: requestId, error: rpcError})
-  | Event({event: Events.event})
-  | TreeDelta({delta: treeDelta})
-let serverMsg: S.t<serverMsg> = S.union([
-  S.object(s => {
-    s.tag("type", "Welcome")
+module ServerMsg = {
+  @schema @tag("type")
+  type t =
+    | @as("Welcome")
     Welcome({
-      protocol: s.field("protocol", protocolVersion),
-      daemon: s.field("daemon", buildInfo),
-      schema: s.field("schema", schemaVersion),
-      upgrade: s.field("upgrade", S.null(upgradeNotice)),
-    })
-  }),
-  S.object(s => {
-    s.tag("type", "Rejected")
-    Rejected({error: s.field("error", rpcError)})
-  }),
-  S.object(s => {
-    s.tag("type", "Response")
-    ServerResponse({id: s.field("id", requestId), response: s.field("response", response)})
-  }),
-  S.object(s => {
-    s.tag("type", "StreamItem")
-    StreamItem({id: s.field("id", requestId), item: s.field("item", streamItem)})
-  }),
-  S.object(s => {
-    s.tag("type", "StreamEnd")
-    StreamEnd({id: s.field("id", requestId)})
-  }),
-  S.object(s => {
-    s.tag("type", "Error")
-    Error({id: s.field("id", requestId), error: s.field("error", rpcError)})
-  }),
-  S.object(s => {
-    s.tag("type", "Event")
-    Event({event: s.field("event", Events.event)})
-  }),
-  S.object(s => {
-    s.tag("type", "TreeDelta")
-    TreeDelta({delta: s.field("delta", treeDelta)})
-  }),
-])
+        protocol: protocolVersion,
+        daemon: BuildInfo.t,
+        schema: schemaVersion,
+        upgrade: @s.null option<UpgradeNotice.t>,
+      })
+    | @as("Rejected") Rejected({error: RpcError.t})
+    | @as("Response") Response({id: requestId, response: Response.t})
+    | @as("StreamItem") StreamItem({id: requestId, item: StreamItem.t})
+    | @as("StreamEnd") StreamEnd({id: requestId})
+    | @as("Error") ServerError({id: requestId, error: RpcError.t})
+    | @as("Event") Event({event: Events.Event.t})
+    | @as("TreeDelta") TreeDelta({delta: TreeDelta.t})
+}
 
-/// A frame on the wire: `{ "v": protocol version, "msg": ... }`.
-type envelope<'msg> = {v: protocolVersion, msg: 'msg}
-let envelope = (msg: S.t<'msg>): S.t<envelope<'msg>> =>
-  S.object(s => {
-    v: s.field("v", protocolVersion),
-    msg: s.field("msg", msg),
-  })
+module Envelope = {
+  /// A frame on the wire: `{ "v": protocol version, "msg": ... }`. Generic,
+  /// so hand-written (the ppx derives monomorphic schemas only).
+  type t<'msg> = {v: protocolVersion, msg: 'msg}
+  let schema = (msg: S.t<'msg>): S.t<t<'msg>> =>
+    S.object(s => {
+      v: s.field("v", protocolVersionSchema),
+      msg: s.field("msg", msg),
+    })
+}

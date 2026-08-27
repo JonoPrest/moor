@@ -1,2 +1,4 @@
 allowBuilds:
   rescript: true
+  rescript-schema-ppx: true
+  "@rescript/react": true

@@ -1,10 +1,33 @@
 {
   "name": "moor-ui",
-  "sources": [{ "dir": "src", "subdirs": true }],
-  "package-specs": [{ "module": "esmodule", "in-source": true }],
+  "sources": [
+    {
+      "dir": "src",
+      "subdirs": true
+    }
+  ],
+  "package-specs": [
+    {
+      "module": "esmodule",
+      "in-source": true
+    }
+  ],
   "suffix": ".res.mjs",
-  "jsx": { "version": 4, "mode": "automatic" },
-  "bs-dependencies": ["@rescript/core", "@rescript/react", "rescript-schema"],
-  "bsc-flags": ["-open RescriptCore", "-open RescriptSchema"],
-  "warnings": { "error": "+101" }
+  "jsx": {
+    "version": 4
+  },
+  "dependencies": [
+    "@rescript/react",
+    "rescript-schema"
+  ],
+  "compiler-flags": [
+    "-open RescriptSchema"
+  ],
+  "ppx-flags": [
+    "rescript-schema-ppx/bin"
+  ],
+  "warnings": {
+    "number": "+A-4-9-102-3",
+    "error": "+A-4-9-102-3"
+  }
 }

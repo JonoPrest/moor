@@ -60,9 +60,9 @@ describe("CoreTauri", () => {
     expect(seen.length).toBe(1);
     emit(patchFixtures());
     expect(seen.length).toBe(2);
-    const model = seen[1] as { progress: { total: number }; focus: { TAG: string } };
+    const model = seen[1] as { progress: { total: number }; focus: { type: string } };
     expect(model.progress.total).toBe(12);
-    expect(model.focus.TAG).toBe("Diff");
+    expect(model.focus.type).toBe("Diff");
     expect(errors).toEqual([]);
     unsubscribe();
     emit(patchFixtures());

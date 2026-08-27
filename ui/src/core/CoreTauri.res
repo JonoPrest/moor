@@ -30,13 +30,7 @@ let make = (~onError: string => unit=e => Console.error(e)): Core.t => {
       invoke(dispatchCommand, args)
       ->Promise.then(_ => Promise.resolve())
       ->Promise.catch(exn => {
-        onError(
-          "dispatch: " ++
-          switch exn {
-          | Exn.Error(e) => Exn.message(e)->Option.getOr("failed")
-          | _ => "failed"
-          },
-        )
+        onError("dispatch: " ++ Core.message(exn))
         Promise.resolve()
       })
       ->ignore

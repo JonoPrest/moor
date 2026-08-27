@@ -4,46 +4,46 @@
 external erase: S.t<'a> => S.t<unknown> = "%identity"
 
 let schemas: dict<S.t<unknown>> = Dict.fromArray([
-  ("ViewModel", erase(View.viewModel)),
-  ("ViewPrefs", erase(View.viewPrefs)),
+  ("ViewModel", erase(View.ViewModel.schema)),
+  ("ViewPrefs", erase(View.ViewPrefs.schema)),
   ("Layout", erase(View.Layout.schema)),
   ("ConnectionView", erase(View.ConnectionView.schema)),
-  ("Draft", erase(View.draft)),
-  ("PendingEvent", erase(View.pendingEvent)),
-  ("OpenReview", erase(View.openReview)),
-  ("OpenFile", erase(View.openFile)),
-  ("RenderKey", erase(View.renderKey)),
-  ("FileRef", erase(View.fileRef)),
-  ("TreeView", erase(View.treeView)),
+  ("Draft", erase(View.Draft.schema)),
+  ("PendingEvent", erase(View.PendingEvent.schema)),
+  ("OpenReview", erase(View.OpenReview.schema)),
+  ("OpenFile", erase(View.OpenFile.schema)),
+  ("RenderKey", erase(View.RenderKey.schema)),
+  ("FileRef", erase(View.FileRef.schema)),
+  ("TreeView", erase(View.TreeView.schema)),
   ("TreeNode", erase(View.TreeNode.schema)),
-  ("SearchView", erase(View.searchView)),
-  ("SearchHit", erase(View.searchHit)),
-  ("Progress", erase(View.progress)),
+  ("SearchView", erase(View.SearchView.schema)),
+  ("SearchHit", erase(View.SearchHit.schema)),
+  ("Progress", erase(View.Progress.schema)),
   ("ViewedState", erase(View.ViewedState.schema)),
   ("ChangeKindKind", erase(View.ChangeKindKind.schema)),
-  ("DiffView", erase(View.diffView)),
-  ("DiffRow", erase(View.diffRow)),
-  ("ThreadView", erase(View.threadView)),
+  ("DiffView", erase(View.DiffView.schema)),
+  ("DiffRow", erase(View.DiffRow.schema)),
+  ("ThreadView", erase(View.ThreadView.schema)),
   ("ThreadPlace", erase(View.ThreadPlace.schema)),
-  ("CommitStepper", erase(View.commitStepper)),
-  ("StepperCommit", erase(View.stepperCommit)),
+  ("CommitStepper", erase(View.CommitStepper.schema)),
+  ("StepperCommit", erase(View.StepperCommit.schema)),
   ("Focus", erase(View.Focus.schema)),
-  ("Hint", erase(View.hint)),
-  ("HelpView", erase(View.helpView)),
-  ("HelpGroup", erase(View.helpGroup)),
-  ("HelpEntry", erase(View.helpEntry)),
-  ("Conflict", erase(View.conflict)),
+  ("Hint", erase(View.Hint.schema)),
+  ("HelpView", erase(View.HelpView.schema)),
+  ("HelpGroup", erase(View.HelpGroup.schema)),
+  ("HelpEntry", erase(View.HelpEntry.schema)),
+  ("Conflict", erase(View.Conflict.schema)),
   ("Context", erase(View.Context.schema)),
   ("Command", erase(View.Command.schema)),
   ("Action", erase(Action.schema)),
-  ("Override", erase(View.override)),
-  ("Overrides", erase(View.overrides)),
-  ("ViewDelta", erase(View.viewDelta)),
+  ("Override", erase(View.Override.schema)),
+  ("Overrides", erase(View.Overrides.schema)),
+  ("ViewDelta", erase(View.ViewDelta.schema)),
   ("ViewPatch", erase(View.ViewPatch.schema)),
-  ("KeyChord", erase(Keys.keyChord)),
+  ("KeyChord", erase(Keys.KeyChord.schema)),
   ("KeyCode", erase(Keys.KeyCode.schema)),
   ("NamedKey", erase(Keys.NamedKey.schema)),
-  ("Modifiers", erase(Keys.modifiers)),
+  ("Modifiers", erase(Keys.Modifiers.schema)),
 ])
 
 let names: array<string> = Dict.keysToArray(schemas)
@@ -56,12 +56,6 @@ let roundtrip = (typeName: string, json: JSON.t): result<JSON.t, string> =>
       let value = S.parseJsonOrThrow(json, schema)
       Ok(S.reverseConvertToJsonOrThrow(value, schema))
     } catch {
-    | exn =>
-      Error(
-        switch exn {
-        | Exn.Error(e) => Exn.message(e)->Option.getOr("unknown error")
-        | _ => "unknown error"
-        },
-      )
+    | exn => Error(JsExn.fromException(exn)->Option.flatMap(JsExn.message)->Option.getOr("unknown error"))
     }
   }

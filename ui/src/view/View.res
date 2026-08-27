@@ -1,107 +1,87 @@
 // The client `ViewModel` and everything it contains (moor-client-core
-// `view.rs`, `explorer.rs`, `diff.rs`, `focus.rs`, `keymap.rs`). Each enum
-// lives in its own module so constructor names never collide.
+// `view.rs`, `explorer.rs`, `diff.rs`, `focus.rs`, `keymap.rs`), one module
+// per Rust type, schemas derived by `@schema`.
 
 open Ids
 
 module Layout = {
+  @schema
   type t = Unified | Split
-  let schema: S.t<t> = S.enum([Unified, Split])
 }
 
-type viewPrefs = {layout: Layout.t, ignoreWhitespace: bool, contextLines: int}
-let viewPrefs: S.t<viewPrefs> = S.object(s => {
-  layout: s.field("layout", Layout.schema),
-  ignoreWhitespace: s.field("ignore_whitespace", S.bool),
-  contextLines: s.field("context_lines", S.int),
-})
+module ViewPrefs = {
+  @schema
+  type t = {
+    layout: Layout.t,
+    @as("ignore_whitespace") ignoreWhitespace: bool,
+    @as("context_lines") contextLines: int,
+  }
+}
 
 module ConnectionView = {
-  type t = Disconnected | Connecting | Subscribed | Rejected({error: Rpc.rpcError})
-  let schema: S.t<t> = S.union([
-    S.object(s => {
-      s.tag("type", "Disconnected")
-      Disconnected
-    }),
-    S.object(s => {
-      s.tag("type", "Connecting")
-      Connecting
-    }),
-    S.object(s => {
-      s.tag("type", "Subscribed")
-      Subscribed
-    }),
-    S.object(s => {
-      s.tag("type", "Rejected")
-      Rejected({error: s.field("error", Rpc.rpcError)})
-    }),
-  ])
+  @@warning("-27")
+  @schema @tag("type")
+  type t =
+    | @as("Disconnected") Disconnected({})
+    | @as("Connecting") Connecting({})
+    | @as("Subscribed") Subscribed({})
+    | @as("Rejected") Rejected({error: Rpc.RpcError.t})
+  @@warning("+27")
 }
 
-type draft = {anchor: Domain.anchor, replyTo: option<threadId>}
-let draft: S.t<draft> = S.object(s => {
-  anchor: s.field("anchor", Domain.anchor),
-  replyTo: s.field("reply_to", S.null(threadId)),
-})
-
-type pendingEvent = {clientSeq: clientSeq, body: Events.eventBody}
-let pendingEvent: S.t<pendingEvent> = S.object(s => {
-  clientSeq: s.field("client_seq", clientSeq),
-  body: s.field("body", Events.eventBody),
-})
-
-type fileRef = {repoId: repoId, path: string}
-let fileRef: S.t<fileRef> = S.object(s => {
-  repoId: s.field("repo_id", repoId),
-  path: s.field("path", S.string),
-})
-
-type renderKey = {
-  repoId: repoId,
-  path: string,
-  target: Render.renderTarget,
-  opts: Domain.renderOpts,
+module Draft = {
+  @schema
+  type t = {anchor: Domain.Anchor.t, @as("reply_to") replyTo: @s.null option<threadId>}
 }
-let renderKey: S.t<renderKey> = S.object(s => {
-  repoId: s.field("repo_id", repoId),
-  path: s.field("path", S.string),
-  target: s.field("target", Render.renderTarget),
-  opts: s.field("opts", Domain.renderOpts),
-})
 
-type openFile = {render: renderKey, firstRow: int, lastRow: int}
-let openFile: S.t<openFile> = S.object(s => {
-  render: s.field("render", renderKey),
-  firstRow: s.field("first_row", S.int),
-  lastRow: s.field("last_row", S.int),
-})
-
-type openReview = {
-  snapshot: Domain.reviewSnapshot,
-  pending: array<pendingEvent>,
-  trees: array<treeOid>,
-  files: array<renderKey>,
-  openFile: option<openFile>,
+module PendingEvent = {
+  @schema
+  type t = {@as("client_seq") clientSeq: clientSeq, body: Events.EventBody.t}
 }
-let openReview: S.t<openReview> = S.object(s => {
-  snapshot: s.field("snapshot", Domain.reviewSnapshot),
-  pending: s.field("pending", S.array(pendingEvent)),
-  trees: s.field("trees", S.array(treeOid)),
-  files: s.field("files", S.array(renderKey)),
-  openFile: s.field("open_file", S.null(openFile)),
-})
+
+module FileRef = {
+  @schema
+  type t = {@as("repo_id") repoId: repoId, path: string}
+}
+
+module RenderKey = {
+  @schema
+  type t = {
+    @as("repo_id") repoId: repoId,
+    path: string,
+    target: Render.RenderTarget.t,
+    opts: Domain.RenderOpts.t,
+  }
+}
+
+module OpenFile = {
+  @schema
+  type t = {render: RenderKey.t, @as("first_row") firstRow: int, @as("last_row") lastRow: int}
+}
+
+module OpenReview = {
+  @schema
+  type t = {
+    snapshot: Domain.ReviewSnapshot.t,
+    pending: array<PendingEvent.t>,
+    trees: array<treeOid>,
+    files: array<RenderKey.t>,
+    @as("open_file") openFile: @s.null option<OpenFile.t>,
+  }
+}
 
 module ViewedState = {
+  @schema
   type t = Viewed | ChangedSinceViewed | Unviewed
-  let schema: S.t<t> = S.enum([Viewed, ChangedSinceViewed, Unviewed])
 }
 
 module ChangeKindKind = {
+  @schema
   type t = Added | Deleted | Modified | Renamed
-  let schema: S.t<t> = S.enum([Added, Deleted, Modified, Renamed])
 }
 
 module TreeNode = {
+  // Recursive, so hand-written (the ppx derives non-recursive schemas).
   type rec t =
     | Dir({
         name: string,
@@ -125,7 +105,7 @@ module TreeNode = {
         s.tag("type", "Dir")
         Dir({
           name: s.field("name", S.string),
-          repoId: s.field("repo_id", repoId),
+          repoId: s.field("repo_id", repoIdSchema),
           path: s.field("path", S.null(S.string)),
           expanded: s.field("expanded", S.bool),
           changedBelow: s.field("changed_below", S.int),
@@ -136,7 +116,7 @@ module TreeNode = {
         s.tag("type", "File")
         File({
           name: s.field("name", S.string),
-          repoId: s.field("repo_id", repoId),
+          repoId: s.field("repo_id", repoIdSchema),
           path: s.field("path", S.string),
           change: s.field("change", S.null(ChangeKindKind.schema)),
           viewed: s.field("viewed", ViewedState.schema),
@@ -147,174 +127,110 @@ module TreeNode = {
   )
 }
 
-type searchHit = {file: fileRef, matched: array<int>, change: option<ChangeKindKind.t>}
-let searchHit: S.t<searchHit> = S.object(s => {
-  file: s.field("file", fileRef),
-  matched: s.field("matched", S.array(S.int)),
-  change: s.field("change", S.null(ChangeKindKind.schema)),
-})
-
-type searchView = {query: string, hits: array<searchHit>}
-let searchView: S.t<searchView> = S.object(s => {
-  query: s.field("query", S.string),
-  hits: s.field("hits", S.array(searchHit)),
-})
-
-type treeView = {roots: array<TreeNode.t>, breadcrumbs: array<string>, search: option<searchView>}
-let treeView: S.t<treeView> = S.object(s => {
-  roots: s.field("roots", S.array(TreeNode.schema)),
-  breadcrumbs: s.field("breadcrumbs", S.array(S.string)),
-  search: s.field("search", S.null(searchView)),
-})
-
-type progress = {viewed: int, changedSinceViewed: int, total: int}
-let progress: S.t<progress> = S.object(s => {
-  viewed: s.field("viewed", S.int),
-  changedSinceViewed: s.field("changed_since_viewed", S.int),
-  total: s.field("total", S.int),
-})
-
-type diffRow = {index: int, row: Render.row, threads: array<threadId>}
-let diffRow: S.t<diffRow> = S.object(s => {
-  index: s.field("index", S.int),
-  row: s.field("row", Render.row),
-  threads: s.field("threads", S.array(threadId)),
-})
-
-type diffView = {
-  file: fileRef,
-  lang: option<string>,
-  content: Render.renderContent,
-  firstRow: int,
-  lastRow: int,
-  rows: array<diffRow>,
-  missing: array<Render.chunkIndex>,
-  fileThreads: array<threadId>,
+module SearchHit = {
+  @schema
+  type t = {file: FileRef.t, matched: array<int>, change: @s.null option<ChangeKindKind.t>}
 }
-let diffView: S.t<diffView> = S.object(s => {
-  file: s.field("file", fileRef),
-  lang: s.field("lang", S.null(S.string)),
-  content: s.field("content", Render.renderContent),
-  firstRow: s.field("first_row", S.int),
-  lastRow: s.field("last_row", S.int),
-  rows: s.field("rows", S.array(diffRow)),
-  missing: s.field("missing", S.array(Render.chunkIndex)),
-  fileThreads: s.field("file_threads", S.array(threadId)),
-})
+
+module SearchView = {
+  @schema
+  type t = {query: string, hits: array<SearchHit.t>}
+}
+
+module TreeView = {
+  @schema
+  type t = {
+    roots: array<@s.matches(TreeNode.schema) TreeNode.t>,
+    breadcrumbs: array<string>,
+    search: @s.null option<SearchView.t>,
+  }
+}
+
+module Progress = {
+  @schema
+  type t = {viewed: int, @as("changed_since_viewed") changedSinceViewed: int, total: int}
+}
+
+module DiffRow = {
+  @schema
+  type t = {index: int, row: Render.Row.t, threads: array<threadId>}
+}
+
+module DiffView = {
+  @schema
+  type t = {
+    file: FileRef.t,
+    lang: @s.null option<string>,
+    content: Render.RenderContent.t,
+    @as("first_row") firstRow: int,
+    @as("last_row") lastRow: int,
+    rows: array<DiffRow.t>,
+    missing: array<Render.chunkIndex>,
+    @as("file_threads") fileThreads: array<threadId>,
+  }
+}
 
 module ThreadPlace = {
+  @@warning("-27")
+  @schema @tag("type")
   type t =
-    | Review
-    | File({file: fileRef})
-    | Lines({file: fileRef, side: Domain.side, start: int, end: int})
-  let schema: S.t<t> = S.union([
-    S.object(s => {
-      s.tag("type", "Review")
-      Review
-    }),
-    S.object(s => {
-      s.tag("type", "File")
-      File({file: s.field("file", fileRef)})
-    }),
-    S.object(s => {
-      s.tag("type", "Lines")
-      Lines({
-        file: s.field("file", fileRef),
-        side: s.field("side", Domain.side),
-        start: s.field("start", S.int),
-        end: s.field("end", S.int),
-      })
-    }),
-  ])
+    | @as("Review") Review({})
+    | @as("File") File({file: FileRef.t})
+    | @as("Lines") Lines({file: FileRef.t, side: Domain.Side.t, start: int, @as("end") end_: int})
+  @@warning("+27")
 }
 
-type threadView = {
-  id: threadId,
-  root: commentId,
-  author: Domain.author,
-  created: timestamp,
-  summary: string,
-  replies: int,
-  resolved: bool,
-  place: ThreadPlace.t,
-  outdated: bool,
-  pending: bool,
+module ThreadView = {
+  @schema
+  type t = {
+    id: threadId,
+    root: commentId,
+    author: Domain.Author.t,
+    created: timestamp,
+    summary: string,
+    replies: int,
+    resolved: bool,
+    place: ThreadPlace.t,
+    outdated: bool,
+    pending: bool,
+  }
 }
-let threadView: S.t<threadView> = S.object(s => {
-  id: s.field("id", threadId),
-  root: s.field("root", commentId),
-  author: s.field("author", Domain.author),
-  created: s.field("created", timestamp),
-  summary: s.field("summary", S.string),
-  replies: s.field("replies", S.int),
-  resolved: s.field("resolved", S.bool),
-  place: s.field("place", ThreadPlace.schema),
-  outdated: s.field("outdated", S.bool),
-  pending: s.field("pending", S.bool),
-})
 
-type stepperCommit = {oid: commitOid, subject: string, author: string, time: timestamp}
-let stepperCommit: S.t<stepperCommit> = S.object(s => {
-  oid: s.field("oid", commitOid),
-  subject: s.field("subject", S.string),
-  author: s.field("author", S.string),
-  time: s.field("time", timestamp),
-})
+module StepperCommit = {
+  @schema
+  type t = {oid: commitOid, subject: string, author: string, time: timestamp}
+}
 
-type commitStepper = {repoId: repoId, commits: array<stepperCommit>, selected: option<int>}
-let commitStepper: S.t<commitStepper> = S.object(s => {
-  repoId: s.field("repo_id", repoId),
-  commits: s.field("commits", S.array(stepperCommit)),
-  selected: s.field("selected", S.null(S.int)),
-})
+module CommitStepper = {
+  @schema
+  type t = {
+    @as("repo_id") repoId: repoId,
+    commits: array<StepperCommit.t>,
+    selected: @s.null option<int>,
+  }
+}
 
 module Focus = {
+  @@warning("-27")
+  @schema @tag("type")
   type t =
-    | ReviewList({index: int})
-    | Tree({index: int})
-    | Diff({row: int})
-    | Thread({index: int})
-    | Composer
-    | CommitStepper({index: int})
-    | Help
-  let schema: S.t<t> = S.union([
-    S.object(s => {
-      s.tag("type", "ReviewList")
-      ReviewList({index: s.field("index", S.int)})
-    }),
-    S.object(s => {
-      s.tag("type", "Tree")
-      Tree({index: s.field("index", S.int)})
-    }),
-    S.object(s => {
-      s.tag("type", "Diff")
-      Diff({row: s.field("row", S.int)})
-    }),
-    S.object(s => {
-      s.tag("type", "Thread")
-      Thread({index: s.field("index", S.int)})
-    }),
-    S.object(s => {
-      s.tag("type", "Composer")
-      Composer
-    }),
-    S.object(s => {
-      s.tag("type", "CommitStepper")
-      CommitStepper({index: s.field("index", S.int)})
-    }),
-    S.object(s => {
-      s.tag("type", "Help")
-      Help
-    }),
-  ])
+    | @as("ReviewList") ReviewList({index: int})
+    | @as("Tree") Tree({index: int})
+    | @as("Diff") Diff({row: int})
+    | @as("Thread") Thread({index: int})
+    | @as("Composer") Composer({})
+    | @as("CommitStepper") CommitStepper({index: int})
+    | @as("Help") Help({})
+  @@warning("+27")
 }
 
 module Context = {
+  @schema
   type t = Global | ReviewList | Tree | Diff | Thread | Composer | CommitStepper | Help
-  let schema: S.t<t> = S.enum([Global, ReviewList, Tree, Diff, Thread, Composer, CommitStepper, Help])
 }
 
 module Command = {
+  @schema
   type t =
     | MoveDown
     | MoveUp
@@ -343,206 +259,115 @@ module Command = {
     | Connect
     | Disconnect
     | Commits
-  let all = [
-    MoveDown,
-    MoveUp,
-    PageDown,
-    PageUp,
-    GoTop,
-    GoBottom,
-    NextHunk,
-    PrevHunk,
-    NextFile,
-    PrevFile,
-    NextComment,
-    PrevComment,
-    Open,
-    Back,
-    NextPanel,
-    ToggleViewed,
-    Comment,
-    Reply,
-    Delete,
-    ToggleResolved,
-    FileSearch,
-    ToggleLayout,
-    ToggleWhitespace,
-    ToggleHelp,
-    Connect,
-    Disconnect,
-    Commits,
-  ]
-  let schema: S.t<t> = S.enum(all)
 }
 
 /// A key sequence in its text form (`"g g"`, `"ctrl+p"`).
-type keySeq = string
-let keySeq: S.t<keySeq> = S.string
+@schema type keySeq = string
 
-type hint = {keys: keySeq, command: Command.t, label: string}
-let hint: S.t<hint> = S.object(s => {
-  keys: s.field("keys", keySeq),
-  command: s.field("command", Command.schema),
-  label: s.field("label", S.string),
-})
-
-type helpEntry = {keys: keySeq, command: Command.t, label: string, primary: bool, overridden: bool}
-let helpEntry: S.t<helpEntry> = S.object(s => {
-  keys: s.field("keys", keySeq),
-  command: s.field("command", Command.schema),
-  label: s.field("label", S.string),
-  primary: s.field("primary", S.bool),
-  overridden: s.field("overridden", S.bool),
-})
-
-type helpGroup = {context: Context.t, entries: array<helpEntry>}
-let helpGroup: S.t<helpGroup> = S.object(s => {
-  context: s.field("context", Context.schema),
-  entries: s.field("entries", S.array(helpEntry)),
-})
-
-type conflict = {context: Context.t, keys: keySeq, commands: array<Command.t>}
-let conflict: S.t<conflict> = S.object(s => {
-  context: s.field("context", Context.schema),
-  keys: s.field("keys", keySeq),
-  commands: s.field("commands", S.array(Command.schema)),
-})
-
-type helpView = {groups: array<helpGroup>, conflicts: array<conflict>}
-let helpView: S.t<helpView> = S.object(s => {
-  groups: s.field("groups", S.array(helpGroup)),
-  conflicts: s.field("conflicts", S.array(conflict)),
-})
-
-type override = {context: Context.t, command: Command.t, keys: option<keySeq>, primary: bool}
-let override: S.t<override> = S.object(s => {
-  context: s.field("context", Context.schema),
-  command: s.field("command", Command.schema),
-  keys: s.field("keys", S.null(keySeq)),
-  primary: s.field("primary", S.bool),
-})
-
-type overrides = {bindings: array<override>}
-let overrides: S.t<overrides> = S.object(s => {
-  bindings: s.field("bindings", S.array(override)),
-})
-
-type viewDelta = {sections: array<Rpc.viewSection>}
-let viewDelta: S.t<viewDelta> = S.object(s => {
-  sections: s.field("sections", S.array(Rpc.viewSection)),
-})
-
-type viewModel = {
-  prefs: viewPrefs,
-  tree: treeView,
-  progress: progress,
-  diff: option<diffView>,
-  threads: array<threadView>,
-  conversation: array<threadView>,
-  stepper: option<commitStepper>,
-  focus: Focus.t,
-  hints: array<hint>,
-  help: option<helpView>,
-  connection: ConnectionView.t,
-  lastError: option<Rpc.rpcError>,
-  reviews: array<Domain.review>,
-  review: option<openReview>,
-  draft: option<draft>,
-  pendingRefresh: bool,
+module Hint = {
+  @schema
+  type t = {keys: keySeq, command: Command.t, label: string}
 }
-let viewModel: S.t<viewModel> = S.object(s => {
-  prefs: s.field("prefs", viewPrefs),
-  tree: s.field("tree", treeView),
-  progress: s.field("progress", progress),
-  diff: s.field("diff", S.null(diffView)),
-  threads: s.field("threads", S.array(threadView)),
-  conversation: s.field("conversation", S.array(threadView)),
-  stepper: s.field("stepper", S.null(commitStepper)),
-  focus: s.field("focus", Focus.schema),
-  hints: s.field("hints", S.array(hint)),
-  help: s.field("help", S.null(helpView)),
-  connection: s.field("connection", ConnectionView.schema),
-  lastError: s.field("last_error", S.null(Rpc.rpcError)),
-  reviews: s.field("reviews", S.array(Domain.review)),
-  review: s.field("review", S.null(openReview)),
-  draft: s.field("draft", S.null(draft)),
-  pendingRefresh: s.field("pending_refresh", S.bool),
-})
+
+module HelpEntry = {
+  @schema
+  type t = {keys: keySeq, command: Command.t, label: string, primary: bool, overridden: bool}
+}
+
+module HelpGroup = {
+  @schema
+  type t = {context: Context.t, entries: array<HelpEntry.t>}
+}
+
+module Conflict = {
+  @schema
+  type t = {context: Context.t, keys: keySeq, commands: array<Command.t>}
+}
+
+module HelpView = {
+  @schema
+  type t = {groups: array<HelpGroup.t>, conflicts: array<Conflict.t>}
+}
+
+module Override = {
+  @schema
+  type t = {context: Context.t, command: Command.t, keys: @s.null option<keySeq>, primary: bool}
+}
+
+module Overrides = {
+  @schema
+  type t = {bindings: array<Override.t>}
+}
+
+module ViewDelta = {
+  @schema
+  type t = {sections: array<Rpc.ViewSection.t>}
+}
+
+module ViewModel = {
+  @@warning("-27")
+  @schema
+  type t = {
+    prefs: ViewPrefs.t,
+    tree: TreeView.t,
+    progress: Progress.t,
+    diff: @s.null option<DiffView.t>,
+    threads: array<ThreadView.t>,
+    conversation: array<ThreadView.t>,
+    stepper: @s.null option<CommitStepper.t>,
+    focus: Focus.t,
+    hints: array<Hint.t>,
+    help: @s.null option<HelpView.t>,
+    connection: ConnectionView.t,
+    @as("last_error") lastError: @s.null option<Rpc.RpcError.t>,
+    reviews: array<Domain.Review.t>,
+    review: @s.null option<OpenReview.t>,
+    draft: @s.null option<Draft.t>,
+    @as("pending_refresh") pendingRefresh: bool,
+  }
+
+  /// The model before any patch arrives.
+  let empty: t = {
+    prefs: {layout: Unified, ignoreWhitespace: false, contextLines: 3},
+    tree: {roots: [], breadcrumbs: [], search: None},
+    progress: {viewed: 0, changedSinceViewed: 0, total: 0},
+    diff: None,
+    threads: [],
+    conversation: [],
+    stepper: None,
+    focus: ReviewList({index: 0}),
+    hints: [],
+    help: None,
+    connection: Disconnected({}),
+    lastError: None,
+    reviews: [],
+    review: None,
+    draft: None,
+    pendingRefresh: false,
+  }
+  @@warning("+27")
+}
 
 module ViewPatch = {
   // One section of the model, as the host pushes it (client-core `patch.rs`).
+  @schema @tag("type")
   type t =
-    | Connection({connection: ConnectionView.t, lastError: option<Rpc.rpcError>})
-    | ReviewList({reviews: array<Domain.review>})
-    | Tree({tree: treeView})
-    | Diff({diff: option<diffView>, prefs: viewPrefs})
-    | Threads({threads: array<threadView>})
-    | Conversation({conversation: array<threadView>})
-    | CommitStepper({stepper: option<commitStepper>})
-    | Progress({progress: progress})
-    | Focus({focus: Focus.t})
-    | Hints({hints: array<hint>})
-    | Help({help: option<helpView>})
-    | Draft({draft: option<draft>, pendingRefresh: bool})
-  let schema: S.t<t> = S.union([
-    S.object(s => {
-      s.tag("type", "Connection")
-      Connection({
-        connection: s.field("connection", ConnectionView.schema),
-        lastError: s.field("last_error", S.null(Rpc.rpcError)),
-      })
-    }),
-    S.object(s => {
-      s.tag("type", "ReviewList")
-      ReviewList({reviews: s.field("reviews", S.array(Domain.review))})
-    }),
-    S.object(s => {
-      s.tag("type", "Tree")
-      Tree({tree: s.field("tree", treeView)})
-    }),
-    S.object(s => {
-      s.tag("type", "Diff")
-      Diff({diff: s.field("diff", S.null(diffView)), prefs: s.field("prefs", viewPrefs)})
-    }),
-    S.object(s => {
-      s.tag("type", "Threads")
-      Threads({threads: s.field("threads", S.array(threadView))})
-    }),
-    S.object(s => {
-      s.tag("type", "Conversation")
-      Conversation({conversation: s.field("conversation", S.array(threadView))})
-    }),
-    S.object(s => {
-      s.tag("type", "CommitStepper")
-      CommitStepper({stepper: s.field("stepper", S.null(commitStepper))})
-    }),
-    S.object(s => {
-      s.tag("type", "Progress")
-      Progress({progress: s.field("progress", progress)})
-    }),
-    S.object(s => {
-      s.tag("type", "Focus")
-      Focus({focus: s.field("focus", Focus.schema)})
-    }),
-    S.object(s => {
-      s.tag("type", "Hints")
-      Hints({hints: s.field("hints", S.array(hint))})
-    }),
-    S.object(s => {
-      s.tag("type", "Help")
-      Help({help: s.field("help", S.null(helpView))})
-    }),
-    S.object(s => {
-      s.tag("type", "Draft")
-      Draft({
-        draft: s.field("draft", S.null(draft)),
-        pendingRefresh: s.field("pending_refresh", S.bool),
-      })
-    }),
-  ])
+    | @as("Connection")
+    Connection({connection: ConnectionView.t, @as("last_error") lastError: @s.null option<Rpc.RpcError.t>})
+    | @as("ReviewList") ReviewList({reviews: array<Domain.Review.t>})
+    | @as("Tree") Tree({tree: TreeView.t})
+    | @as("Diff") Diff({diff: @s.null option<DiffView.t>, prefs: ViewPrefs.t})
+    | @as("Threads") Threads({threads: array<ThreadView.t>})
+    | @as("Conversation") Conversation({conversation: array<ThreadView.t>})
+    | @as("CommitStepper") CommitStepper({stepper: @s.null option<CommitStepper.t>})
+    | @as("Progress") Progress({progress: Progress.t})
+    | @as("Focus") Focus({focus: Focus.t})
+    | @as("Hints") Hints({hints: array<Hint.t>})
+    | @as("Help") Help({help: @s.null option<HelpView.t>})
+    | @as("Draft") Draft({draft: @s.null option<Draft.t>, @as("pending_refresh") pendingRefresh: bool})
 
   /// Install a patch into the UI's copy of the model.
-  let apply = (model: viewModel, patch: t): viewModel =>
+  let apply = (model: ViewModel.t, patch: t): ViewModel.t =>
     switch patch {
     | Connection({connection, lastError}) => {...model, connection, lastError}
     | ReviewList({reviews}) => {...model, reviews}
@@ -557,24 +382,4 @@ module ViewPatch = {
     | Help({help}) => {...model, help}
     | Draft({draft, pendingRefresh}) => {...model, draft, pendingRefresh}
     }
-}
-
-/// The model before any patch arrives.
-let empty: viewModel = {
-  prefs: {layout: Unified, ignoreWhitespace: false, contextLines: 3},
-  tree: {roots: [], breadcrumbs: [], search: None},
-  progress: {viewed: 0, changedSinceViewed: 0, total: 0},
-  diff: None,
-  threads: [],
-  conversation: [],
-  stepper: None,
-  focus: Focus.ReviewList({index: 0}),
-  hints: [],
-  help: None,
-  connection: ConnectionView.Disconnected,
-  lastError: None,
-  reviews: [],
-  review: None,
-  draft: None,
-  pendingRefresh: false,
 }

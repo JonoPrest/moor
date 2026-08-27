@@ -13,18 +13,23 @@
     "check": "rescript && vitest run && vite build"
   },
   "dependencies": {
-    "@rescript/core": "^1.6.1",
-    "@rescript/react": "^0.13.1",
+    "@rescript/react": "^0.15.0",
+    "@rescript/runtime": "12.0.0",
+    "@tanstack/react-virtual": "^3.14.10",
     "@tauri-apps/api": "^2.11.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "rescript-schema": "^9.3.4"
+    "rescript-schema": "9.3.0-rescript12.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^24.0.0",
     "@vitejs/plugin-react": "^5.0.0",
-    "rescript": "^11.1.4",
+    "jsdom": "^30.0.1",
+    "rescript": "^12.0.0",
+    "rescript-schema-ppx": "9.0.1",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.0",
     "vite": "^8.2.2",

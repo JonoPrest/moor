@@ -2,191 +2,125 @@
 
 open Ids
 
-type spanClass =
-  | Keyword
-  | String
-  | Number
-  | Comment
-  | Type
-  | Function
-  | Variable
-  | Constant
-  | Operator
-  | Punctuation
-  | Attribute
-  | Tag
-  | Other
-let spanClass: S.t<spanClass> = S.enum([
-  Keyword,
-  String,
-  Number,
-  Comment,
-  Type,
-  Function,
-  Variable,
-  Constant,
-  Operator,
-  Punctuation,
-  Attribute,
-  Tag,
-  Other,
-])
+module SpanClass = {
+  @schema
+  type t =
+    | Keyword
+    | String
+    | Number
+    | Comment
+    | Type
+    | Function
+    | Variable
+    | Constant
+    | Operator
+    | Punctuation
+    | Attribute
+    | Tag
+    | Other
+}
 
-/// Byte offsets, end exclusive.
-type colRange = {start: int, end: int}
-let colRange: S.t<colRange> = S.object(s => {
-  start: s.field("start", S.int),
-  end: s.field("end", S.int),
-})
+module ColRange = {
+  /// Byte offsets, end exclusive.
+  @schema
+  type t = {start: int, @as("end") end_: int}
+}
 
-type span = {range: colRange, class: spanClass}
-let span: S.t<span> = S.object(s => {
-  range: s.field("range", colRange),
-  class: s.field("class", spanClass),
-})
+module Span = {
+  @schema
+  type t = {range: ColRange.t, class: SpanClass.t}
+}
 
-type cell = {lineNo: int, text: string, spans: array<span>, changed: array<colRange>}
-let cell: S.t<cell> = S.object(s => {
-  lineNo: s.field("line_no", S.int),
-  text: s.field("text", S.string),
-  spans: s.field("spans", S.array(span)),
-  changed: s.field("changed", S.array(colRange)),
-})
+module Cell = {
+  @schema
+  type t = {
+    @as("line_no") lineNo: int,
+    text: string,
+    spans: array<Span.t>,
+    changed: array<ColRange.t>,
+  }
+}
 
-type expandDir = Up | Down | Both
-let expandDir: S.t<expandDir> = S.enum([Up, Down, Both])
+module ExpandDir = {
+  @schema
+  type t = Up | Down | Both
+}
 
-type row =
-  | HunkHeader({text: string})
-  | Context({left: cell, right: cell})
-  | Removed({left: cell})
-  | Added({right: cell})
-  | Modified({left: cell, right: cell})
-  | Expander({hidden: int, dir: expandDir})
-  | WhitespaceOnly
-let row: S.t<row> = S.union([
-  S.object(s => {
-    s.tag("type", "HunkHeader")
-    HunkHeader({text: s.field("text", S.string)})
-  }),
-  S.object(s => {
-    s.tag("type", "Context")
-    Context({left: s.field("left", cell), right: s.field("right", cell)})
-  }),
-  S.object(s => {
-    s.tag("type", "Removed")
-    Removed({left: s.field("left", cell)})
-  }),
-  S.object(s => {
-    s.tag("type", "Added")
-    Added({right: s.field("right", cell)})
-  }),
-  S.object(s => {
-    s.tag("type", "Modified")
-    Modified({left: s.field("left", cell), right: s.field("right", cell)})
-  }),
-  S.object(s => {
-    s.tag("type", "Expander")
-    Expander({hidden: s.field("hidden", S.int), dir: s.field("dir", expandDir)})
-  }),
-  S.object(s => {
-    s.tag("type", "WhitespaceOnly")
-    WhitespaceOnly
-  }),
-])
+module Row = {
+  @@warning("-27")
+  @schema @tag("type")
+  type t =
+    | @as("HunkHeader") HunkHeader({text: string})
+    | @as("Context") Context({left: Cell.t, right: Cell.t})
+    | @as("Removed") Removed({left: Cell.t})
+    | @as("Added") Added({right: Cell.t})
+    | @as("Modified") Modified({left: Cell.t, right: Cell.t})
+    | @as("Expander") Expander({hidden: int, dir: ExpandDir.t})
+    | @as("WhitespaceOnly") WhitespaceOnly({})
+  @@warning("+27")
+}
 
-type chunkIndex = int
-let chunkIndex: S.t<chunkIndex> = S.int
+@schema type chunkIndex = int
 
-type renderTarget = Diff({change: Domain.changeKind}) | Blob({oid: blobOid})
-let renderTarget: S.t<renderTarget> = S.union([
-  S.object(s => {
-    s.tag("type", "Diff")
-    Diff({change: s.field("change", Domain.changeKind)})
-  }),
-  S.object(s => {
-    s.tag("type", "Blob")
-    Blob({oid: s.field("oid", blobOid)})
-  }),
-])
+module RenderTarget = {
+  @schema @tag("type")
+  type t =
+    | @as("Diff") Diff({change: Domain.ChangeKind.t})
+    | @as("Blob") Blob({oid: blobOid})
+}
 
-type renderContent =
-  | Binary
-  | Text({
-      totalRows: int,
-      chunkRows: int,
-      chunkCount: int,
-      highlighted: bool,
-      additions: int,
-      deletions: int,
-    })
-let renderContent: S.t<renderContent> = S.union([
-  S.object(s => {
-    s.tag("type", "Binary")
-    Binary
-  }),
-  S.object(s => {
-    s.tag("type", "Text")
+module RenderContent = {
+  @@warning("-27")
+  @schema @tag("type")
+  type t =
+    | @as("Binary") Binary({})
+    | @as("Text")
     Text({
-      totalRows: s.field("total_rows", S.int),
-      chunkRows: s.field("chunk_rows", S.int),
-      chunkCount: s.field("chunk_count", S.int),
-      highlighted: s.field("highlighted", S.bool),
-      additions: s.field("additions", S.int),
-      deletions: s.field("deletions", S.int),
-    })
-  }),
-])
-
-type fileRenderHeader = {
-  repoId: repoId,
-  path: string,
-  target: renderTarget,
-  opts: Domain.renderOpts,
-  lang: option<string>,
-  content: renderContent,
+        @as("total_rows") totalRows: int,
+        @as("chunk_rows") chunkRows: int,
+        @as("chunk_count") chunkCount: int,
+        highlighted: bool,
+        additions: int,
+        deletions: int,
+      })
+  @@warning("+27")
 }
-let fileRenderHeader: S.t<fileRenderHeader> = S.object(s => {
-  repoId: s.field("repo_id", repoId),
-  path: s.field("path", S.string),
-  target: s.field("target", renderTarget),
-  opts: s.field("opts", Domain.renderOpts),
-  lang: s.field("lang", S.null(S.string)),
-  content: s.field("content", renderContent),
-})
 
-type renderChunk = {index: chunkIndex, rows: array<row>}
-let renderChunk: S.t<renderChunk> = S.object(s => {
-  index: s.field("index", chunkIndex),
-  rows: s.field("rows", S.array(row)),
-})
-
-type fileRender = {header: fileRenderHeader, chunks: array<renderChunk>}
-let fileRender: S.t<fileRender> = S.object(s => {
-  header: s.field("header", fileRenderHeader),
-  chunks: s.field("chunks", S.array(renderChunk)),
-})
-
-type fileSummary = {
-  repoId: repoId,
-  path: string,
-  change: Domain.changeKind,
-  additions: int,
-  deletions: int,
-  binary: bool,
+module FileRenderHeader = {
+  @schema
+  type t = {
+    @as("repo_id") repoId: repoId,
+    path: string,
+    target: RenderTarget.t,
+    opts: Domain.RenderOpts.t,
+    lang: @s.null option<string>,
+    content: RenderContent.t,
+  }
 }
-let fileSummary: S.t<fileSummary> = S.object(s => {
-  repoId: s.field("repo_id", repoId),
-  path: s.field("path", S.string),
-  change: s.field("change", Domain.changeKind),
-  additions: s.field("additions", S.int),
-  deletions: s.field("deletions", S.int),
-  binary: s.field("binary", S.bool),
-})
 
-type diffSummary = {files: array<fileSummary>, additions: int, deletions: int}
-let diffSummary: S.t<diffSummary> = S.object(s => {
-  files: s.field("files", S.array(fileSummary)),
-  additions: s.field("additions", S.int),
-  deletions: s.field("deletions", S.int),
-})
+module RenderChunk = {
+  @schema
+  type t = {index: chunkIndex, rows: array<Row.t>}
+}
+
+module FileRender = {
+  @schema
+  type t = {header: FileRenderHeader.t, chunks: array<RenderChunk.t>}
+}
+
+module FileSummary = {
+  @schema
+  type t = {
+    @as("repo_id") repoId: repoId,
+    path: string,
+    change: Domain.ChangeKind.t,
+    additions: int,
+    deletions: int,
+    binary: bool,
+  }
+}
+
+module DiffSummary = {
+  @schema
+  type t = {files: array<FileSummary.t>, additions: int, deletions: int}
+}
