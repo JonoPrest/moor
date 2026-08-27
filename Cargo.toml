@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/moor-protocol",
     "crates/moor-protocol-fixtures",
+    "crates/moor-client-core-fixtures",
     "crates/moor-review-core",
     "crates/moor-test-support",
     "crates/moord",
@@ -28,6 +29,7 @@ moord = { path = "crates/moord" }
 moor-mcp = { path = "crates/moor-mcp" }
 moor-config = { path = "crates/moor-config" }
 moor-client-core = { path = "crates/moor-client-core" }
+moor-client-core-fixtures = { path = "crates/moor-client-core-fixtures" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

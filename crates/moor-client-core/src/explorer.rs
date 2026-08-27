@@ -17,7 +17,7 @@ use crate::cache::RenderKey;
 use crate::content::FileRef;
 
 /// Whether the current viewer has seen a file at its current head blob.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, strum::EnumIter)]
 pub enum ViewedState {
     Viewed,
     /// Marked viewed at an earlier blob; the file changed since.
@@ -28,7 +28,7 @@ pub enum ViewedState {
 /// A node of the merged tree. Directories carry their children; the UI
 /// renders expanded ones recursively.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumDiscriminants)]
-#[strum_discriminants(name(TreeNodeKind), derive(Hash))]
+#[strum_discriminants(name(TreeNodeKind), derive(Hash, strum::EnumIter))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum TreeNode {
     Dir {

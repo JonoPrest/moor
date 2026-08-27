@@ -1,0 +1,10 @@
+{
+  "error": {
+    "requested": "2.0.0",
+    "supported": [
+      "0.1.0"
+    ],
+    "type": "UnsupportedProtocol"
+  },
+  "type": "Rejected"
+}

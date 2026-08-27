@@ -21,7 +21,7 @@ use crate::content::FileRef;
 
 /// Where a thread is anchored, for the thread list and the diff overlay.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumDiscriminants)]
-#[strum_discriminants(name(ThreadPlaceKind), derive(Hash))]
+#[strum_discriminants(name(ThreadPlaceKind), derive(Hash, strum::EnumIter))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum ThreadPlace {
     Review,

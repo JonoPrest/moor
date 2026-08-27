@@ -1,0 +1,15 @@
+{
+  "anchor": {
+    "blob_oid": "a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5",
+    "context_hash": "0123456789abcdef",
+    "lines": {
+      "end": 12,
+      "start": 10
+    },
+    "path": "src/lib.rs",
+    "repo_id": "01HF7YAT000000000000000002",
+    "side": "Head",
+    "type": "Lines"
+  },
+  "type": "DraftOpened"
+}

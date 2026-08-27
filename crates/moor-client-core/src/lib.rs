@@ -65,8 +65,8 @@ pub use keymap::{
     KeyParseError, KeySeq, Keymap, Lookup, Modifiers, NamedKey, Override, Overrides, label,
 };
 pub use view::{
-    ConnectionView, Draft, Layout, OpenFile, OpenReview, PendingEvent, ViewDelta, ViewModel,
-    ViewPrefs,
+    ConnectionView, ConnectionViewKind, Draft, Layout, OpenFile, OpenReview, PendingEvent,
+    ViewDelta, ViewModel, ViewPrefs,
 };
 
 pub use moor_protocol as protocol;

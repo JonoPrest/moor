@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 moor-protocol-fixtures = { workspace = true }
+moor-client-core-fixtures = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 

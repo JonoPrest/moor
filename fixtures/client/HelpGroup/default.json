@@ -1,0 +1,12 @@
+{
+  "context": "Diff",
+  "entries": [
+    {
+      "command": "GoTop",
+      "keys": "g g",
+      "label": "top",
+      "overridden": true,
+      "primary": false
+    }
+  ]
+}

@@ -21,15 +21,21 @@ fn repo_root() -> anyhow::Result<PathBuf> {
         .context("xtask must live one level below the repo root")
 }
 
-/// Write `fixtures/protocol/<Type>/<variant>.json` for every fixture and
-/// delete files no fixture produces any more.
+/// Write `fixtures/protocol/` and `fixtures/client/` and delete files no
+/// fixture produces any more.
 fn fixtures() -> anyhow::Result<()> {
-    let dir = repo_root()?.join("fixtures").join("protocol");
+    write_fixtures("protocol", moor_protocol_fixtures::all()?)?;
+    write_fixtures("client", moor_client_core_fixtures::all()?)
+}
+
+/// Write `fixtures/<set>/<Type>/<variant>.json` for every fixture in `all`.
+fn write_fixtures(set: &str, all: Vec<moor_protocol_fixtures::Fixture>) -> anyhow::Result<()> {
+    let dir = repo_root()?.join("fixtures").join(set);
     std::fs::create_dir_all(&dir)?;
 
     let mut wanted = BTreeSet::new();
     let mut written = 0usize;
-    for f in moor_protocol_fixtures::all()? {
+    for f in all {
         let path = dir.join(f.rel_path());
         wanted.insert(path.clone());
         let parent = path
@@ -60,7 +66,7 @@ fn fixtures() -> anyhow::Result<()> {
     }
 
     println!(
-        "fixtures: {} total, {written} written, {removed} removed",
+        "fixtures/{set}: {} total, {written} written, {removed} removed",
         wanted.len()
     );
     Ok(())

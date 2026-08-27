@@ -1705,6 +1705,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "moor-client-core-fixtures"
+version = "0.1.0"
+dependencies = [
+ "moor-client-core",
+ "moor-protocol",
+ "moor-protocol-fixtures",
+ "serde",
+ "serde_json",
+ "strum",
+ "thiserror",
+]
+
+[[package]]
 name = "moor-config"
 version = "0.1.0"
 dependencies = [
@@ -2960,6 +2973,7 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "moor-client-core-fixtures",
  "moor-protocol-fixtures",
  "serde_json",
 ]

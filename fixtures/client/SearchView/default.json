@@ -1,0 +1,17 @@
+{
+  "hits": [
+    {
+      "change": "Modified",
+      "file": {
+        "path": "src/lib.rs",
+        "repo_id": "01HF7YAT000000000000000002"
+      },
+      "matched": [
+        0,
+        4,
+        5
+      ]
+    }
+  ],
+  "query": "sli"
+}

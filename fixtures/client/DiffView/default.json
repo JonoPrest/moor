@@ -1,0 +1,73 @@
+{
+  "content": {
+    "additions": 12,
+    "chunk_count": 3,
+    "chunk_rows": 500,
+    "deletions": 4,
+    "highlighted": true,
+    "total_rows": 1203,
+    "type": "Text"
+  },
+  "file": {
+    "path": "src/lib.rs",
+    "repo_id": "01HF7YAT000000000000000002"
+  },
+  "file_threads": [
+    "01HF7YAVYG0000000000000005"
+  ],
+  "first_row": 120,
+  "lang": "Rust",
+  "last_row": 179,
+  "missing": [
+    1
+  ],
+  "rows": [
+    {
+      "index": 121,
+      "row": {
+        "left": {
+          "changed": [
+            {
+              "end": 9,
+              "start": 8
+            }
+          ],
+          "line_no": 9,
+          "spans": [
+            {
+              "class": "Keyword",
+              "range": {
+                "end": 3,
+                "start": 0
+              }
+            }
+          ],
+          "text": "    let x = 1;"
+        },
+        "right": {
+          "changed": [
+            {
+              "end": 14,
+              "start": 8
+            }
+          ],
+          "line_no": 9,
+          "spans": [
+            {
+              "class": "Keyword",
+              "range": {
+                "end": 3,
+                "start": 0
+              }
+            }
+          ],
+          "text": "    let x: u32 = 1;"
+        },
+        "type": "Modified"
+      },
+      "threads": [
+        "01HF7YAVYG0000000000000005"
+      ]
+    }
+  ]
+}

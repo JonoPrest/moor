@@ -1,0 +1,5 @@
+{
+  "command": "NextFile",
+  "keys": "] f",
+  "label": "next file"
+}

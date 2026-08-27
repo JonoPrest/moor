@@ -1,0 +1,10 @@
+{
+  "bindings": [
+    {
+      "command": "Comment",
+      "context": "Diff",
+      "keys": "x",
+      "primary": true
+    }
+  ]
+}

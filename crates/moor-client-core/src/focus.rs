@@ -20,7 +20,7 @@ pub const PAGE_ROWS: u32 = 60;
 /// Where the user is. Indices are into the corresponding view lists; the
 /// tree index counts visible nodes in display order (expanded dirs only).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumDiscriminants)]
-#[strum_discriminants(name(FocusKind), derive(Hash))]
+#[strum_discriminants(name(FocusKind), derive(Hash, strum::EnumIter))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum Focus {
     ReviewList { index: usize },

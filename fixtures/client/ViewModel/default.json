@@ -1,0 +1,500 @@
+{
+  "connection": {
+    "type": "Subscribed"
+  },
+  "conversation": [],
+  "diff": {
+    "content": {
+      "additions": 12,
+      "chunk_count": 3,
+      "chunk_rows": 500,
+      "deletions": 4,
+      "highlighted": true,
+      "total_rows": 1203,
+      "type": "Text"
+    },
+    "file": {
+      "path": "src/lib.rs",
+      "repo_id": "01HF7YAT000000000000000002"
+    },
+    "file_threads": [
+      "01HF7YAVYG0000000000000005"
+    ],
+    "first_row": 120,
+    "lang": "Rust",
+    "last_row": 179,
+    "missing": [
+      1
+    ],
+    "rows": [
+      {
+        "index": 121,
+        "row": {
+          "left": {
+            "changed": [
+              {
+                "end": 9,
+                "start": 8
+              }
+            ],
+            "line_no": 9,
+            "spans": [
+              {
+                "class": "Keyword",
+                "range": {
+                  "end": 3,
+                  "start": 0
+                }
+              }
+            ],
+            "text": "    let x = 1;"
+          },
+          "right": {
+            "changed": [
+              {
+                "end": 14,
+                "start": 8
+              }
+            ],
+            "line_no": 9,
+            "spans": [
+              {
+                "class": "Keyword",
+                "range": {
+                  "end": 3,
+                  "start": 0
+                }
+              }
+            ],
+            "text": "    let x: u32 = 1;"
+          },
+          "type": "Modified"
+        },
+        "threads": [
+          "01HF7YAVYG0000000000000005"
+        ]
+      }
+    ]
+  },
+  "draft": {
+    "anchor": {
+      "blob_oid": "a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5",
+      "context_hash": "0123456789abcdef",
+      "lines": {
+        "end": 12,
+        "start": 10
+      },
+      "path": "src/lib.rs",
+      "repo_id": "01HF7YAT000000000000000002",
+      "side": "Head",
+      "type": "Lines"
+    },
+    "reply_to": "01HF7YAVYG0000000000000005"
+  },
+  "focus": {
+    "row": 121,
+    "type": "Diff"
+  },
+  "help": null,
+  "hints": [
+    {
+      "command": "NextFile",
+      "keys": "] f",
+      "label": "next file"
+    }
+  ],
+  "last_error": null,
+  "pending_refresh": true,
+  "prefs": {
+    "context_lines": 5,
+    "ignore_whitespace": true,
+    "layout": "Split"
+  },
+  "progress": {
+    "changed_since_viewed": 1,
+    "total": 12,
+    "viewed": 3
+  },
+  "review": {
+    "files": [
+      {
+        "opts": {
+          "context_lines": 3,
+          "ignore_whitespace": false
+        },
+        "path": "src/lib.rs",
+        "repo_id": "01HF7YAT000000000000000002",
+        "target": {
+          "change": {
+            "new": "a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5",
+            "old": "838485868788898a8b8c8d8e8f90919293949596",
+            "type": "Modified"
+          },
+          "type": "Diff"
+        }
+      }
+    ],
+    "open_file": {
+      "first_row": 120,
+      "last_row": 179,
+      "render": {
+        "opts": {
+          "context_lines": 3,
+          "ignore_whitespace": false
+        },
+        "path": "src/lib.rs",
+        "repo_id": "01HF7YAT000000000000000002",
+        "target": {
+          "change": {
+            "new": "a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5",
+            "old": "838485868788898a8b8c8d8e8f90919293949596",
+            "type": "Modified"
+          },
+          "type": "Diff"
+        }
+      }
+    },
+    "pending": [
+      {
+        "body": {
+          "comment": {
+            "anchor": {
+              "blob_oid": "a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5",
+              "context_hash": "0123456789abcdef",
+              "lines": {
+                "end": 12,
+                "start": 10
+              },
+              "path": "src/lib.rs",
+              "repo_id": "01HF7YAT000000000000000002",
+              "side": "Head",
+              "type": "Lines"
+            },
+            "author": {
+              "machine": "laptop",
+              "name": "ada",
+              "type": "Human"
+            },
+            "body": "This should be a newtype.",
+            "created": 1700000002000,
+            "edited": null,
+            "id": "01HF7YAVYG0000000000000005",
+            "kind": {
+              "type": "Note"
+            },
+            "review_id": "01HF7YATZ80000000000000004",
+            "state": {
+              "type": "Live"
+            },
+            "thread_id": "01HF7YAVYG0000000000000005"
+          },
+          "type": "CommentCreated"
+        },
+        "client_seq": 7
+      }
+    ],
+    "snapshot": {
+      "comments": [
+        {
+          "anchor": {
+            "blob_oid": "a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5",
+            "context_hash": "0123456789abcdef",
+            "lines": {
+              "end": 12,
+              "start": 10
+            },
+            "path": "src/lib.rs",
+            "repo_id": "01HF7YAT000000000000000002",
+            "side": "Head",
+            "type": "Lines"
+          },
+          "author": {
+            "machine": "laptop",
+            "name": "ada",
+            "type": "Human"
+          },
+          "body": "This should be a newtype.",
+          "created": 1700000002000,
+          "edited": null,
+          "id": "01HF7YAVYG0000000000000005",
+          "kind": {
+            "type": "Note"
+          },
+          "review_id": "01HF7YATZ80000000000000004",
+          "state": {
+            "type": "Live"
+          },
+          "thread_id": "01HF7YAVYG0000000000000005"
+        },
+        {
+          "anchor": {
+            "blob_oid": "a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5",
+            "context_hash": "0123456789abcdef",
+            "lines": {
+              "end": 12,
+              "start": 10
+            },
+            "path": "src/lib.rs",
+            "repo_id": "01HF7YAT000000000000000002",
+            "side": "Head",
+            "type": "Lines"
+          },
+          "author": {
+            "invoked_by": {
+              "machine": "laptop",
+              "name": "ada"
+            },
+            "model": "claude-fable-5",
+            "name": "claude-code",
+            "session_id": "sess_01",
+            "type": "Agent",
+            "via": "Mcp"
+          },
+          "body": "Agreed; suggested change attached.",
+          "created": 1700000003000,
+          "edited": 1700000004000,
+          "id": "01HF7YAWXR0000000000000006",
+          "kind": {
+            "patch": "@@ -10,1 +10,1 @@\n-let x = 1;\n+let x: u32 = 1;\n",
+            "type": "Suggestion"
+          },
+          "review_id": "01HF7YATZ80000000000000004",
+          "state": {
+            "type": "Live"
+          },
+          "thread_id": "01HF7YAVYG0000000000000005"
+        }
+      ],
+      "resolved": [
+        {
+          "base": {
+            "source": {
+              "oid": "1f202122232425262728292a2b2c2d2e2f303132",
+              "type": "Commit"
+            },
+            "tree": "8b8c8d8e8f909192939495969798999a9b9c9d9e"
+          },
+          "head": {
+            "source": {
+              "dirty": [
+                "src/lib.rs"
+              ],
+              "type": "WorkingTree"
+            },
+            "tree": "aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbd"
+          },
+          "repo_id": "01HF7YAT000000000000000002"
+        },
+        {
+          "base": {
+            "source": {
+              "oid": "1f202122232425262728292a2b2c2d2e2f303132",
+              "type": "Commit"
+            },
+            "tree": "c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdc"
+          },
+          "head": {
+            "source": {
+              "oid": "3e3f404142434445464748494a4b4c4d4e4f5051",
+              "type": "Commit"
+            },
+            "tree": "e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafb"
+          },
+          "repo_id": "01HF7YAT000000000000000003"
+        }
+      ],
+      "review": {
+        "created": 1700000001000,
+        "id": "01HF7YATZ80000000000000004",
+        "status": "Open",
+        "targets": [
+          {
+            "base": {
+              "name": "main",
+              "type": "Branch"
+            },
+            "head": {
+              "type": "WorkingTree"
+            },
+            "repo_id": "01HF7YAT000000000000000002"
+          },
+          {
+            "base": {
+              "oid": "1f202122232425262728292a2b2c2d2e2f303132",
+              "type": "Commit"
+            },
+            "head": {
+              "type": "Head"
+            },
+            "repo_id": "01HF7YAT000000000000000003"
+          }
+        ],
+        "title": "Keyboard-first client core",
+        "workspace_id": "01HF7YAT000000000000000001"
+      },
+      "seq": 42,
+      "threads": [
+        {
+          "id": "01HF7YAVYG0000000000000005",
+          "replies": [
+            "01HF7YAWXR0000000000000006"
+          ],
+          "resolution": {
+            "type": "Open"
+          },
+          "review_id": "01HF7YATZ80000000000000004",
+          "root": "01HF7YAVYG0000000000000005"
+        }
+      ],
+      "viewed": [
+        {
+          "blob_oid": "a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5",
+          "path": "src/lib.rs",
+          "repo_id": "01HF7YAT000000000000000002",
+          "review_id": "01HF7YATZ80000000000000004",
+          "viewer": {
+            "machine": "laptop",
+            "name": "ada"
+          }
+        }
+      ]
+    },
+    "trees": [
+      "aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbd"
+    ]
+  },
+  "reviews": [
+    {
+      "created": 1700000001000,
+      "id": "01HF7YATZ80000000000000004",
+      "status": "Open",
+      "targets": [
+        {
+          "base": {
+            "name": "main",
+            "type": "Branch"
+          },
+          "head": {
+            "type": "WorkingTree"
+          },
+          "repo_id": "01HF7YAT000000000000000002"
+        },
+        {
+          "base": {
+            "oid": "1f202122232425262728292a2b2c2d2e2f303132",
+            "type": "Commit"
+          },
+          "head": {
+            "type": "Head"
+          },
+          "repo_id": "01HF7YAT000000000000000003"
+        }
+      ],
+      "title": "Keyboard-first client core",
+      "workspace_id": "01HF7YAT000000000000000001"
+    }
+  ],
+  "stepper": {
+    "commits": [
+      {
+        "author": "Ada Lovelace",
+        "oid": "363738393a3b3c3d3e3f40414243444546474849",
+        "subject": "Add README, fix section reference",
+        "time": 1700000000000
+      }
+    ],
+    "repo_id": "01HF7YAT000000000000000002",
+    "selected": 0
+  },
+  "threads": [
+    {
+      "author": {
+        "machine": "laptop",
+        "name": "ada",
+        "type": "Human"
+      },
+      "created": 1700000002000,
+      "id": "01HF7YAVYG0000000000000005",
+      "outdated": false,
+      "pending": true,
+      "place": {
+        "end": 12,
+        "file": {
+          "path": "src/lib.rs",
+          "repo_id": "01HF7YAT000000000000000002"
+        },
+        "side": "Head",
+        "start": 10,
+        "type": "Lines"
+      },
+      "replies": 1,
+      "resolved": false,
+      "root": "01HF7YAVYG0000000000000005",
+      "summary": "This should be a newtype."
+    }
+  ],
+  "tree": {
+    "breadcrumbs": [
+      "01HF7YAT000000000000000002",
+      "src",
+      "lib.rs"
+    ],
+    "roots": [
+      {
+        "changed_below": 1,
+        "children": [
+          {
+            "changed_below": 1,
+            "children": [
+              {
+                "change": "Modified",
+                "name": "lib.rs",
+                "open": true,
+                "path": "src/lib.rs",
+                "repo_id": "01HF7YAT000000000000000002",
+                "type": "File",
+                "viewed": "ChangedSinceViewed"
+              }
+            ],
+            "expanded": true,
+            "name": "src",
+            "path": "src",
+            "repo_id": "01HF7YAT000000000000000002",
+            "type": "Dir"
+          },
+          {
+            "change": null,
+            "name": "README.md",
+            "open": false,
+            "path": "README.md",
+            "repo_id": "01HF7YAT000000000000000002",
+            "type": "File",
+            "viewed": "Unviewed"
+          }
+        ],
+        "expanded": true,
+        "name": "01HF7YAT000000000000000002",
+        "path": null,
+        "repo_id": "01HF7YAT000000000000000002",
+        "type": "Dir"
+      }
+    ],
+    "search": {
+      "hits": [
+        {
+          "change": "Modified",
+          "file": {
+            "path": "src/lib.rs",
+            "repo_id": "01HF7YAT000000000000000002"
+          },
+          "matched": [
+            0,
+            4,
+            5
+          ]
+        }
+      ],
+      "query": "sli"
+    }
+  }
+}

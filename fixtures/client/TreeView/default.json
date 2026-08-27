@@ -1,0 +1,64 @@
+{
+  "breadcrumbs": [
+    "01HF7YAT000000000000000002",
+    "src",
+    "lib.rs"
+  ],
+  "roots": [
+    {
+      "changed_below": 1,
+      "children": [
+        {
+          "changed_below": 1,
+          "children": [
+            {
+              "change": "Modified",
+              "name": "lib.rs",
+              "open": true,
+              "path": "src/lib.rs",
+              "repo_id": "01HF7YAT000000000000000002",
+              "type": "File",
+              "viewed": "ChangedSinceViewed"
+            }
+          ],
+          "expanded": true,
+          "name": "src",
+          "path": "src",
+          "repo_id": "01HF7YAT000000000000000002",
+          "type": "Dir"
+        },
+        {
+          "change": null,
+          "name": "README.md",
+          "open": false,
+          "path": "README.md",
+          "repo_id": "01HF7YAT000000000000000002",
+          "type": "File",
+          "viewed": "Unviewed"
+        }
+      ],
+      "expanded": true,
+      "name": "01HF7YAT000000000000000002",
+      "path": null,
+      "repo_id": "01HF7YAT000000000000000002",
+      "type": "Dir"
+    }
+  ],
+  "search": {
+    "hits": [
+      {
+        "change": "Modified",
+        "file": {
+          "path": "src/lib.rs",
+          "repo_id": "01HF7YAT000000000000000002"
+        },
+        "matched": [
+          0,
+          4,
+          5
+        ]
+      }
+    ],
+    "query": "sli"
+  }
+}

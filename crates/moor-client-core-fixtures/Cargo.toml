@@ -1,0 +1,19 @@
+[package]
+name = "moor-client-core-fixtures"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Example values for every moor-client-core view/action type, used to generate fixtures/client/ and to test coverage. Dev tooling only; never a runtime dependency."
+publish = false
+
+[dependencies]
+moor-client-core = { workspace = true }
+moor-protocol = { workspace = true }
+moor-protocol-fixtures = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+strum = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

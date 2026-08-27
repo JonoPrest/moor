@@ -37,7 +37,7 @@ impl ViewDelta {
 
 /// Connection state as the UI shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumDiscriminants, Default)]
-#[strum_discriminants(name(ConnectionViewKind), derive(Hash))]
+#[strum_discriminants(name(ConnectionViewKind), derive(Hash, strum::EnumIter))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum ConnectionView {
     #[default]
@@ -107,7 +107,9 @@ impl OpenReview {
 }
 
 /// How diff rows are laid out.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default, strum::EnumIter,
+)]
 pub enum Layout {
     #[default]
     Unified,

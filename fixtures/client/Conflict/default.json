@@ -1,0 +1,8 @@
+{
+  "commands": [
+    "MoveDown",
+    "PrevHunk"
+  ],
+  "context": "Diff",
+  "keys": "j"
+}
