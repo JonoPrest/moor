@@ -1,7 +1,9 @@
 //! What the UI renders. Hosts read it after each `Effect::Render`, which
 //! names the sections that changed.
 
-use moor_protocol::{Anchor, Review, ReviewSnapshot, RpcError, TreeOid, ViewSection};
+use moor_protocol::{
+    Anchor, ClientSeq, EventBody, Review, ReviewSnapshot, RpcError, TreeOid, ViewSection,
+};
 
 use crate::cache::RenderKey;
 use serde::{Deserialize, Serialize};
@@ -60,12 +62,23 @@ pub struct OpenFile {
     pub last_row: u32,
 }
 
+/// A mutation this client applied locally that the daemon has not echoed
+/// yet. Hosts mark what `body` touches (a comment, a thread) as pending.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PendingEvent {
+    pub client_seq: ClientSeq,
+    pub body: EventBody,
+}
+
 /// The review currently on screen. Content (trees, headers, chunks) lives in
 /// the cache; this names what of it belongs to the review.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OpenReview {
+    /// Committed state plus every pending mutation applied on top (§5.2).
     pub snapshot: ReviewSnapshot,
+    pub pending: Vec<PendingEvent>,
     /// Tree roots of the resolved targets (base and head per repo).
     pub trees: Vec<TreeOid>,
     /// Changed files, in daemon order; one render key each.
@@ -78,6 +91,7 @@ impl OpenReview {
     pub fn new(snapshot: ReviewSnapshot) -> Self {
         Self {
             snapshot,
+            pending: Vec::new(),
             trees: Vec::new(),
             files: Vec::new(),
             open_file: None,

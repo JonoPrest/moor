@@ -401,10 +401,22 @@ fn draft_lifecycle_defers_refresh_and_submits_one_add_comment() {
         )
     );
     assert_eq!(comment_id.timestamp_ms(), 1_000);
+    // The comment shows at once (pending), then the held-back refreshes
+    // land as the draft closes.
     assert_eq!(
         rendered(&effects),
-        vec![ViewSection::Draft, ViewSection::Diff]
+        vec![
+            ViewSection::Threads,
+            ViewSection::Draft,
+            ViewSection::Diff,
+            ViewSection::Threads, // pending comment re-applied over the refresh
+        ]
     );
+    let open = core.view().review.as_ref().unwrap();
+    assert_eq!(open.pending.len(), 1);
+    assert_eq!(open.snapshot.comments.len(), 1);
+    assert_eq!(open.snapshot.comments[0].id, comment_id);
+    assert_eq!(open.snapshot.threads.len(), 1);
     assert!(!core.view().pending_refresh);
     assert!(core.view().draft.is_none());
     assert_eq!(

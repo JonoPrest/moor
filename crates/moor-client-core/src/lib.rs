@@ -13,6 +13,9 @@
 //! - Draft text never enters the core. `Action::DraftOpened` /
 //!   `DraftSubmitted { body }` / `DraftDiscarded` are the only crossings.
 //! - `Effect::Render` names only the [`ViewSection`]s that changed.
+//! - Mutations are optimistic (§5.2): the view shows `committed + pending`;
+//!   a foreign event re-applies the pending list on top; the daemon's own
+//!   echo (matched by `client_id`/`client_seq`) retires a pending entry.
 //! - Content (trees, render headers, chunks) is fetched through one path in
 //!   `content.rs`: memory → disk (`Load`) → daemon (`Send`).
 
@@ -21,23 +24,28 @@
 mod cache;
 mod connection;
 mod content;
+mod events;
 mod ids;
 mod view;
 
 use std::collections::BTreeMap;
 
 use moor_protocol::{
-    Anchor, Author, BuildInfo, ClientId, ClientMsg, ClientSeq, CommentKind, EventBody, Mutation,
-    ProtocolVersion, Request, RequestId, Response, ReviewId, RpcError, Seq, ServerMsg, Since,
-    StreamItem, SubscribeScope, ViewSection, WorkspaceId,
+    Anchor, Author, BuildInfo, ClientId, ClientMsg, ClientSeq, CommentId, CommentKind, Event,
+    EventBody, Mutation, ProtocolVersion, Request, RequestId, Response, ReviewId, ReviewSnapshot,
+    RpcError, Seq, ServerMsg, Since, StreamItem, SubscribeScope, ThreadId, Timestamp, ViewSection,
+    WorkspaceId,
 };
 use strum::EnumDiscriminants;
 
 pub use cache::{Bytes, CacheKey, CacheValue, ContentCache, Evicted, RenderKey};
 pub use connection::{Connection, ConnectionKind};
 pub use content::{CacheConfig, DiskTier, DiskTierKind, FileRef, PREFETCH_RADIUS};
+pub use events::{
+    EventMeta, MutationError, MutationErrorKind, apply_body, local_event, thread_id_of,
+};
 pub use ids::IdSeed;
-pub use view::{ConnectionView, Draft, OpenFile, OpenReview, ViewDelta, ViewModel};
+pub use view::{ConnectionView, Draft, OpenFile, OpenReview, PendingEvent, ViewDelta, ViewModel};
 
 pub use moor_protocol as protocol;
 
@@ -94,6 +102,24 @@ pub enum Action {
         body: String,
     },
     DraftDiscarded,
+    /// Reply in an existing thread of the open review.
+    Reply {
+        thread_id: ThreadId,
+        body: String,
+    },
+    EditComment {
+        comment_id: CommentId,
+        body: String,
+    },
+    DeleteComment {
+        comment_id: CommentId,
+    },
+    ResolveThread {
+        thread_id: ThreadId,
+    },
+    UnresolveThread {
+        thread_id: ThreadId,
+    },
     /// The host shows rows `first_row..=last_row` of `file`. Opens the file
     /// if it was not; drives chunk (pre)fetching.
     Viewport {
@@ -153,6 +179,9 @@ pub enum CoreError {
     DraftAlreadyOpen,
     #[error("no draft is open")]
     NoDraft,
+    /// The mutation would be rejected by the daemon; nothing was sent.
+    #[error(transparent)]
+    Mutation(#[from] MutationError),
     #[error("nothing was loaded under key {0:?}")]
     UnknownKey(Key),
     #[error("the daemon rejected the handshake: {0:?}")]
@@ -251,8 +280,25 @@ pub struct ClientCore {
     in_flight: BTreeMap<RequestId, InFlight>,
     ids: ids::IdGen,
     /// `ReviewTargetsResolved` events held back while a draft is open (§5.4).
-    deferred: Vec<EventBody>,
+    deferred: Vec<Event>,
     content: content::Content,
+    /// The open review as the daemon last confirmed it; `view.review.snapshot`
+    /// is this plus `pending`.
+    committed: Option<ReviewSnapshot>,
+    /// Mutations sent and not yet echoed by the daemon, in send order.
+    pending: Vec<Pending>,
+}
+
+/// A mutation applied locally and awaiting the daemon's echo.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Pending {
+    client_seq: ClientSeq,
+    /// When it was applied locally; the optimistic event's timestamp.
+    ts: Timestamp,
+    mutation: Mutation,
+    body: EventBody,
+    /// `false` after a disconnect until it is re-sent on resubscribe.
+    sent: bool,
 }
 
 impl ClientCore {
@@ -271,7 +317,15 @@ impl ClientCore {
             ids,
             deferred: Vec::new(),
             content,
+            committed: None,
+            pending: Vec::new(),
         }
+    }
+
+    /// Mutations awaiting the daemon, oldest first.
+    #[must_use]
+    pub fn pending_count(&self) -> usize {
+        self.pending.len()
     }
 
     #[must_use]
@@ -391,25 +445,56 @@ impl ClientCore {
                 let review_id = review.snapshot.review.id;
                 let anchor = draft.anchor.clone();
                 let comment_id = self.ids.comment_id(self.now);
-                let client_seq = self.next_client_seq;
-                self.next_client_seq = client_seq.next();
-                let send = self.request(
-                    Request::Mutate {
-                        client_seq,
-                        mutation: Mutation::AddComment {
-                            review_id,
-                            comment_id,
-                            kind: CommentKind::Note,
-                            anchor,
-                            body,
-                        },
-                    },
-                    InFlight::Mutate { client_seq },
-                );
+                let mut effects = self.mutate(Mutation::AddComment {
+                    review_id,
+                    comment_id,
+                    kind: CommentKind::Note,
+                    anchor,
+                    body,
+                })?;
                 self.view.draft = None;
-                let mut effects = vec![send];
                 effects.extend(self.drain_deferred());
                 Ok(effects)
+            }
+            Action::Reply { thread_id, body } => {
+                let review_id = self.open_review_id()?;
+                let comment_id = self.ids.comment_id(self.now);
+                self.mutate(Mutation::Reply {
+                    review_id,
+                    thread_id,
+                    comment_id,
+                    kind: CommentKind::Note,
+                    body,
+                })
+            }
+            Action::EditComment { comment_id, body } => {
+                let review_id = self.open_review_id()?;
+                self.mutate(Mutation::EditComment {
+                    review_id,
+                    comment_id,
+                    body,
+                })
+            }
+            Action::DeleteComment { comment_id } => {
+                let review_id = self.open_review_id()?;
+                self.mutate(Mutation::DeleteComment {
+                    review_id,
+                    comment_id,
+                })
+            }
+            Action::ResolveThread { thread_id } => {
+                let review_id = self.open_review_id()?;
+                self.mutate(Mutation::ResolveThread {
+                    review_id,
+                    thread_id,
+                })
+            }
+            Action::UnresolveThread { thread_id } => {
+                let review_id = self.open_review_id()?;
+                self.mutate(Mutation::UnresolveThread {
+                    review_id,
+                    thread_id,
+                })
             }
             Action::DraftDiscarded => {
                 if self.view.draft.is_none() {
@@ -421,27 +506,122 @@ impl ClientCore {
         }
     }
 
+    fn open_review_id(&self) -> Result<ReviewId, CoreError> {
+        self.view
+            .review
+            .as_ref()
+            .map(|r| r.snapshot.review.id)
+            .ok_or(CoreError::NoOpenReview)
+    }
+
+    /// What this client's own events carry, at the core's current time.
+    fn meta_now(&self) -> EventMeta {
+        EventMeta {
+            author: self.config.author.clone(),
+            ts: Timestamp::from_millis(i64::try_from(self.now).unwrap_or(i64::MAX)),
+        }
+    }
+
+    /// Apply `mutation` optimistically and send it. Rejected (nothing sent,
+    /// nothing shown) when the daemon would reject it against the current
+    /// view, pending mutations included.
+    fn mutate(&mut self, mutation: Mutation) -> Result<Vec<Effect>, CoreError> {
+        self.require_subscribed()?;
+        let Some(open) = &self.view.review else {
+            return Err(CoreError::NoOpenReview);
+        };
+        let meta = self.meta_now();
+        let body = local_event(&open.snapshot, &meta, &mutation)?;
+        let client_seq = self.next_client_seq;
+        self.next_client_seq = client_seq.next();
+        self.pending.push(Pending {
+            client_seq,
+            ts: meta.ts,
+            mutation: mutation.clone(),
+            body,
+            sent: true,
+        });
+        let send = self.request(
+            Request::Mutate {
+                client_seq,
+                mutation,
+            },
+            InFlight::Mutate { client_seq },
+        );
+        let sections = self.rebase();
+        Ok(vec![send, render(&sections)])
+    }
+
+    /// Rebuild the shown snapshot as `committed` plus every pending event,
+    /// and mirror the pending list into the view. Returns the sections the
+    /// pending events touch (`Threads` when the list just emptied, so the
+    /// pending marks clear).
+    fn rebase(&mut self) -> Vec<ViewSection> {
+        let (Some(committed), Some(open)) = (&self.committed, &mut self.view.review) else {
+            return Vec::new();
+        };
+        let mut shown = committed.clone();
+        let mut sections = Vec::new();
+        let author = self.config.author.clone();
+        for p in &self.pending {
+            let meta = EventMeta {
+                author: author.clone(),
+                ts: p.ts,
+            };
+            sections.extend(apply_body(&mut shown, &meta, &p.body));
+        }
+        let was_pending = !open.pending.is_empty();
+        open.snapshot = shown;
+        open.pending = self
+            .pending
+            .iter()
+            .map(|p| PendingEvent {
+                client_seq: p.client_seq,
+                body: p.body.clone(),
+            })
+            .collect();
+        if was_pending && open.pending.is_empty() {
+            sections.push(ViewSection::Threads);
+        }
+        sections
+    }
+
+    /// Retire the pending entry the daemon has answered (by echo or error).
+    fn retire_pending(&mut self, client_seq: ClientSeq) -> bool {
+        let before = self.pending.len();
+        self.pending.retain(|p| p.client_seq != client_seq);
+        self.pending.len() != before
+    }
+
     /// Drop the open review and everything content-side it pinned.
     fn close_review(&mut self, effects: &mut Vec<Effect>) {
         self.view.review = None;
         self.view.draft = None;
         self.view.pending_refresh = false;
         self.deferred.clear();
+        self.committed = None;
+        self.pending.clear();
         self.review_closed(effects);
     }
 
     /// A review snapshot arrived (streamed or single): it becomes the open
-    /// review, replacing any other.
-    fn install_snapshot(
-        &mut self,
-        snapshot: moor_protocol::ReviewSnapshot,
-        effects: &mut Vec<Effect>,
-    ) {
-        self.review_closed(effects);
+    /// review, replacing any other. Pending mutations for the same review
+    /// survive (they are still on their way to the daemon).
+    fn install_snapshot(&mut self, snapshot: ReviewSnapshot, effects: &mut Vec<Effect>) {
+        let same = self
+            .committed
+            .as_ref()
+            .is_some_and(|c| c.review.id == snapshot.review.id);
+        let pending = if same {
+            std::mem::take(&mut self.pending)
+        } else {
+            Vec::new()
+        };
+        self.close_review(effects);
+        self.committed = Some(snapshot.clone());
         self.view.review = Some(OpenReview::new(snapshot));
-        self.view.draft = None;
-        self.view.pending_refresh = false;
-        self.deferred.clear();
+        self.pending = pending;
+        self.rebase();
     }
 
     fn require_subscribed(&self) -> Result<(), CoreError> {
@@ -591,7 +771,10 @@ impl ClientCore {
                     // the host may retry with `Connect` after disconnecting.
                     self.view.connection = ConnectionView::Connecting;
                 }
-                if let InFlight::Mutate { .. } = waiting {
+                if let InFlight::Mutate { client_seq } = waiting {
+                    // Rejected: the optimistic change is undone.
+                    self.retire_pending(client_seq);
+                    sections.extend(self.rebase());
                     sections.push(ViewSection::Threads);
                 }
                 if let Some(key) = waiting.key() {
@@ -614,7 +797,7 @@ impl ClientCore {
                     self.connection = Connection::Subscribed {
                         last_seq: event.seq,
                     };
-                    Ok(self.apply_event(event.body))
+                    Ok(self.apply_event(event))
                 }
                 Connection::Disconnected { .. } | Connection::Connecting { .. } => {
                     Err(self.wrong_state(InputKind::Server))
@@ -636,6 +819,9 @@ impl ClientCore {
         }
         self.in_flight.clear();
         self.content_reset_in_flight();
+        for p in &mut self.pending {
+            p.sent = false;
+        }
     }
 
     // One arm per variant; splitting would hide the exhaustive match.
@@ -772,7 +958,32 @@ impl ClientCore {
                 self.connection = Connection::Subscribed { last_seq };
                 self.view.connection = ConnectionView::Subscribed;
                 self.view.last_error = None;
-                vec![render(&[ViewSection::Connection])]
+                // Pending mutations lost with the connection go out again,
+                // once each, with their original `client_seq` so the daemon
+                // (and this core, on the echo) can match them.
+                let resend: Vec<(ClientSeq, Mutation)> = self
+                    .pending
+                    .iter_mut()
+                    .filter(|p| !p.sent)
+                    .map(|p| {
+                        p.sent = true;
+                        (p.client_seq, p.mutation.clone())
+                    })
+                    .collect();
+                let mut effects: Vec<Effect> = resend
+                    .into_iter()
+                    .map(|(client_seq, mutation)| {
+                        self.request(
+                            Request::Mutate {
+                                client_seq,
+                                mutation,
+                            },
+                            InFlight::Mutate { client_seq },
+                        )
+                    })
+                    .collect();
+                effects.push(render(&[ViewSection::Connection]));
+                effects
             }
             (InFlight::ListReviews, Response::Reviews { reviews }) => {
                 self.view.reviews = reviews;
@@ -848,16 +1059,23 @@ impl ClientCore {
                 self.content_done(&mut effects);
                 effects
             }
-            (InFlight::Mutate { .. }, Response::Committed { event }) => {
-                // The same event is also broadcast; applying here covers a
-                // subscription that starts after the mutation.
+            (InFlight::Mutate { client_seq }, Response::Committed { event }) => {
+                // The same event is also broadcast; whichever arrives first
+                // applies it, the other only retires the pending entry.
                 match self.connection {
-                    Connection::Subscribed { last_seq } if last_seq >= event.seq => Vec::new(),
+                    Connection::Subscribed { last_seq } if last_seq >= event.seq => {
+                        if self.retire_pending(client_seq) {
+                            let sections = self.rebase();
+                            vec![render(&sections)]
+                        } else {
+                            Vec::new()
+                        }
+                    }
                     Connection::Subscribed { .. } => {
                         self.connection = Connection::Subscribed {
                             last_seq: event.seq,
                         };
-                        self.apply_event(event.body)
+                        self.apply_event(event)
                     }
                     Connection::Disconnected { .. } | Connection::Connecting { .. } => {
                         return Err(self.wrong_state(InputKind::Server));
@@ -882,18 +1100,19 @@ impl ClientCore {
         Ok(effects)
     }
 
-    /// Fold a committed event into the view. Events for reviews other than
-    /// the open one only touch the review list.
-    // One flat arm per `EventBody` variant, deliberately not split so the
-    // exhaustive match stays readable when variants are added.
-    #[allow(clippy::too_many_lines)]
-    fn apply_event(&mut self, body: EventBody) -> Vec<Effect> {
+    /// Fold a committed event into the view: the review list first, then the
+    /// open review's committed snapshot, then the pending list on top.
+    fn apply_event(&mut self, event: Event) -> Vec<Effect> {
         let mut sections = Vec::new();
         let mut effects = Vec::new();
-        match body {
+        if event.client_id == self.config.client_id {
+            // Our own mutation came back: it is committed now.
+            self.retire_pending(event.client_seq);
+        }
+        match &event.body {
             EventBody::ReviewCreated { review } => {
                 self.view.reviews.retain(|r| r.id != review.id);
-                self.view.reviews.push(review);
+                self.view.reviews.push(review.clone());
                 sections.push(ViewSection::ReviewList);
             }
             EventBody::ReviewUpdated {
@@ -901,24 +1120,19 @@ impl ClientCore {
                 title,
                 status,
             } => {
-                if let Some(r) = self.view.reviews.iter_mut().find(|r| r.id == review_id) {
-                    r.title.clone_from(&title);
-                    r.status = status;
+                if let Some(r) = self.view.reviews.iter_mut().find(|r| r.id == *review_id) {
+                    r.title.clone_from(title);
+                    r.status = *status;
                     sections.push(ViewSection::ReviewList);
-                }
-                if let Some(open) = self.open_mut(review_id) {
-                    open.snapshot.review.title = title;
-                    open.snapshot.review.status = status;
-                    sections.push(ViewSection::Conversation);
                 }
             }
             EventBody::ReviewDeleted { review_id } => {
                 let before = self.view.reviews.len();
-                self.view.reviews.retain(|r| r.id != review_id);
+                self.view.reviews.retain(|r| r.id != *review_id);
                 if self.view.reviews.len() != before {
                     sections.push(ViewSection::ReviewList);
                 }
-                if self.open_mut(review_id).is_some() {
+                if self.open_mut(*review_id).is_some() {
                     self.close_review(&mut effects);
                     sections.extend([
                         ViewSection::Tree,
@@ -928,108 +1142,59 @@ impl ClientCore {
                     ]);
                 }
             }
-            EventBody::ReviewTargetsResolved { review_id, targets } => {
-                if self.open_mut(review_id).is_some() {
-                    if self.view.draft.is_some() {
-                        self.deferred
-                            .push(EventBody::ReviewTargetsResolved { review_id, targets });
-                        if !self.view.pending_refresh {
-                            self.view.pending_refresh = true;
-                            sections.push(ViewSection::Draft);
-                        }
-                    } else if let Some(open) = self.open_mut(review_id) {
-                        open.snapshot.resolved = Some(targets);
-                        sections.push(ViewSection::Diff);
-                        // New heads mean new trees and renders: refetch the
-                        // trees and the file list; headers re-key by blob.
-                        self.want_review_trees(&mut effects);
-                        effects.push(self.request(
-                            Request::ListFiles { review_id },
-                            InFlight::ListFiles { review_id },
-                        ));
-                    }
+            EventBody::ReviewTargetsResolved { review_id, .. }
+                if self.open_mut(*review_id).is_some() && self.view.draft.is_some() =>
+            {
+                // Held back until the draft closes (§5.4).
+                self.deferred.push(event);
+                if !self.view.pending_refresh {
+                    self.view.pending_refresh = true;
+                    sections.push(ViewSection::Draft);
                 }
+                return if sections.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![render(&sections)]
+                };
             }
-            EventBody::CommentCreated { comment } => {
-                if let Some(open) = self.open_mut(comment.review_id) {
-                    open.snapshot.comments.retain(|c| c.id != comment.id);
-                    open.snapshot.comments.push(comment);
-                    sections.push(ViewSection::Threads);
-                }
-            }
-            EventBody::CommentEdited {
-                review_id,
-                comment_id,
-                body,
-            } => {
-                if let Some(open) = self.open_mut(review_id)
-                    && let Some(c) = open
-                        .snapshot
-                        .comments
-                        .iter_mut()
-                        .find(|c| c.id == comment_id)
-                {
-                    c.body = body;
-                    sections.push(ViewSection::Threads);
-                }
-            }
-            EventBody::CommentDeleted {
-                review_id,
-                comment_id,
-            } => {
-                if let Some(open) = self.open_mut(review_id) {
-                    open.snapshot.comments.retain(|c| c.id != comment_id);
-                    sections.push(ViewSection::Threads);
-                }
-            }
-            EventBody::CommentReanchored {
-                review_id,
-                comment_id,
-                anchor,
-                state,
-            } => {
-                if let Some(open) = self.open_mut(review_id)
-                    && let Some(c) = open
-                        .snapshot
-                        .comments
-                        .iter_mut()
-                        .find(|c| c.id == comment_id)
-                {
-                    c.anchor = anchor;
-                    c.state = state;
-                    sections.push(ViewSection::Threads);
-                }
-            }
-            EventBody::ThreadResolved {
-                review_id,
-                thread_id,
-                ..
-            }
-            | EventBody::ThreadUnresolved {
-                review_id,
-                thread_id,
-                ..
-            } => {
-                let _ = (review_id, thread_id);
-                if self.open_mut(review_id).is_some() {
-                    sections.push(ViewSection::Threads);
-                }
-            }
-            EventBody::FileViewed { review_id, .. } | EventBody::FileUnviewed { review_id, .. } => {
-                if self.open_mut(review_id).is_some() {
-                    sections.push(ViewSection::Progress);
-                }
-            }
-            EventBody::ReviewRequested { review_id, .. }
-            | EventBody::SuggestionApplied { review_id, .. } => {
-                if self.open_mut(review_id).is_some() {
-                    sections.push(ViewSection::Conversation);
-                }
-            }
-            EventBody::WorkspaceCreated { .. }
+            EventBody::ReviewTargetsResolved { .. }
+            | EventBody::CommentCreated { .. }
+            | EventBody::CommentEdited { .. }
+            | EventBody::CommentDeleted { .. }
+            | EventBody::CommentReanchored { .. }
+            | EventBody::ThreadResolved { .. }
+            | EventBody::ThreadUnresolved { .. }
+            | EventBody::FileViewed { .. }
+            | EventBody::FileUnviewed { .. }
+            | EventBody::ReviewRequested { .. }
+            | EventBody::SuggestionApplied { .. }
+            | EventBody::WorkspaceCreated { .. }
             | EventBody::WorkspaceUpdated { .. }
             | EventBody::RepoAttached { .. }
             | EventBody::RepoDetached { .. } => {}
+        }
+        let concerns_open = event
+            .body
+            .review_id()
+            .is_some_and(|id| self.committed.as_ref().is_some_and(|c| c.review.id == id));
+        if concerns_open {
+            let meta = EventMeta {
+                author: event.author.clone(),
+                ts: event.ts,
+            };
+            if let Some(committed) = &mut self.committed {
+                sections.extend(apply_body(committed, &meta, &event.body));
+            }
+            sections.extend(self.rebase());
+            if let EventBody::ReviewTargetsResolved { review_id, .. } = event.body {
+                // New heads mean new trees and renders: refetch the trees
+                // and the file list; headers re-key by blob.
+                self.want_review_trees(&mut effects);
+                effects.push(self.request(
+                    Request::ListFiles { review_id },
+                    InFlight::ListFiles { review_id },
+                ));
+            }
         }
         if !sections.is_empty() {
             effects.push(render(&sections));
@@ -1052,8 +1217,8 @@ impl ClientCore {
         self.view.pending_refresh = false;
         let mut sections = vec![ViewSection::Draft];
         let mut effects = Vec::new();
-        for body in deferred {
-            for effect in self.apply_event(body) {
+        for event in deferred {
+            for effect in self.apply_event(event) {
                 match effect {
                     Effect::Render(delta) => sections.extend(delta.sections),
                     Effect::Connect
