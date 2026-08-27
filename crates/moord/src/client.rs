@@ -24,7 +24,7 @@ pub enum ClientError {
     #[error("handshake rejected: {0:?}")]
     Rejected(RpcError),
     #[error("expected Welcome or Rejected, got {0:?}")]
-    BadHandshake(ServerMsg),
+    BadHandshake(Box<ServerMsg>),
     #[error("connection closed")]
     Closed,
     #[error("daemon error: {0:?}")]
@@ -162,7 +162,7 @@ impl Client {
                 upgrade,
             },
             ServerMsg::Rejected { error } => return Err(ClientError::Rejected(error)),
-            other => return Err(ClientError::BadHandshake(other)),
+            other => return Err(ClientError::BadHandshake(Box::new(other))),
         };
 
         let (out, mut out_rx) = mpsc::unbounded_channel::<ClientMsg>();
