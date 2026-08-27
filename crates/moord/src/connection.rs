@@ -13,14 +13,15 @@ use moor_protocol::{
     ChunkIndex, ClientMsg, Envelope, Event, ProtocolVersion, RenderChunk, Request, RequestId,
     Response, ResponseShape, RpcError, Seq, ServerMsg, Since, StreamItem, SubscribeScope,
 };
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, BufWriter};
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{Mutex, mpsc};
 use tokio::task::AbortHandle;
 
-use crate::codec::{self, CodecError};
+use crate::codec::CodecError;
 use crate::daemon::{Daemon, DaemonError};
 use crate::dispatch;
 use crate::handshake::{AwaitingHello, Negotiated};
+use crate::transport::{self, FrameRead, FrameWrite};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConnectionError {
@@ -53,17 +54,28 @@ struct Subscriptions {
     delivered: Option<Seq>,
 }
 
-/// Serve one already-accepted stream until the peer disconnects.
+/// Serve one already-accepted byte stream (length-prefixed frames) until
+/// the peer disconnects.
 pub async fn serve<S>(daemon: Arc<Daemon>, stream: S) -> Result<(), ConnectionError>
 where
     S: AsyncRead + AsyncWrite + Send + 'static,
 {
-    let (rd, wr) = tokio::io::split(stream);
-    let mut rd = BufReader::new(rd);
-    let mut wr = BufWriter::new(wr);
+    let (rd, wr) = transport::byte_stream(stream);
+    serve_framed(daemon, rd, wr).await
+}
 
+/// Serve one connection over any framed transport.
+pub async fn serve_framed<R, W>(
+    daemon: Arc<Daemon>,
+    mut rd: R,
+    mut wr: W,
+) -> Result<(), ConnectionError>
+where
+    R: FrameRead + 'static,
+    W: FrameWrite + 'static,
+{
     // Handshake happens inline: nothing else may be in flight yet.
-    let Some(first) = codec::read_msg::<_, ClientMsg>(&mut rd).await? else {
+    let Some(first) = transport::recv_msg::<_, ClientMsg>(&mut rd).await? else {
         return Ok(());
     };
     let hello = AwaitingHello {
@@ -72,12 +84,12 @@ where
     };
     let negotiated = match hello.negotiate(first) {
         Ok((n, welcome)) => {
-            codec::write_msg(&mut wr, &welcome).await?;
+            transport::send_msg(&mut wr, &welcome).await?;
             n
         }
         Err(rejected) => {
-            codec::write_msg(&mut wr, &rejected.reply).await?;
-            wr.shutdown().await.ok();
+            transport::send_msg(&mut wr, &rejected.reply).await?;
+            wr.close().await.ok();
             return Err(ConnectionError::Rejected);
         }
     };
@@ -118,12 +130,12 @@ struct Connection {
     subs: Mutex<Subscriptions>,
 }
 
-async fn read_loop<R: AsyncRead + Unpin>(
+async fn read_loop<R: FrameRead>(
     conn: &Arc<Connection>,
     rd: &mut R,
     in_flight: &mut HashMap<RequestId, AbortHandle>,
 ) -> Result<(), ConnectionError> {
-    while let Some(env) = codec::read_msg::<_, ClientMsg>(rd).await? {
+    while let Some(env) = transport::recv_msg::<_, ClientMsg>(rd).await? {
         in_flight.retain(|_, h| !h.is_finished());
         if let Err(error) = conn.negotiated.check(env.v) {
             // No request id to attach it to for a bad Hello re-send; use 0.
@@ -163,19 +175,19 @@ async fn read_loop<R: AsyncRead + Unpin>(
     Ok(())
 }
 
-async fn write_loop<W: AsyncWrite + Unpin>(
+async fn write_loop<W: FrameWrite>(
     mut wr: W,
     mut rx: mpsc::UnboundedReceiver<ServerMsg>,
     v: ProtocolVersion,
 ) {
     while let Some(msg) = rx.recv().await {
         let env = Envelope { v, msg };
-        if let Err(e) = codec::write_msg(&mut wr, &env).await {
+        if let Err(e) = transport::send_msg(&mut wr, &env).await {
             tracing::debug!(error = %e, "write failed; closing");
             return;
         }
     }
-    let _ = wr.shutdown().await;
+    let _ = wr.close().await;
 }
 
 /// Forward broadcast events matching this connection's scopes.

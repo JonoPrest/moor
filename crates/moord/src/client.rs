@@ -11,10 +11,11 @@ use moor_protocol::{
     Author, BuildInfo, ClientId, ClientMsg, Envelope, Event, ProtocolVersion, Request, RequestId,
     Response, RpcError, SchemaVersion, ServerMsg, StreamItem, UpgradeNotice,
 };
-use tokio::io::{AsyncRead, AsyncWrite, BufReader, BufWriter};
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{Mutex, mpsc, oneshot};
 
-use crate::codec::{self, CodecError};
+use crate::codec::CodecError;
+use crate::transport::{self, FrameRead, FrameWrite};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ClientError {
@@ -88,7 +89,18 @@ impl Client {
         Self::handshake(stream, identity, ProtocolVersion::CURRENT).await
     }
 
-    /// Handshake over an arbitrary stream, requesting `protocol`.
+    /// Connect to a daemon's WebSocket endpoint (`ws://host:port`) and
+    /// complete the handshake.
+    pub async fn connect_ws(url: &str, identity: Identity) -> Result<Self, ClientError> {
+        let (ws, _) = tokio_tungstenite::connect_async(url)
+            .await
+            .map_err(|e| CodecError::Io(std::io::Error::other(e)))?;
+        let (rd, wr) = transport::web_socket(ws);
+        Self::handshake_framed(rd, wr, identity, ProtocolVersion::CURRENT).await
+    }
+
+    /// Handshake over a byte stream (length-prefixed frames), requesting
+    /// `protocol`.
     pub async fn handshake<S>(
         stream: S,
         identity: Identity,
@@ -97,10 +109,22 @@ impl Client {
     where
         S: AsyncRead + AsyncWrite + Send + 'static,
     {
-        let (rd, wr) = tokio::io::split(stream);
-        let mut rd = BufReader::new(rd);
-        let mut wr = BufWriter::new(wr);
-        codec::write_msg(
+        let (rd, wr) = transport::byte_stream(stream);
+        Self::handshake_framed(rd, wr, identity, protocol).await
+    }
+
+    /// Handshake over any framed transport, requesting `protocol`.
+    pub async fn handshake_framed<R, W>(
+        mut rd: R,
+        mut wr: W,
+        identity: Identity,
+        protocol: ProtocolVersion,
+    ) -> Result<Self, ClientError>
+    where
+        R: FrameRead + 'static,
+        W: FrameWrite + 'static,
+    {
+        transport::send_msg(
             &mut wr,
             &Envelope {
                 v: protocol,
@@ -113,7 +137,7 @@ impl Client {
             },
         )
         .await?;
-        let reply = codec::read_msg::<_, ServerMsg>(&mut rd)
+        let reply = transport::recv_msg::<_, ServerMsg>(&mut rd)
             .await?
             .ok_or(ClientError::Closed)?;
         let welcome = match reply.msg {
@@ -136,7 +160,7 @@ impl Client {
         let v = welcome.protocol;
         tokio::spawn(async move {
             while let Some(msg) = out_rx.recv().await {
-                if codec::write_msg(&mut wr, &Envelope { v, msg })
+                if transport::send_msg(&mut wr, &Envelope { v, msg })
                     .await
                     .is_err()
                 {
@@ -150,7 +174,7 @@ impl Client {
         let demux = Arc::clone(&pending);
         tokio::spawn(async move {
             loop {
-                let Ok(Some(env)) = codec::read_msg::<_, ServerMsg>(&mut rd).await else {
+                let Ok(Some(env)) = transport::recv_msg::<_, ServerMsg>(&mut rd).await else {
                     break;
                 };
                 dispatch(&demux, &un_tx, env.msg).await;

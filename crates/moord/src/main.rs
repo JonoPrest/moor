@@ -8,7 +8,7 @@ use clap::Parser;
 use moor_protocol::BuildInfo;
 use moor_review_core::DataDir;
 use moord::Daemon;
-use moord::server::{UnixServer, serve_stdio};
+use moord::server::{UnixServer, WsServer, serve_stdio};
 use tokio_util::sync::CancellationToken;
 
 /// The Moor daemon.
@@ -25,6 +25,10 @@ struct Args {
     /// (`ssh host moord --stdio`).
     #[arg(long)]
     stdio: bool,
+    /// Also listen for WebSocket clients on this address, e.g.
+    /// `127.0.0.1:7677`. Off unless given.
+    #[arg(long, env = "MOOR_WS")]
+    ws: Option<std::net::SocketAddr>,
 }
 
 fn default_data_dir() -> anyhow::Result<PathBuf> {
@@ -72,7 +76,20 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("shutting down");
         signal.cancel();
     });
+    let ws = match args.ws {
+        Some(addr) => {
+            let ws = WsServer::bind(addr)
+                .await
+                .with_context(|| format!("binding ws {addr}"))?;
+            tracing::info!(ws = %ws.addr(), "listening");
+            Some(tokio::spawn(ws.run(Arc::clone(&daemon), shutdown.clone())))
+        }
+        None => None,
+    };
     server.run(Arc::clone(&daemon), shutdown).await;
+    if let Some(ws) = ws {
+        let _ = ws.await;
+    }
     watcher.stop();
     Ok(())
 }

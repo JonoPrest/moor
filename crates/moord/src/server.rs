@@ -4,11 +4,14 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use tokio::net::UnixListener;
+use std::net::SocketAddr;
+
+use tokio::net::{TcpListener, UnixListener};
 use tokio_util::sync::CancellationToken;
 
 use crate::connection;
 use crate::daemon::Daemon;
+use crate::transport;
 
 /// A bound unix socket. Removes the socket file on drop.
 #[derive(Debug)]
@@ -74,6 +77,61 @@ impl UnixServer {
 impl Drop for UnixServer {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+/// A bound WebSocket (plain TCP) listener. Same protocol as the unix
+/// socket, one envelope per binary message; intended for browser clients
+/// and remote daemons.
+#[derive(Debug)]
+pub struct WsServer {
+    listener: TcpListener,
+    addr: SocketAddr,
+}
+
+impl WsServer {
+    /// Bind `addr`; pass port 0 to let the OS pick (see [`Self::addr`]).
+    pub async fn bind(addr: SocketAddr) -> std::io::Result<Self> {
+        let listener = TcpListener::bind(addr).await?;
+        let addr = listener.local_addr()?;
+        Ok(Self { listener, addr })
+    }
+
+    #[must_use]
+    pub fn addr(&self) -> SocketAddr {
+        self.addr
+    }
+
+    /// Accept until `shutdown` fires; see [`UnixServer::run`].
+    pub async fn run(self, daemon: Arc<Daemon>, shutdown: CancellationToken) {
+        let mut tasks = tokio::task::JoinSet::<()>::new();
+        loop {
+            tokio::select! {
+                () = shutdown.cancelled() => break,
+                accepted = self.listener.accept() => match accepted {
+                    Ok((stream, peer)) => {
+                        let d = Arc::clone(&daemon);
+                        tasks.spawn(async move {
+                            let ws = match tokio_tungstenite::accept_async(stream).await {
+                                Ok(ws) => ws,
+                                Err(e) => {
+                                    tracing::debug!(%peer, error = %e, "websocket upgrade failed");
+                                    return;
+                                }
+                            };
+                            let (rd, wr) = transport::web_socket(ws);
+                            if let Err(e) = connection::serve_framed(d, rd, wr).await {
+                                tracing::debug!(%peer, error = %e, "connection ended");
+                            }
+                        });
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "accept failed");
+                    }
+                },
+            }
+        }
+        tasks.abort_all();
     }
 }
 

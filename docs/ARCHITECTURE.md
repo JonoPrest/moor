@@ -221,7 +221,7 @@ TreeDelta    { from_root, to_root, added: [TreeEntry], removed: [path], changed:
 ### 4.8 Transports
 
 - **Unix socket**, length-prefixed JSON frames. Multiplexed: `Request{id}` / `Response{id}` / `Event{seq}`.
-- **WebSocket**, same frames, for browser clients.
+- **WebSocket**, same JSON envelopes, one per binary (or text) message — the socket does the framing, so no length prefix. Plain TCP, opt-in via `moord --ws <addr>`, for browser clients and remote daemons. Inside `moord` both share `connection::serve_framed` over the `FrameRead`/`FrameWrite` traits.
 - **MCP**, over stdio or the ws port. Tools map to core methods: `list_workspaces`, `list_reviews`, `create_review`, `get_diff`, `get_file`, `list_comments`, `add_comment`, `reply`, `resolve`, `suggest`, `request_review`, `subscribe_events`.
 - **Subscriptions**: `subscribe(scope, since_seq)` streams events from `since_seq`. Reconnect = resubscribe from last seen seq; no other sync mechanism.
 - **Review open is one streamed request.** `open_review(id)` answers with an ordered stream — `ReviewSnapshot` (review, threads, comments) → `TreeSnapshot` per target ref → `FileRenderHeader` per changed file → first `RenderChunk` per file — rather than the client issuing hundreds of round-trips over SSH. The client consumes and its cache fills as a side effect; per-item requests remain for cache misses and viewport-driven chunks.

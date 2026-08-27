@@ -19,6 +19,7 @@ pub mod daemon;
 pub mod dispatch;
 pub mod handshake;
 pub mod server;
+pub mod transport;
 pub mod watcher;
 
 pub use daemon::Daemon;

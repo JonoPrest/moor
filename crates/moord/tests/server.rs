@@ -1,4 +1,5 @@
-//! End-to-end over a unix socket (plan 2.2).
+//! End-to-end over the unix socket and WebSocket transports (plan 2.2, 2.4).
+//! Every test that only needs a client runs against both.
 #![allow(clippy::format_collect)]
 
 use std::path::Path;
@@ -15,12 +16,36 @@ use moor_review_core::DataDir;
 use moor_test_support::{RepoBuilder, TestRepo, files};
 use moord::Daemon;
 use moord::client::{Client, Identity};
-use moord::server::UnixServer;
+use moord::server::{UnixServer, WsServer};
 use tokio_util::sync::CancellationToken;
+
+/// Which listener a test's clients connect through.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Transport {
+    Unix,
+    Ws,
+}
+
+/// Where clients connect for one transport.
+#[derive(Debug, Clone)]
+enum Endpoint {
+    Unix(std::path::PathBuf),
+    Ws(String),
+}
+
+impl Endpoint {
+    async fn connect(&self, identity: Identity) -> Client {
+        match self {
+            Endpoint::Unix(p) => Client::connect_unix(p, identity).await.unwrap(),
+            Endpoint::Ws(url) => Client::connect_ws(url, identity).await.unwrap(),
+        }
+    }
+}
 
 struct Harness {
     _dir: tempfile::TempDir,
     socket: std::path::PathBuf,
+    endpoint: Endpoint,
     shutdown: CancellationToken,
     repo: TestRepo,
 }
@@ -58,7 +83,13 @@ fn identity(n: u128, name: &str) -> Identity {
     }
 }
 
+/// Daemon listening on both transports; clients use the unix socket.
 fn start(repo: TestRepo) -> Harness {
+    start_on(repo, Transport::Unix)
+}
+
+/// Daemon listening on both transports; clients use `transport`.
+fn start_on(repo: TestRepo, transport: Transport) -> Harness {
     let dir = tempfile::tempdir().unwrap();
     // macOS caps unix socket paths at 104 bytes; keep it short.
     let socket = std::env::temp_dir().join(format!("moord-{}.sock", ulid_ish()));
@@ -72,10 +103,35 @@ fn start(repo: TestRepo) -> Harness {
     .unwrap();
     let server = UnixServer::bind(&socket).unwrap();
     let shutdown = CancellationToken::new();
-    tokio::spawn(server.run(daemon, shutdown.clone()));
+    tokio::spawn(server.run(Arc::clone(&daemon), shutdown.clone()));
+    let ws_addr = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap();
+    let ws_ready = Arc::new(tokio::sync::Notify::new());
+    tokio::spawn({
+        let ready = Arc::clone(&ws_ready);
+        let shutdown = shutdown.clone();
+        async move {
+            let ws = WsServer::bind(ws_addr).await.unwrap();
+            ready.notify_one();
+            ws.run(daemon, shutdown).await;
+        }
+    });
+    let endpoint = match transport {
+        Transport::Unix => Endpoint::Unix(socket.clone()),
+        Transport::Ws => {
+            // `notify_one` stores a permit, so this can't miss the signal.
+            tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(ws_ready.notified());
+            });
+            Endpoint::Ws(format!("ws://{ws_addr}"))
+        }
+    };
     Harness {
         _dir: dir,
         socket,
+        endpoint,
         shutdown,
         repo,
     }
@@ -93,9 +149,7 @@ fn ulid_ish() -> String {
 }
 
 async fn connect(h: &Harness, n: u128, name: &str) -> Client {
-    Client::connect_unix(&h.socket, identity(n, name))
-        .await
-        .unwrap()
+    h.endpoint.connect(identity(n, name)).await
 }
 
 async fn mutate(c: &Client, seq: u64, m: Mutation) -> Result<moor_protocol::Event, RpcError> {
@@ -263,9 +317,8 @@ async fn frame_with_wrong_version_after_handshake_is_an_error() {
     ));
 }
 
-#[tokio::test]
-async fn two_clients_one_writes_other_receives_in_order() {
-    let h = start(small_repo());
+async fn two_clients_one_writes_other_receives_in_order(t: Transport) {
+    let h = start_on(small_repo(), t);
     let writer = connect(&h, 1, "ada").await;
     let reader = connect(&h, 2, "bob").await;
     seed(&h, &writer).await;
@@ -299,9 +352,8 @@ async fn two_clients_one_writes_other_receives_in_order() {
     }
 }
 
-#[tokio::test]
-async fn reconnect_with_since_receives_exactly_the_gap() {
-    let h = start(small_repo());
+async fn reconnect_with_since_receives_exactly_the_gap(t: Transport) {
+    let h = start_on(small_repo(), t);
     let writer = connect(&h, 1, "ada").await;
     seed(&h, &writer).await;
     let first = mutate(&writer, 10, file_comment(1, "one")).await.unwrap();
@@ -327,9 +379,8 @@ async fn reconnect_with_since_receives_exactly_the_gap() {
     assert_eq!(reader.next_event().await.unwrap(), fourth);
 }
 
-#[tokio::test]
-async fn scopes_filter_events() {
-    let h = start(small_repo());
+async fn scopes_filter_events(t: Transport) {
+    let h = start_on(small_repo(), t);
     let writer = connect(&h, 1, "ada").await;
     seed(&h, &writer).await;
     let reader = connect(&h, 2, "bob").await;
@@ -357,9 +408,8 @@ async fn scopes_filter_events() {
     assert_eq!(reader.next_event().await.unwrap(), wanted);
 }
 
-#[tokio::test]
-async fn open_review_streams_snapshot_trees_headers_then_chunks() {
-    let h = start(small_repo());
+async fn open_review_streams_snapshot_trees_headers_then_chunks(t: Transport) {
+    let h = start_on(small_repo(), t);
     let c = connect(&h, 1, "ada").await;
     seed(&h, &c).await;
     let (_, mut rx) = c
@@ -396,15 +446,14 @@ async fn open_review_streams_snapshot_trees_headers_then_chunks() {
     );
 }
 
-#[tokio::test]
-async fn file_render_streams_requested_chunk_first_and_can_be_cancelled() {
+async fn file_render_streams_requested_chunk_first_and_can_be_cancelled(t: Transport) {
     let repo = RepoBuilder::new()
         .commit("base", files!["big.rs" => big_source(1)])
         .branch("feature")
         .commit("feat", files!["big.rs" => big_source(1600)])
         .build()
         .unwrap();
-    let h = start(repo);
+    let h = start_on(repo, t);
     let c = connect(&h, 1, "ada").await;
     seed(&h, &c).await;
     let (_, mut rx) = c
@@ -448,15 +497,14 @@ async fn file_render_streams_requested_chunk_first_and_can_be_cancelled() {
     let _ = saw_cancelled;
 }
 
-#[tokio::test]
-async fn a_large_render_does_not_delay_another_clients_mutation() {
+async fn a_large_render_does_not_delay_another_clients_mutation(t: Transport) {
     let repo = RepoBuilder::new()
         .commit("base", files!["big.rs" => big_source(10)])
         .branch("feature")
         .commit("feat", files!["big.rs" => big_source(20_000)])
         .build()
         .unwrap();
-    let h = start(repo);
+    let h = start_on(repo, t);
     let renderer = connect(&h, 1, "ada").await;
     let writer = connect(&h, 2, "bob").await;
     seed(&h, &renderer).await;
@@ -489,8 +537,7 @@ async fn a_large_render_does_not_delay_another_clients_mutation() {
     assert!(chunks >= 40, "{chunks} chunks");
 }
 
-#[tokio::test]
-async fn reanchoring_many_comments_does_not_block_reads() {
+async fn reanchoring_many_comments_does_not_block_reads(t: Transport) {
     let repo = RepoBuilder::new()
         .commit("base", files!["a.rs" => big_source(600)])
         .branch("feature")
@@ -500,7 +547,7 @@ async fn reanchoring_many_comments_does_not_block_reads() {
         )
         .build()
         .unwrap();
-    let h = start(repo);
+    let h = start_on(repo, t);
     let writer = connect(&h, 1, "ada").await;
     let reader = connect(&h, 2, "bob").await;
     seed(&h, &writer).await;
@@ -542,11 +589,9 @@ async fn reanchoring_many_comments_does_not_block_reads() {
     h.repo.git(&["commit", "-qam", "shift"]).unwrap();
 
     let resolve = tokio::spawn({
-        let socket = h.socket.clone();
+        let endpoint = h.endpoint.clone();
         async move {
-            let c = Client::connect_unix(&socket, identity(3, "carol"))
-                .await
-                .unwrap();
+            let c = endpoint.connect(identity(3, "carol")).await;
             c.request(Request::ResolveTargets {
                 review_id: review_id(),
             })
@@ -654,4 +699,38 @@ async fn stale_socket_file_is_replaced_and_live_one_is_refused() {
         "a live daemon is not replaced"
     );
     shutdown.cancel();
+}
+
+/// Expand each listed `async fn name(t: Transport)` into a `#[tokio::test]`
+/// per transport, in `unix::name` and `ws::name`. The WebSocket harness
+/// blocks briefly while the listener binds, hence the multi-thread flavour.
+macro_rules! on_both_transports {
+    ($($name:ident),* $(,)?) => {
+        mod unix {
+            $(
+                #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+                async fn $name() {
+                    super::$name(super::Transport::Unix).await;
+                }
+            )*
+        }
+        mod ws {
+            $(
+                #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+                async fn $name() {
+                    super::$name(super::Transport::Ws).await;
+                }
+            )*
+        }
+    };
+}
+
+on_both_transports! {
+    two_clients_one_writes_other_receives_in_order,
+    reconnect_with_since_receives_exactly_the_gap,
+    scopes_filter_events,
+    open_review_streams_snapshot_trees_headers_then_chunks,
+    file_render_streams_requested_chunk_first_and_can_be_cancelled,
+    a_large_render_does_not_delay_another_clients_mutation,
+    reanchoring_many_comments_does_not_block_reads,
 }
