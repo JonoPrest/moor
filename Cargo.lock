@@ -1718,6 +1718,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "moor-client-host"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "moor-client-core",
+ "moor-protocol",
+ "moor-review-core",
+ "moor-test-support",
+ "moord",
+ "redb",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "moor-config"
 version = "0.1.0"
 dependencies = [

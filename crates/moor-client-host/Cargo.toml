@@ -1,0 +1,26 @@
+[package]
+name = "moor-client-host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Host loop around moor-client-core: unix-socket transport, host KV (redb or memory), clock ticks, and ViewPatch output. Host-agnostic; Tauri and the TUI wrap it."
+
+[dependencies]
+moor-client-core = { workspace = true }
+moor-protocol = { workspace = true }
+moord = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+redb = "4"
+
+[dev-dependencies]
+moor-review-core = { workspace = true }
+moor-test-support = { workspace = true }
+tempfile = { workspace = true }
+anyhow = { workspace = true }
+
+[lints]
+workspace = true
