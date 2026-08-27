@@ -1,73 +1,71 @@
 # Handover notes
 
-Written 2026-08-27 at the end of the session that finished Milestone 3.1 and
-the type-driven MCP rework. Read this, then `AGENTS.md`, then `docs/PLAN.md`.
+Written 2026-08-27 at the end of the session that finished Milestone 3.2
+(client cache). Read this, then `AGENTS.md`, then `docs/PLAN.md`.
 
 ## State of the tree
 
 `main` is clean. Last commits:
 
+- `client-core: content flow, disk tier, viewport prefetch (3.2 steps 2-6)`
+- `Fix lints new in clippy 1.97`
+- `cf959ee` client-core: `ContentCache` memory tier (3.2 step 1)
 - `742953c` MCP: derive tool schemas from the serde types with schemars
-- `80c06da` MCP: typed `ToolCall` / `Method` dispatch (no string matching)
-- `0f40355` Docs: Tailwind v4 decision for the UI (ARCHITECTURE §6.6, PLAN 4.0)
-- `8c2b20b` Milestone 3.1: `moor-client-core` (sans-I/O client state machine)
 
-All gates green at that point: `cargo fmt --all --check`,
+All gates green: `cargo fmt --all --check`,
 `cargo clippy --workspace --all-targets -- -D warnings`,
-`cargo check -p moor-protocol -p moor-client-core --target wasm32-unknown-unknown`,
-`cargo test --workspace` (132 tests), `cargo xtask fixtures` (unchanged).
-Run all five before every commit; use the commit trailer in `AGENTS.md`.
+`cargo check -p moor-protocol -p moor-client-core --target wasm32-unknown-unknown`
+(needs `rustup target add wasm32-unknown-unknown`), `cargo test --workspace`,
+`cargo xtask fixtures` (unchanged). Run all five before every commit.
 
-## Next chunk: Milestone 3.2 cache (`docs/PLAN.md` §3.2, ARCHITECTURE §5.1)
+## What 3.2 added (`crates/moor-client-core`)
 
-Everything lives in `crates/moor-client-core`. Suggested order, each a
-committable step:
+- `cache.rs` — `ContentCache`: memory LRU with a byte budget and pins.
+  Keys: `CacheKey::{Tree{root}, Header{render}, Chunk{render,index}}` over
+  `RenderKey { repo_id, path, target, opts }`. `storage_key()` (serde_json
+  of the key) is the host KV key; `CacheValue::encode/decode` the value.
+- `content.rs` — the one fetch path (`ClientCore::want`): memory hit →
+  nothing; miss → `Effect::Load` when `DiskTier::Enabled` → `Input::Stored`
+  miss → queued → `Send`, capped at `CacheConfig::max_in_flight`, one
+  outstanding fetch per key. Daemon content is persisted on arrival; a
+  session-local `DiskIndex` trims the disk budget via `Effect::Remove`.
+- `Action::OpenReview`: local (`DiskTier::Disabled`) → `Request::OpenReview`
+  stream; remote → piecewise (`ReviewSnapshot`, trees by key, `ListFiles`,
+  headers via `FileRender` cancelled after chunk 0). See ARCHITECTURE §5.1.
+- `Action::Viewport { file, first_row, last_row }` / `CloseFile`: chunk
+  window = viewport ±`PREFETCH_RADIUS` (2), nearest first; queued fetches
+  outside the window are dropped; open-file chunks pinned.
+- `ServerMsg::TreeDelta` applied in place; `ReviewTargetsResolved` re-wants
+  trees and re-lists files. `view.review` is `OpenReview { snapshot, trees,
+  files, open_file }`; content itself is read from `core.cache()`.
+- Tests: `tests/cache_flow.rs` (host KV simulator `Kv::drive`) covers every
+  scenario in PLAN §3.2; `tests/state_machine.rs` proptest now generates
+  the new actions, stream items and tree deltas and checks a rejected input
+  leaves the cache untouched.
 
-1. `cache.rs`: `ContentCache` — memory tier only. Keys are `Oid` for blobs /
-   `(base, head, opts, chunk_index)` for diff chunks; values are headers and
-   chunks, never whole files. LRU with a byte budget plus a pin set.
-   Unit tests: hit/miss, eviction respects budget, pinned entries survive.
-2. Wire `Action::OpenReview` to stream: today `Response::StreamItem` /
-   `StreamEnd` are rejected as `UnexpectedResponse` in `lib.rs` `handle`.
-   Add `InFlight::OpenReview { review_id }`, accept items, fill the cache,
-   render `ViewSection::Review` once. Pin open-review headers.
-3. Disk tier via effects: memory miss → `Effect::Load { key }` → host answers
-   with `Input::Stored { key, value }` → on `None` emit `Effect::Send`.
-   Eviction writes through with `Effect::Persist`. Dedupe concurrent misses
-   (one outstanding request per key).
-4. `TreeSnapshot` cached by root oid; apply `TreeDelta` in place (currently
-   accepted with no effects when subscribed).
-5. `Action::Viewport { file, first_row, last_row }` + prefetch policy
-   (viewport chunk ±2, cancel queued requests that drift away).
-6. Tests listed in PLAN §3.2, including the restart simulation (new
-   `ClientCore` over the same KV map serves the review with no `Send`).
+Known simplifications, all documented in code:
+- The disk index does not survive restarts (entries from earlier sessions
+  are counted again once loaded). Persisting the index is a later step.
+- A viewport on a file whose header is unknown streams from chunk 0 and
+  cancels after the radius (no chunk geometry to aim with yet).
+- `ClientMsg::Cancel` is sent when a `FileRender` stream passes what was
+  wanted; items after the cancel are still cached.
 
-Design constraints to keep (see AGENTS.md):
+## Next: 3.3 optimistic mutations (PLAN §3.3, ARCHITECTURE §5.2)
 
-- Core is sans-I/O: no clock, RNG, or I/O. Time comes from `Input::Tick`,
-  ids from `IdGen` (`ids.rs`), storage only via `Persist`/`Load` effects.
-- A rejected input (`Err(CoreError)`) must leave state and effects
-  untouched; the proptest in `tests/state_machine.rs` enforces this — extend
-  its action generator when you add `Action` variants.
-- `#![deny(clippy::wildcard_enum_match_arm)]` is on: every new enum variant
-  forces exhaustive matches. That is intentional.
-- Names are enums, not strings; advertised sets are derived by iterating the
-  enum; schemas come from the serde types (`schemars` behind
-  `moor-protocol`'s `schema` feature). Do not hand-write `json!` schemas.
+- `PendingEvent` list in the core; local apply of `AddComment` marked
+  pending; on own `Committed`/broadcast → drop pending; on foreign event →
+  re-apply pending on top. LWW by `Seq` for edits and resolve toggles.
+- `moor_test_support::Sim`: two `ClientCore`s + an in-memory daemon model
+  with controllable delivery order; cases listed in PLAN §3.3; proptest
+  that any interleaving converges both clients to the daemon state.
+- Reconnect: pending re-sent exactly once, idempotent by `CommentId`.
 
-## After 3.2
+Then 3.4 (deferred refresh — mostly present already, see `deferred` in
+`lib.rs`; needs the re-anchor test), 3.5 `ViewModel`, 4.0 UI scaffold.
 
-- 3.3 optimistic mutations with the two-client `Sim` in `moor-test-support`.
-- 3.4/3.5 per PLAN, then 4.0 UI scaffold (ReScript + React + Vite +
-  Tailwind v4; CI test that every `SpanClass` / row kind / cell side has a
-  class in `ui/src/styles/app.css`).
-
-## Deferred / known gaps
+## Deferred / known gaps (unchanged)
 
 - `moor-mcp`: `initialize`'s `clientInfo.name` is free text by design.
-- Benchmark-triggered optimisations still deferred (see PLAN "deferred"):
-  watcher path-only rehash, batched redb appends.
+- Benchmark-triggered optimisations (PLAN "deferred").
 - Per-version serialiser hook and Hunk comment watching not started.
-- The `strum::EnumIter` on `ToolName` drives `tools::all()`; adding a
-  `ToolCall` variant will not compile until `ToolName::schemas()` has
-  argument + result structs for it — that is the intended workflow.

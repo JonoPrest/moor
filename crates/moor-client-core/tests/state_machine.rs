@@ -2,15 +2,16 @@
 //! with a typed error, never panics, and a rejection changes nothing.
 
 use moor_client_core::{
-    Action, CacheConfig, ClientCore, Config, Connection, ConnectionView, CoreError, Effect, IdSeed,
-    Input, TransportEvent, ViewDelta,
+    Action, CacheConfig, ClientCore, Config, Connection, ConnectionView, CoreError, Effect,
+    FileRef, IdSeed, Input, TransportEvent, ViewDelta,
 };
 use moor_protocol::{
     Anchor, Author, BuildInfo, ClientId, ClientMsg, ClientSeq, Comment, CommentKind, CommentState,
     Event, EventBody, Mutation, NonEmpty, Oid, ProtocolVersion, RefSpec, RenderOpts, RepoId,
     Request, RequestId, ResolvedRef, ResolvedSource, ResolvedTarget, Response, Review, ReviewId,
     ReviewSnapshot, ReviewStatus, ReviewTarget, RpcError, SchemaVersion, Seq, ServerMsg, Since,
-    StreamItem, SubscribeScope, ThreadId, Timestamp, TreeOid, ViewSection, WorkspaceId,
+    StreamItem, SubscribeScope, ThreadId, Timestamp, TreeDelta, TreeOid, TreeSnapshot, ViewSection,
+    WorkspaceId,
 };
 use proptest::prelude::*;
 
@@ -581,6 +582,60 @@ fn action_strategy() -> impl Strategy<Value = Action> {
             body: "body".into()
         }),
         Just(Action::DraftDiscarded),
+        (0u32..3000, 0u32..3000).prop_map(|(a, b)| Action::Viewport {
+            file: FileRef {
+                repo_id: repo_id(),
+                path: moor_protocol::RepoPath::new("a.rs").unwrap(),
+            },
+            first_row: a,
+            last_row: b,
+        }),
+        Just(Action::CloseFile),
+    ]
+}
+
+fn stream_item_strategy() -> impl Strategy<Value = StreamItem> {
+    let header = |chunks: u32| moor_protocol::FileRenderHeader {
+        repo_id: repo_id(),
+        path: moor_protocol::RepoPath::new("a.rs").unwrap(),
+        target: moor_protocol::RenderTarget::Diff {
+            change: moor_protocol::ChangeKind::Added {
+                new: moor_protocol::BlobOid::new(Oid::from_bytes([1; 20])),
+            },
+        },
+        opts: moor_protocol::RenderOpts::default(),
+        lang: None,
+        content: moor_protocol::RenderContent::Text {
+            total_rows: chunks * 100,
+            chunk_rows: 100,
+            chunk_count: chunks,
+            highlighted: false,
+            additions: 0,
+            deletions: 0,
+        },
+    };
+    prop_oneof![
+        review_id_strategy().prop_map(|id| StreamItem::ReviewSnapshot {
+            snapshot: snapshot(id, Seq::new(1))
+        }),
+        (1u8..3).prop_map(|fill| StreamItem::TreeSnapshot {
+            snapshot: TreeSnapshot {
+                repo_id: repo_id(),
+                root_oid: TreeOid::new(Oid::from_bytes([fill; 20])),
+                entries: Vec::new(),
+            }
+        }),
+        (1u32..30).prop_map(move |chunks| StreamItem::Header {
+            header: header(chunks)
+        }),
+        (0u32..30).prop_map(|i| StreamItem::Chunk {
+            repo_id: repo_id(),
+            path: moor_protocol::RepoPath::new("a.rs").unwrap(),
+            chunk: moor_protocol::RenderChunk {
+                index: moor_protocol::ChunkIndex::new(i),
+                rows: Vec::new(),
+            },
+        }),
     ]
 }
 
@@ -623,7 +678,19 @@ fn server_strategy() -> impl Strategy<Value = ServerMsg> {
         }),
         (id.clone(), response_strategy())
             .prop_map(|(id, response)| ServerMsg::Response { id, response }),
+        (id.clone(), stream_item_strategy())
+            .prop_map(|(id, item)| ServerMsg::StreamItem { id, item }),
         id.clone().prop_map(|id| ServerMsg::StreamEnd { id }),
+        (1u8..3, 1u8..3).prop_map(|(from, to)| ServerMsg::TreeDelta {
+            delta: TreeDelta {
+                repo_id: repo_id(),
+                from_root: TreeOid::new(Oid::from_bytes([from; 20])),
+                to_root: TreeOid::new(Oid::from_bytes([to; 20])),
+                added: Vec::new(),
+                removed: Vec::new(),
+                changed: Vec::new(),
+            }
+        }),
         id.prop_map(|id| ServerMsg::Error {
             id,
             error: RpcError::Cancelled
@@ -650,6 +717,7 @@ proptest! {
         for input in inputs {
             let view = core.view().clone();
             let connection = *core.connection();
+            let cache_len = core.cache().len();
             match core.handle(input.clone()) {
                 Ok(effects) => {
                     for e in &effects {
@@ -672,6 +740,7 @@ proptest! {
                 Err(_) => {
                     prop_assert_eq!(core.view(), &view, "rejected {:?} changed the view", input);
                     prop_assert_eq!(*core.connection(), connection);
+                    prop_assert_eq!(core.cache().len(), cache_len, "rejected {:?} changed the cache", input);
                 }
             }
         }

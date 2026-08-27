@@ -301,6 +301,8 @@ Both budgets are configurable. Because keys are OIDs, on-disk entries never need
 
 Cache entries are `TreeSnapshot`s (§4.7), render headers and render **chunks** (§4.6), never whole files. Chunks of the open file are pinned while it is open; on close they return to normal LRU.
 
+**Two open flows.** With no disk tier the client sends one `OpenReview` and the daemon streams snapshot, trees, headers and first chunks; the stream fills the cache directly. With a disk tier it opens *piecewise* — `ReviewSnapshot`, then `ListFiles`, then every tree and header by cache key through the normal miss path — so a restart is served from the KV with no content request at all. Content the daemon sends is persisted **on arrival**, not only on memory eviction: the open review's entries are pinned and would otherwise never reach disk. The disk LRU index is session-local (entries written by earlier sessions are counted once they are loaded again); trimming is an `Effect::Remove`.
+
 ### 5.2 Optimistic mutations
 
 1. Client generates the ULID, applies the event locally (marked `pending`), emits `Send`.
