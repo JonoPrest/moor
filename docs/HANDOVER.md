@@ -86,7 +86,6 @@ Written 2026-08-27 at the end of the session that finished Milestone 3 and
   `Action::EditComment` takes the text directly.
 - Stepping commits only moves a cursor; no per-commit render request
   exists in the protocol yet.
-- Tree roots are labelled by `RepoId` (workspace repo names not fetched).
 - The disk-tier LRU index is session-local (see `content.rs`).
 
 ## Design points worth knowing
