@@ -19,5 +19,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo check -p moor-protocol --target wasm32-unknown-unknown
       - run: cargo nextest run --workspace
+      - name: benchmark triggers (small scale)
+        run: MOOR_BENCH_FILES=2000 cargo bench -p moor-review-core -p moord
       - name: fixtures are up to date
         run: cargo xtask fixtures && git diff --exit-code -- fixtures

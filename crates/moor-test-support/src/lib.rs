@@ -214,6 +214,32 @@ impl TestRepo {
     }
 }
 
+/// Synthetic repository for benchmarks: `files` small text files spread over
+/// `files / 100` directories, committed once on `main`. Paths look like
+/// `dir_017/file_0421.txt`.
+pub fn synthetic_repo(files: usize) -> anyhow::Result<TestRepo> {
+    let repo = TestRepo::init()?;
+    for (path, body) in &synthetic_files(files) {
+        repo.write_file(path, body.as_bytes())?;
+    }
+    repo.git(&["add", "-A"])?;
+    repo.git(&["commit", "-q", "-m", "synthetic"])?;
+    Ok(repo)
+}
+
+/// The paths and bodies `synthetic_repo` writes, in order.
+#[must_use]
+pub fn synthetic_files(files: usize) -> Vec<(String, String)> {
+    let dirs = (files / 100).max(1);
+    (0..files)
+        .map(|i| {
+            let path = format!("dir_{:03}/file_{i:05}.txt", i % dirs);
+            let body = format!("file {i}\nline two\nline three\n");
+            (path, body)
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

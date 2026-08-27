@@ -25,3 +25,7 @@ tempfile = { workspace = true }
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "triggers"
+harness = false
