@@ -8,12 +8,12 @@ description = "Sans-I/O client state machine for Moor: inputs in, effects out. w
 [dependencies]
 moor-protocol = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
-serde_json = { workspace = true }
 
 [lints]
 workspace = true

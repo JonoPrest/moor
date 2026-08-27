@@ -16,6 +16,7 @@
 
 #![deny(clippy::wildcard_enum_match_arm)]
 
+mod cache;
 mod connection;
 mod ids;
 mod view;
@@ -29,6 +30,7 @@ use moor_protocol::{
 };
 use strum::EnumDiscriminants;
 
+pub use cache::{Bytes, CacheKey, CacheValue, ContentCache, Evicted, RenderKey};
 pub use connection::{Connection, ConnectionKind};
 pub use ids::IdSeed;
 pub use view::{ConnectionView, Draft, OpenReview, ViewDelta, ViewModel};
