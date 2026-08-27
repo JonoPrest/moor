@@ -186,6 +186,7 @@ impl Server {
                         "name": <&'static str>::from(t.name),
                         "description": t.description,
                         "inputSchema": t.input_schema,
+                        "outputSchema": t.output_schema,
                     })).collect::<Vec<_>>()
                 }),
             ),
@@ -269,25 +270,29 @@ impl Server {
     async fn call_query(&self, call: QueryCall) -> Result<Value, ToolError> {
         let ops = self.ops()?;
         match call {
-            QueryCall::ListWorkspaces => Ok(json!({ "workspaces": ops.workspaces().await? })),
+            QueryCall::ListWorkspaces => ok(tools::Workspaces {
+                workspaces: ops.workspaces().await?,
+            }),
             QueryCall::ListReviews(p) => {
                 let workspace_id = match p.workspace_id {
                     Some(w) => w,
                     None => ops.locate(Path::new(".")).await?.workspace.id,
                 };
-                Ok(json!({ "reviews": ops.reviews(workspace_id).await? }))
+                ok(tools::Reviews {
+                    reviews: ops.reviews(workspace_id).await?,
+                })
             }
             QueryCall::GetReview(p) => {
                 let snap = ops.snapshot(p.review_id).await?;
                 let files = ops.files(p.review_id).await?;
-                Ok(json!({
-                    "review": snap.review,
-                    "resolved": snap.resolved,
-                    "files": files,
-                    "threads": snap.threads,
-                    "comments": snap.comments,
-                    "seq": snap.seq,
-                }))
+                ok(tools::ReviewDetail {
+                    review: snap.review,
+                    resolved: snap.resolved,
+                    files,
+                    threads: snap.threads,
+                    comments: snap.comments,
+                    seq: snap.seq,
+                })
             }
             QueryCall::GetDiff(p) => {
                 let render_opts = RenderOpts {
@@ -299,32 +304,38 @@ impl Server {
                 let (file, header, chunks) = ops
                     .diff(p.review_id, p.repo_id, &p.path, render_opts)
                     .await?;
-                Ok(json!({
-                    "repo_id": file.repo_id,
-                    "path": file.path,
-                    "change": file.kind,
-                    "lang": header.lang,
-                    "content": header.content,
-                    "text": text::render(&header, &chunks),
-                }))
+                let text = text::render(&header, &chunks);
+                ok(tools::DiffText {
+                    repo_id: file.repo_id,
+                    path: file.path,
+                    change: file.kind,
+                    lang: header.lang,
+                    content: header.content,
+                    text,
+                })
             }
             QueryCall::GetFile(p) => {
                 let path = RepoPath::new(p.path)?;
                 let (repo_id, blob_oid, header, chunks) =
                     ops.file_at(p.review_id, p.repo_id, &path, p.side).await?;
-                Ok(json!({
-                    "repo_id": repo_id,
-                    "path": path,
-                    "side": p.side,
-                    "blob_oid": blob_oid,
-                    "lang": header.lang,
-                    "content": header.content,
-                    "text": text::render_blob(&header, &chunks),
-                }))
+                let text = text::render_blob(&header, &chunks);
+                ok(tools::FileText {
+                    repo_id,
+                    path,
+                    side: p.side,
+                    blob_oid,
+                    lang: header.lang,
+                    content: header.content,
+                    text,
+                })
             }
             QueryCall::ListComments(p) => {
                 let snap = ops.snapshot(p.review_id).await?;
-                Ok(json!({ "threads": snap.threads, "comments": snap.comments, "seq": snap.seq }))
+                ok(tools::Comments {
+                    threads: snap.threads,
+                    comments: snap.comments,
+                    seq: snap.seq,
+                })
             }
             QueryCall::SubscribeEvents(p) => {
                 let scope = match (p.review_id, p.workspace_id, p.awaiting_agent) {
@@ -337,7 +348,10 @@ impl Server {
                 let polled = ops
                     .poll_events(scope, since, Duration::from_millis(p.timeout_ms), p.max)
                     .await?;
-                Ok(json!({ "events": polled.events, "last_seq": polled.last_seq }))
+                ok(tools::Events {
+                    events: polled.events,
+                    last_seq: polled.last_seq,
+                })
             }
         }
     }
@@ -374,7 +388,11 @@ impl Server {
                 )?;
                 let (review_id, event) = ops.create_review(workspace_id, p.title, targets).await?;
                 let snap = ops.snapshot(review_id).await?;
-                Ok(json!({ "review": snap.review, "resolved": snap.resolved, "event": event }))
+                ok(tools::Created {
+                    review: snap.review,
+                    resolved: snap.resolved,
+                    event,
+                })
             }
             MutatingCall::UpdateReview(p) => {
                 let event = self
@@ -385,7 +403,7 @@ impl Server {
                         status: p.status,
                     })
                     .await?;
-                Ok(json!({ "event": event }))
+                ok(tools::Committed { event })
             }
             MutatingCall::AddComment(p) => self.add_comment(p).await,
             MutatingCall::Suggest(p) => self.suggest(p).await,
@@ -394,7 +412,7 @@ impl Server {
                     .ops_mut()?
                     .reply(p.review_id, p.thread_id, p.body)
                     .await?;
-                Ok(json!({ "comment_id": comment_id, "event": event }))
+                ok(tools::Replied { comment_id, event })
             }
             MutatingCall::Resolve(p) => {
                 let m = if p.resolved {
@@ -409,7 +427,7 @@ impl Server {
                     }
                 };
                 let event = self.ops_mut()?.mutate(m).await?;
-                Ok(json!({ "event": event }))
+                ok(tools::Committed { event })
             }
             MutatingCall::RequestReview(p) => {
                 let event = self
@@ -420,7 +438,7 @@ impl Server {
                         note: p.note,
                     })
                     .await?;
-                Ok(json!({ "event": event }))
+                ok(tools::Committed { event })
             }
         }
     }
@@ -447,7 +465,7 @@ impl Server {
         let (t, event) = ops
             .new_thread(p.review_id, CommentKind::Note, anchor, p.body)
             .await?;
-        Ok(thread_json(t, &event))
+        thread_json(t, event)
     }
 
     async fn suggest(&mut self, p: tools::Suggest) -> Result<Value, ToolError> {
@@ -470,12 +488,21 @@ impl Server {
                 p.body,
             )
             .await?;
-        Ok(thread_json(t, &event))
+        thread_json(t, event)
     }
 }
 
-fn thread_json(t: moord::ops::NewThread, event: &moor_protocol::Event) -> Value {
-    json!({ "comment_id": t.comment_id, "thread_id": t.thread_id, "event": event })
+fn thread_json(t: moord::ops::NewThread, event: moor_protocol::Event) -> Result<Value, ToolError> {
+    ok(tools::NewThread {
+        comment_id: t.comment_id,
+        thread_id: t.thread_id,
+        event,
+    })
+}
+
+/// Serialise a typed tool result.
+fn ok<T: serde::Serialize>(value: T) -> Result<Value, ToolError> {
+    Ok(serde_json::to_value(value)?)
 }
 
 /// MCP tool result: the value as pretty JSON text plus as structured content.

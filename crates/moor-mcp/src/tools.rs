@@ -1,10 +1,18 @@
-//! The tool table: names, descriptions and JSON Schemas advertised by
-//! `tools/list`, plus the typed parameter structs `tools/call` decodes into.
+//! The tools: one argument struct and one result struct per tool. Both are
+//! serde types with `schemars` derives, so what `tools/list` advertises is
+//! exactly what `tools/call` parses and returns — there is no hand-written
+//! schema anywhere. The tool's description is the argument struct's doc
+//! comment.
 
-use moor_protocol::{RefSpec, RepoId, ReviewId, ReviewStatus, Seq, Side, ThreadId, WorkspaceId};
-use serde::Deserialize;
-use serde_json::{Value, json};
-use strum::{Display, EnumDiscriminants, EnumIter, IntoStaticStr};
+use moor_protocol::{
+    BlobOid, ChangeKind, Comment, CommentId, Event, FileChange, NonEmpty, RefSpec, RenderContent,
+    RepoId, RepoPath, ResolvedTarget, Review, ReviewId, ReviewStatus, Seq, Side, Thread, ThreadId,
+    Workspace, WorkspaceId,
+};
+use schemars::{JsonSchema, Schema, schema_for};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use strum::{Display, EnumDiscriminants, EnumIter, IntoEnumIterator, IntoStaticStr};
 
 /// A decoded `tools/call`: the variant is the tool, the payload its
 /// validated arguments. Adding a tool means adding a variant here; the
@@ -105,235 +113,92 @@ impl ToolCall {
 }
 
 /// Arguments of a tool that takes none. Rejects stray keys.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct NoArgs {}
 
-/// One advertised tool.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// One advertised tool, derived from its argument and result types.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Tool {
     pub name: ToolName,
-    pub description: &'static str,
-    pub input_schema: Value,
+    /// The argument struct's doc comment.
+    pub description: String,
+    pub input_schema: Schema,
+    pub output_schema: Schema,
 }
 
-fn id(desc: &str) -> Value {
-    json!({ "type": "string", "description": desc })
+impl ToolName {
+    /// Schemas of this tool's arguments and result. The match is exhaustive,
+    /// so a new `ToolCall` variant cannot ship without both.
+    #[must_use]
+    pub fn schemas(self) -> (Schema, Schema) {
+        match self {
+            ToolName::ListWorkspaces => (schema_for!(NoArgs), schema_for!(Workspaces)),
+            ToolName::ListReviews => (schema_for!(ListReviews), schema_for!(Reviews)),
+            ToolName::GetReview => (schema_for!(ByReview), schema_for!(ReviewDetail)),
+            ToolName::CreateReview => (schema_for!(CreateReview), schema_for!(Created)),
+            ToolName::UpdateReview => (schema_for!(UpdateReview), schema_for!(Committed)),
+            ToolName::GetDiff => (schema_for!(GetDiff), schema_for!(DiffText)),
+            ToolName::GetFile => (schema_for!(GetFile), schema_for!(FileText)),
+            ToolName::ListComments => (schema_for!(ByReview), schema_for!(Comments)),
+            ToolName::AddComment => (schema_for!(AddComment), schema_for!(NewThread)),
+            ToolName::Suggest => (schema_for!(Suggest), schema_for!(NewThread)),
+            ToolName::Reply => (schema_for!(Reply), schema_for!(Replied)),
+            ToolName::Resolve => (schema_for!(Resolve), schema_for!(Committed)),
+            ToolName::RequestReview => (schema_for!(RequestReview), schema_for!(Committed)),
+            ToolName::SubscribeEvents => (schema_for!(SubscribeEvents), schema_for!(Events)),
+        }
+    }
+
+    #[must_use]
+    pub fn tool(self) -> Tool {
+        let (input_schema, output_schema) = self.schemas();
+        let description = input_schema
+            .get("description")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        Tool {
+            name: self,
+            description,
+            input_schema,
+            output_schema,
+        }
+    }
 }
 
-fn ref_spec() -> Value {
-    json!({
-        "type": "object",
-        "description": "A git ref: {\"type\":\"Branch\",\"name\":..}, {\"type\":\"Commit\",\"oid\":..}, {\"type\":\"Tag\",\"name\":..}, {\"type\":\"WorkingTree\"} or {\"type\":\"Upstream\"}",
-        "required": ["type"],
-        "properties": { "type": { "type": "string", "enum": ["Branch", "Commit", "Tag", "WorkingTree", "Upstream"] } }
-    })
-}
-
-/// Every tool, in the order `tools/list` returns them.
+/// Every tool, in `ToolName` order.
 #[must_use]
-#[allow(clippy::too_many_lines)] // a table, not logic
 pub fn all() -> Vec<Tool> {
-    vec![
-        Tool {
-            name: ToolName::ListWorkspaces,
-            description: "Workspaces known to the daemon, each with its attached repos.",
-            input_schema: json!({ "type": "object", "properties": {}, "additionalProperties": false }),
-        },
-        Tool {
-            name: ToolName::ListReviews,
-            description: "Reviews in a workspace. Without workspace_id: the workspace whose attached repo contains this server's working directory.",
-            input_schema: json!({
-                "type": "object", "additionalProperties": false,
-                "properties": { "workspace_id": id("Workspace ULID (optional)") }
-            }),
-        },
-        Tool {
-            name: ToolName::GetReview,
-            description: "A review with its resolved targets, changed files, threads and comments.",
-            input_schema: json!({
-                "type": "object", "additionalProperties": false,
-                "required": ["review_id"],
-                "properties": { "review_id": id("Review ULID") }
-            }),
-        },
-        Tool {
-            name: ToolName::CreateReview,
-            description: "Create a review over one or more repos. Returns the new review. Without workspace_id: the workspace containing this server's working directory; a target may omit repo_id to mean the repo containing it.",
-            input_schema: json!({
-                "type": "object", "additionalProperties": false,
-                "required": ["title", "targets"],
-                "properties": {
-                    "workspace_id": id("Workspace ULID (optional)"),
-                    "title": { "type": "string" },
-                    "targets": {
-                        "type": "array", "minItems": 1,
-                        "items": {
-                            "type": "object", "additionalProperties": false,
-                            "required": ["base", "head"],
-                            "properties": { "repo_id": id("Repo ULID (optional)"), "base": ref_spec(), "head": ref_spec() }
-                        }
-                    }
-                }
-            }),
-        },
-        Tool {
-            name: ToolName::UpdateReview,
-            description: "Rename a review or change its status (Open / Archived).",
-            input_schema: json!({
-                "type": "object", "additionalProperties": false,
-                "required": ["review_id", "title", "status"],
-                "properties": {
-                    "review_id": id("Review ULID"),
-                    "title": { "type": "string" },
-                    "status": { "type": "string", "enum": ["Open", "Archived"] }
-                }
-            }),
-        },
-        Tool {
-            name: ToolName::GetDiff,
-            description: "The diff of one changed file in a review, as numbered text (old-line new-line mark text).",
-            input_schema: json!({
-                "type": "object", "additionalProperties": false,
-                "required": ["review_id", "path"],
-                "properties": {
-                    "review_id": id("Review ULID"),
-                    "repo_id": id("Repo ULID; only needed when the path exists in more than one repo"),
-                    "path": { "type": "string", "description": "Path relative to the repo root" },
-                    "ignore_whitespace": { "type": "boolean", "default": false },
-                    "context_lines": { "type": "integer", "minimum": 0, "default": 3 }
-                }
-            }),
-        },
-        Tool {
-            name: ToolName::GetFile,
-            description: "Full contents of a file at the review's base or head, numbered. Works for unchanged files too.",
-            input_schema: json!({
-                "type": "object", "additionalProperties": false,
-                "required": ["review_id", "path"],
-                "properties": {
-                    "review_id": id("Review ULID"),
-                    "repo_id": id("Repo ULID; only needed when the review spans several repos"),
-                    "path": { "type": "string" },
-                    "side": { "type": "string", "enum": ["Base", "Head"], "default": "Head" }
-                }
-            }),
-        },
-        Tool {
-            name: ToolName::ListComments,
-            description: "Threads and comments on a review, with anchors and resolution state.",
-            input_schema: json!({
-                "type": "object", "additionalProperties": false,
-                "required": ["review_id"],
-                "properties": { "review_id": id("Review ULID") }
-            }),
-        },
-        Tool {
-            name: ToolName::AddComment,
-            description: "Start a thread. Anchor to the whole review (no path), a file (path only) or a line range (path + start_line [+ end_line]) on the given side.",
-            input_schema: json!({
-                "type": "object", "additionalProperties": false,
-                "required": ["review_id", "body"],
-                "properties": {
-                    "review_id": id("Review ULID"),
-                    "repo_id": id("Repo ULID; only needed when the path exists in more than one repo"),
-                    "path": { "type": "string" },
-                    "side": { "type": "string", "enum": ["Base", "Head"], "default": "Head" },
-                    "start_line": { "type": "integer", "minimum": 1 },
-                    "end_line": { "type": "integer", "minimum": 1, "description": "Defaults to start_line" },
-                    "body": { "type": "string" }
-                }
-            }),
-        },
-        Tool {
-            name: ToolName::Suggest,
-            description: "Start a thread carrying a suggested change: a unified diff against the anchored blob that a human can apply.",
-            input_schema: json!({
-                "type": "object", "additionalProperties": false,
-                "required": ["review_id", "path", "start_line", "patch", "body"],
-                "properties": {
-                    "review_id": id("Review ULID"),
-                    "repo_id": id("Repo ULID; only needed when the path exists in more than one repo"),
-                    "path": { "type": "string" },
-                    "side": { "type": "string", "enum": ["Base", "Head"], "default": "Head" },
-                    "start_line": { "type": "integer", "minimum": 1 },
-                    "end_line": { "type": "integer", "minimum": 1 },
-                    "patch": { "type": "string", "description": "Unified diff against the file at that side" },
-                    "body": { "type": "string", "description": "Why" }
-                }
-            }),
-        },
-        Tool {
-            name: ToolName::Reply,
-            description: "Reply in an existing thread.",
-            input_schema: json!({
-                "type": "object", "additionalProperties": false,
-                "required": ["review_id", "thread_id", "body"],
-                "properties": {
-                    "review_id": id("Review ULID"),
-                    "thread_id": id("Thread ULID (equals its root comment id)"),
-                    "body": { "type": "string" }
-                }
-            }),
-        },
-        Tool {
-            name: ToolName::Resolve,
-            description: "Mark a thread resolved (or reopen it with resolved=false).",
-            input_schema: json!({
-                "type": "object", "additionalProperties": false,
-                "required": ["review_id", "thread_id"],
-                "properties": {
-                    "review_id": id("Review ULID"),
-                    "thread_id": id("Thread ULID"),
-                    "resolved": { "type": "boolean", "default": true }
-                }
-            }),
-        },
-        Tool {
-            name: ToolName::RequestReview,
-            description: "Ask a named agent to review. Subscribers with scope AwaitingAgent for that name are notified.",
-            input_schema: json!({
-                "type": "object", "additionalProperties": false,
-                "required": ["review_id", "agent", "note"],
-                "properties": {
-                    "review_id": id("Review ULID"),
-                    "agent": { "type": "string" },
-                    "note": { "type": "string" }
-                }
-            }),
-        },
-        Tool {
-            name: ToolName::SubscribeEvents,
-            description: "Long-poll for events. Returns events matching the scope after since_seq, waiting up to timeout_ms for at least one. Pass the returned last_seq back as since_seq to continue.",
-            input_schema: json!({
-                "type": "object", "additionalProperties": false,
-                "properties": {
-                    "review_id": id("Limit to one review"),
-                    "workspace_id": id("Limit to one workspace"),
-                    "awaiting_agent": { "type": "string", "description": "Only ReviewRequested events addressed to this agent name" },
-                    "since_seq": { "type": "integer", "minimum": 0, "description": "Replay after this log position; omit for live only" },
-                    "timeout_ms": { "type": "integer", "minimum": 0, "default": 30000 },
-                    "max": { "type": "integer", "minimum": 1, "default": 100 }
-                }
-            }),
-        },
-    ]
+    ToolName::iter().map(ToolName::tool).collect()
 }
 
-#[derive(Debug, Deserialize)]
+// ---- arguments -------------------------------------------------------------
+
+/// Workspaces known to the daemon, each with its attached repos.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ListWorkspaces {}
+
+/// Reviews in a workspace. Without `workspace_id`: the workspace whose
+/// attached repo contains this server's working directory.
+#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ListReviews {
     #[serde(default)]
     pub workspace_id: Option<WorkspaceId>,
 }
 
-#[derive(Debug, Deserialize)]
+/// A review with its resolved targets, changed files, threads and comments.
+#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ByReview {
     pub review_id: ReviewId,
 }
 
-#[derive(Debug, Deserialize)]
+/// One repo's base and head. `repo_id` may be omitted to mean the repo
+/// containing this server's working directory.
+#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TargetSpec {
     #[serde(default)]
@@ -342,7 +207,9 @@ pub struct TargetSpec {
     pub head: RefSpec,
 }
 
-#[derive(Debug, Deserialize)]
+/// Create a review over one or more repos. Returns the new review. Without
+/// `workspace_id`: the workspace containing this server's working directory.
+#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateReview {
     #[serde(default)]
@@ -351,7 +218,8 @@ pub struct CreateReview {
     pub targets: Vec<TargetSpec>,
 }
 
-#[derive(Debug, Deserialize)]
+/// Rename a review or change its status.
+#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateReview {
     pub review_id: ReviewId,
@@ -359,23 +227,33 @@ pub struct UpdateReview {
     pub status: ReviewStatus,
 }
 
-#[derive(Debug, Deserialize)]
+/// The diff of one changed file in a review, as numbered text
+/// (old-line new-line mark text).
+#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GetDiff {
     pub review_id: ReviewId,
+    /// Needed only when the review spans several repos.
     pub repo_id: Option<RepoId>,
+    /// Path relative to the repo root.
     pub path: String,
     #[serde(default)]
     pub ignore_whitespace: bool,
+    /// Lines of context around each hunk; default 3.
     pub context_lines: Option<u32>,
 }
 
-#[derive(Debug, Deserialize)]
+/// Full contents of a file at the review's base or head, numbered. Works
+/// for unchanged files too.
+#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GetFile {
     pub review_id: ReviewId,
+    /// Needed only when the review spans several repos.
     pub repo_id: Option<RepoId>,
+    /// Path relative to the repo root.
     pub path: String,
+    /// Default `Head`.
     #[serde(default = "head")]
     pub side: Side,
 }
@@ -384,34 +262,51 @@ fn head() -> Side {
     Side::Head
 }
 
-#[derive(Debug, Deserialize)]
+/// Start a thread. Anchor to the whole review (no path), a file (path only)
+/// or a line range (path + `start_line` [+ `end_line`]) on the given side.
+#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AddComment {
     pub review_id: ReviewId,
+    /// Needed only when the review spans several repos.
     pub repo_id: Option<RepoId>,
+    /// Path relative to the repo root.
     pub path: Option<String>,
+    /// Default `Head`.
     #[serde(default = "head")]
     pub side: Side,
+    /// 1-based.
     pub start_line: Option<u32>,
+    /// Defaults to `start_line`.
     pub end_line: Option<u32>,
     pub body: String,
 }
 
-#[derive(Debug, Deserialize)]
+/// Start a thread carrying a suggested change: a unified diff against the
+/// anchored blob that a human can apply.
+#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Suggest {
     pub review_id: ReviewId,
+    /// Needed only when the review spans several repos.
     pub repo_id: Option<RepoId>,
+    /// Path relative to the repo root.
     pub path: String,
+    /// Default `Head`.
     #[serde(default = "head")]
     pub side: Side,
+    /// 1-based.
     pub start_line: u32,
+    /// Defaults to `start_line`.
     pub end_line: Option<u32>,
+    /// Unified diff against the file at that side.
     pub patch: String,
+    /// Why.
     pub body: String,
 }
 
-#[derive(Debug, Deserialize)]
+/// Reply in an existing thread.
+#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Reply {
     pub review_id: ReviewId,
@@ -419,11 +314,13 @@ pub struct Reply {
     pub body: String,
 }
 
-#[derive(Debug, Deserialize)]
+/// Mark a thread resolved (or reopen it with `resolved: false`).
+#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Resolve {
     pub review_id: ReviewId,
     pub thread_id: ThreadId,
+    /// Default `true`.
     #[serde(default = "yes")]
     pub resolved: bool,
 }
@@ -432,7 +329,9 @@ fn yes() -> bool {
     true
 }
 
-#[derive(Debug, Deserialize)]
+/// Ask a named agent to review. Subscribers with scope `AwaitingAgent` for
+/// that name are notified.
+#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RequestReview {
     pub review_id: ReviewId,
@@ -440,15 +339,22 @@ pub struct RequestReview {
     pub note: String,
 }
 
-#[derive(Debug, Deserialize)]
+/// Long-poll for events. Returns events matching the scope after
+/// `since_seq`, waiting up to `timeout_ms` for at least one. Pass the
+/// returned `last_seq` back as `since_seq` to continue.
+#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SubscribeEvents {
     pub review_id: Option<ReviewId>,
     pub workspace_id: Option<WorkspaceId>,
+    /// Only `ReviewRequested` events addressed to this agent name.
     pub awaiting_agent: Option<String>,
+    /// Replay after this log position; omit for live only.
     pub since_seq: Option<Seq>,
+    /// Default 30000.
     #[serde(default = "default_timeout")]
     pub timeout_ms: u64,
+    /// Default 100.
     #[serde(default = "default_max")]
     pub max: usize,
 }
@@ -458,6 +364,92 @@ fn default_timeout() -> u64 {
 }
 fn default_max() -> usize {
     100
+}
+
+// ---- results ---------------------------------------------------------------
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct Workspaces {
+    pub workspaces: Vec<Workspace>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct Reviews {
+    pub reviews: Vec<Review>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ReviewDetail {
+    pub review: Review,
+    pub resolved: Option<NonEmpty<ResolvedTarget>>,
+    pub files: Vec<FileChange>,
+    pub threads: Vec<Thread>,
+    pub comments: Vec<Comment>,
+    /// Log position this state reflects.
+    pub seq: Seq,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct Created {
+    pub review: Review,
+    pub resolved: Option<NonEmpty<ResolvedTarget>>,
+    pub event: Event,
+}
+
+/// The committed event.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct Committed {
+    pub event: Event,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct DiffText {
+    pub repo_id: RepoId,
+    pub path: RepoPath,
+    pub change: ChangeKind,
+    pub lang: Option<String>,
+    pub content: RenderContent,
+    /// Numbered diff text: old-line, new-line, mark, text.
+    pub text: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct FileText {
+    pub repo_id: RepoId,
+    pub path: RepoPath,
+    pub side: Side,
+    pub blob_oid: BlobOid,
+    pub lang: Option<String>,
+    pub content: RenderContent,
+    /// Numbered file text.
+    pub text: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct Comments {
+    pub threads: Vec<Thread>,
+    pub comments: Vec<Comment>,
+    pub seq: Seq,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct NewThread {
+    pub comment_id: CommentId,
+    pub thread_id: ThreadId,
+    pub event: Event,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct Replied {
+    pub comment_id: CommentId,
+    pub event: Event,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct Events {
+    pub events: Vec<Event>,
+    /// Pass back as `since_seq`.
+    pub last_seq: Seq,
 }
 
 #[cfg(test)]
@@ -474,15 +466,37 @@ mod tests {
     }
 
     #[test]
+    fn every_tool_has_a_description_and_object_schemas() {
+        for t in all() {
+            assert!(!t.description.is_empty(), "{} has no doc comment", t.name);
+            for s in [&t.input_schema, &t.output_schema] {
+                assert_eq!(
+                    s.get("type").and_then(Value::as_str),
+                    Some("object"),
+                    "{}",
+                    t.name
+                );
+            }
+        }
+        let (input, _) = ToolName::GetFile.schemas();
+        let props = input.get("properties").unwrap();
+        assert!(props.get("side").is_some());
+        assert_eq!(
+            input.get("required"),
+            Some(&serde_json::json!(["review_id", "path"]))
+        );
+    }
+
+    #[test]
     fn names_round_trip_through_the_wire_form() {
         for name in ToolName::iter() {
             let wire: &'static str = name.into();
             assert_eq!(name.to_string(), wire);
             assert!(wire.chars().all(|c| c.is_ascii_lowercase() || c == '_'));
         }
-        let call = ToolCall::parse(ToolName::ListWorkspaces, json!({})).unwrap();
+        let call = ToolCall::parse(ToolName::ListWorkspaces, serde_json::json!({})).unwrap();
         assert_eq!(call.name(), ToolName::ListWorkspaces);
-        assert!(ToolCall::parse(ToolName::ListWorkspaces, json!({ "x": 1 })).is_err());
-        assert!(ToolCall::parse(ToolName::GetReview, json!({})).is_err());
+        assert!(ToolCall::parse(ToolName::ListWorkspaces, serde_json::json!({ "x": 1 })).is_err());
+        assert!(ToolCall::parse(ToolName::GetReview, serde_json::json!({})).is_err());
     }
 }

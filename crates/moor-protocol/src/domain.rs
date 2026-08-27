@@ -12,6 +12,7 @@ use crate::invariants::{LineRange, NonEmpty, RepoPath};
 
 /// A named group of repositories.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Workspace {
     pub id: WorkspaceId,
@@ -25,6 +26,7 @@ pub struct Workspace {
 /// rather than `PathBuf` because clients (possibly on another machine, or in a
 /// browser) only display it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Repo {
     pub id: RepoId,
@@ -35,6 +37,7 @@ pub struct Repo {
 /// What the user asked to review — unresolved. See [`ResolvedRef`] for the
 /// resolved form.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, EnumDiscriminants)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[strum_discriminants(name(RefSpecKind), derive(EnumIter, Hash))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum RefSpec {
@@ -58,6 +61,7 @@ pub enum RefSpec {
 /// resolved from. Every resolved ref has a tree, so that lives outside the
 /// enum; only the parts that differ are variants.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ResolvedRef {
     /// Real tree OID for commits; a synthetic id over hashed working files
@@ -68,6 +72,7 @@ pub struct ResolvedRef {
 
 /// What a [`ResolvedRef`] was resolved from.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, EnumDiscriminants)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[strum_discriminants(name(ResolvedSourceKind), derive(EnumIter, Hash))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum ResolvedSource {
@@ -83,6 +88,7 @@ pub enum ResolvedSource {
 
 /// One repo's base/head pair within a review, as requested.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ReviewTarget {
     pub repo_id: RepoId,
@@ -92,6 +98,7 @@ pub struct ReviewTarget {
 
 /// One repo's base/head pair within a review, resolved to content.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ResolvedTarget {
     pub repo_id: RepoId,
@@ -100,6 +107,7 @@ pub struct ResolvedTarget {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub enum ReviewStatus {
     Open,
     Archived,
@@ -107,6 +115,7 @@ pub enum ReviewStatus {
 
 /// A review: a set of targets across a workspace's repos.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Review {
     pub id: ReviewId,
@@ -119,6 +128,7 @@ pub struct Review {
 
 /// A git signature.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Sig {
     pub name: String,
@@ -130,6 +140,7 @@ pub struct Sig {
 
 /// A commit, as shown in the commit stepper panel.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct CommitInfo {
     pub oid: CommitOid,
@@ -145,6 +156,7 @@ pub struct CommitInfo {
 
 /// A human, as recorded on events and marks.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Human {
     pub name: String,
@@ -154,6 +166,7 @@ pub struct Human {
 
 /// How an agent reached the daemon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub enum AgentVia {
     Mcp,
     Cli,
@@ -161,6 +174,7 @@ pub enum AgentVia {
 
 /// Who did something. Provenance is structured, never a free-text tag.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, EnumDiscriminants)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[strum_discriminants(name(AuthorKind), derive(EnumIter, Hash))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum Author {
@@ -204,6 +218,7 @@ impl Author {
 
 /// Which side of a diff a line anchor refers to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub enum Side {
     Base,
     Head,
@@ -212,6 +227,7 @@ pub enum Side {
 /// Hash of the ±3 lines surrounding an anchored range, used to detect that a
 /// mapped anchor still points at the same content. Serialised as 16 hex chars.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(try_from = "String", into = "String")]
 pub struct ContextHash(u64);
 
@@ -247,6 +263,7 @@ impl From<ContextHash> for String {
 
 /// Where a comment is moored. Anchors reference blobs, never diffs.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, EnumDiscriminants)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[strum_discriminants(name(AnchorKind), derive(EnumIter, Hash))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum Anchor {
@@ -270,6 +287,7 @@ pub enum Anchor {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, EnumDiscriminants)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[strum_discriminants(name(CommentKindKind), derive(EnumIter, Hash))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum CommentKind {
@@ -283,6 +301,7 @@ pub enum CommentKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, EnumDiscriminants)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[strum_discriminants(name(CommentStateKind), derive(EnumIter, Hash))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum CommentState {
@@ -296,6 +315,7 @@ pub enum CommentState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Comment {
     pub id: CommentId,
@@ -311,6 +331,7 @@ pub struct Comment {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumDiscriminants)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[strum_discriminants(name(ThreadResolutionKind), derive(EnumIter, Hash))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum ThreadResolution {
@@ -321,6 +342,7 @@ pub enum ThreadResolution {
 /// A comment thread. Its id equals the root comment's id; replies share the
 /// root's anchor.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Thread {
     pub id: ThreadId,
@@ -333,6 +355,7 @@ pub struct Thread {
 /// A human marked a file as viewed at a specific head blob. Agents cannot set
 /// these; the type says so by carrying a [`Human`], not an [`Author`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ViewedMark {
     pub review_id: ReviewId,
@@ -345,6 +368,7 @@ pub struct ViewedMark {
 
 /// Options that change the render model; part of every render cache key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct RenderOpts {
     pub ignore_whitespace: bool,
@@ -363,6 +387,7 @@ impl Default for RenderOpts {
 /// How a file differs between base and head. Carries exactly the blobs that
 /// exist, so there is no `Option<old> + Option<new>` pair to keep consistent.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, EnumDiscriminants)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[strum_discriminants(name(ChangeKindKind), derive(EnumIter, Hash))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum ChangeKind {
@@ -408,6 +433,7 @@ impl ChangeKind {
 /// A changed file in one repo. `path` is the head-side path (for renames,
 /// the destination).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct FileChange {
     pub repo_id: RepoId,
@@ -417,6 +443,7 @@ pub struct FileChange {
 
 /// What a tree entry points at.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, EnumDiscriminants)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[strum_discriminants(name(TreeEntryKindKind), derive(EnumIter, Hash))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum TreeEntryKind {
@@ -437,6 +464,7 @@ pub enum TreeEntryKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct TreeEntry {
     pub path: RepoPath,
@@ -445,6 +473,7 @@ pub struct TreeEntry {
 
 /// Full recursive listing of a tree; flat, sorted by path, one pass to nest.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct TreeSnapshot {
     pub repo_id: RepoId,
@@ -454,6 +483,7 @@ pub struct TreeSnapshot {
 
 /// Difference between two tree snapshots (used for working-tree refs).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct TreeDelta {
     pub repo_id: RepoId,

@@ -14,6 +14,7 @@ use crate::invariants::{ColRange, LineNo, RepoPath};
 /// Syntax-highlight class for a span. A closed set so the UI's stylesheet
 /// is exhaustive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub enum SpanClass {
     Keyword,
     String,
@@ -32,6 +33,7 @@ pub enum SpanClass {
 
 /// A highlighted byte range within a cell's text.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Span {
     pub range: ColRange,
@@ -40,6 +42,7 @@ pub struct Span {
 
 /// One side of a row.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Cell {
     pub line_no: LineNo,
@@ -53,6 +56,7 @@ pub struct Cell {
 
 /// Which direction an expander reveals hidden lines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub enum ExpandDir {
     Up,
     Down,
@@ -60,6 +64,7 @@ pub enum ExpandDir {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, EnumDiscriminants)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[strum_discriminants(name(RowKind), derive(EnumIter, Hash))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum Row {
@@ -92,6 +97,7 @@ pub enum Row {
 
 /// Index of a chunk within a file's rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(transparent)]
 pub struct ChunkIndex(u32);
 
@@ -111,6 +117,7 @@ impl ChunkIndex {
 
 /// What a render is of: a diff between two blobs, or a single blob (explorer).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, EnumDiscriminants)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[strum_discriminants(name(RenderTargetKind), derive(EnumIter, Hash))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum RenderTarget {
@@ -120,6 +127,7 @@ pub enum RenderTarget {
 
 /// Row-level shape of a rendered file, known before any chunk.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, EnumDiscriminants)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[strum_discriminants(name(RenderContentKind), derive(EnumIter, Hash))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum RenderContent {
@@ -139,6 +147,7 @@ pub enum RenderContent {
 
 /// Header for a rendered file: everything but the rows.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct FileRenderHeader {
     pub repo_id: RepoId,
@@ -152,6 +161,7 @@ pub struct FileRenderHeader {
 
 /// A contiguous slice of a file's rows.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct RenderChunk {
     pub index: ChunkIndex,
@@ -160,6 +170,7 @@ pub struct RenderChunk {
 
 /// A whole rendered file, for non-streamed consumers (CLI, MCP).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct FileRender {
     pub header: FileRenderHeader,
@@ -168,6 +179,7 @@ pub struct FileRender {
 
 /// Per-file line counts, for the tree and progress views.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct FileSummary {
     pub repo_id: RepoId,
@@ -179,6 +191,7 @@ pub struct FileSummary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct DiffSummary {
     pub files: Vec<FileSummary>,

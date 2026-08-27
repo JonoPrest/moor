@@ -24,8 +24,10 @@ for the design and `docs/PLAN.md` for the milestones before making changes.
   `ToolCall::parse`) and matched exhaustively; never `match s.as_str() { "list_reviews" => .. }`
   or a `const MUTATING: &[&str]`. Classification (read vs write, streamed vs single) is a
   type (`Call::Query | Call::Mutating`), so a new variant fails to compile until every
-  site handles it. The wire spelling lives in one `serde`/`strum` rename, and a test
-  checks that every variant is advertised.
+  site handles it. The wire spelling lives in one `serde`/`strum` rename; what is advertised
+  is *derived* by iterating the enum (`ToolName::iter()`), and schemas come from the serde
+  types themselves (`schemars` behind `moor-protocol`'s `schema` feature) — never a
+  hand-written `json!` schema beside a `Deserialize` struct.
 
 ### Testing — every piece proves itself
 

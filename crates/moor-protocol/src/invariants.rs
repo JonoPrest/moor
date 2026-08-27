@@ -97,6 +97,7 @@ impl<T> IntoIterator for NonEmpty<T> {
 
 /// A 1-based line number within a blob.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(transparent)]
 pub struct LineNo(NonZeroU32);
 
@@ -155,7 +156,8 @@ pub struct LineRange {
 }
 
 #[derive(Serialize, Deserialize)]
-struct RawLineRange {
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub(crate) struct RawLineRange {
     start: LineNo,
     end: LineNo,
 }
@@ -232,7 +234,8 @@ pub struct ColRange {
 }
 
 #[derive(Serialize, Deserialize)]
-struct RawColRange {
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub(crate) struct RawColRange {
     start: u32,
     end: u32,
 }

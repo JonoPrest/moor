@@ -107,6 +107,7 @@ impl From<ProtocolVersion> for String {
 /// Version of the on-disk store layout. Bumped on every incompatible change
 /// to a redb table; each bump ships a migration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(transparent)]
 pub struct SchemaVersion(u32);
 
@@ -133,6 +134,7 @@ impl fmt::Display for SchemaVersion {
 
 /// What a client or daemon is, for logs and upgrade notices.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct BuildInfo {
     /// e.g. `moor-client-tauri`, `moor-mcp`, `moord`.
@@ -143,6 +145,7 @@ pub struct BuildInfo {
 
 /// Advice attached to a successful handshake when the peer is behind.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct UpgradeNotice {
     /// The version the daemon would prefer the client to speak.
@@ -156,6 +159,7 @@ pub struct UpgradeNotice {
 /// `v` set to the negotiated version. A mismatch after handshake is a
 /// protocol error.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Envelope<T> {
     pub v: ProtocolVersion,

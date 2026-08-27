@@ -15,6 +15,7 @@ use crate::invariants::{NonEmpty, RepoPath};
 
 /// A committed event: has a daemon-assigned `seq`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Event {
     pub seq: Seq,
@@ -28,6 +29,7 @@ pub struct Event {
 /// Every kind of thing that can happen. Each variant carries enough to update
 /// the materialised views without consulting anything but earlier events.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumDiscriminants)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[strum_discriminants(name(EventKind), derive(EnumIter, Hash))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum EventBody {

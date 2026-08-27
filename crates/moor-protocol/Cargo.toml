@@ -10,6 +10,12 @@ serde = { workspace = true }
 ulid = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
+schemars = { workspace = true, optional = true }
+
+[features]
+## JSON Schema derivation for every wire type (`schemars`). Off by default so
+## wasm and daemon builds stay lean; adapters that advertise schemas turn it on.
+schema = ["dep:schemars"]
 
 [dev-dependencies]
 proptest = { workspace = true }

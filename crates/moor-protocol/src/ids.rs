@@ -204,6 +204,7 @@ macro_rules! oid_newtype {
     ($(#[$doc:meta])* $name:ident) => {
         $(#[$doc])*
         #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+        #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
         #[serde(transparent)]
         pub struct $name(Oid);
 
@@ -260,6 +261,7 @@ oid_newtype!(
 
 /// Daemon-assigned global event sequence number. Strictly increasing from 1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(transparent)]
 pub struct Seq(u64);
 
@@ -292,6 +294,7 @@ impl fmt::Display for Seq {
 /// Client-assigned per-connection counter, for matching optimistic events to
 /// their committed counterpart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(transparent)]
 pub struct ClientSeq(u64);
 
@@ -314,6 +317,7 @@ impl ClientSeq {
 
 /// Per-connection request id for multiplexing requests, responses and streams.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(transparent)]
 pub struct RequestId(u64);
 
@@ -331,6 +335,7 @@ impl RequestId {
 
 /// Milliseconds since the Unix epoch, UTC.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(transparent)]
 pub struct Timestamp(i64);
 

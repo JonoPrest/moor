@@ -23,6 +23,7 @@ use crate::render::{ChunkIndex, FileRenderHeader, RenderChunk};
 use crate::version::{BuildInfo, ProtocolVersion, SchemaVersion, UpgradeNotice};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumDiscriminants)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[strum_discriminants(name(ClientMsgKind), derive(EnumIter, Hash))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum ClientMsg {
@@ -46,6 +47,7 @@ pub enum ClientMsg {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumDiscriminants)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[strum_discriminants(name(ServerMsgKind), derive(EnumIter, Hash))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum ServerMsg {
@@ -95,6 +97,7 @@ pub enum ResponseShape {
 
 /// Where a subscription starts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumDiscriminants)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[strum_discriminants(name(SinceKind), derive(EnumIter, Hash))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum Since {
@@ -105,6 +108,7 @@ pub enum Since {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, EnumDiscriminants)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[strum_discriminants(name(SubscribeScopeKind), derive(EnumIter, Hash))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum SubscribeScope {
@@ -124,6 +128,7 @@ pub enum SubscribeScope {
 /// A mutation submitted by a client. Author is taken from the connection,
 /// `client_seq` lets the client match its optimistic copy.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumDiscriminants)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[strum_discriminants(name(MutationKind), derive(EnumIter, Hash))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum Mutation {
@@ -214,6 +219,7 @@ pub enum Mutation {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumDiscriminants)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[strum_discriminants(name(RequestKind), derive(EnumIter, Hash))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum Request {
@@ -318,6 +324,7 @@ impl Request {
 
 /// Materialised state of a review for a fresh client. Never a log replay.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ReviewSnapshot {
     pub review: Review,
@@ -330,6 +337,7 @@ pub struct ReviewSnapshot {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumDiscriminants)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[strum_discriminants(name(ResponseKind), derive(EnumIter, Hash))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum Response {
@@ -375,6 +383,7 @@ pub enum Response {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumDiscriminants)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[strum_discriminants(name(StreamItemKind), derive(EnumIter, Hash))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum StreamItem {
@@ -396,6 +405,7 @@ pub enum StreamItem {
 
 /// What kind of entity was not found.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub enum EntityKind {
     Workspace,
     Repo,
@@ -409,6 +419,7 @@ pub enum EntityKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumDiscriminants)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[strum_discriminants(name(RpcErrorKind), derive(EnumIter, Hash))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum RpcError {
@@ -447,6 +458,7 @@ pub enum RpcError {
 /// payload lives in `moor-client-core`; the section names are protocol so the
 /// UI's schema and the core agree on them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub enum ViewSection {
     Connection,
     ReviewList,

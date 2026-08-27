@@ -12,7 +12,8 @@ name = "moor-mcp"
 path = "src/main.rs"
 
 [dependencies]
-moor-protocol = { workspace = true }
+moor-protocol = { workspace = true, features = ["schema"] }
+schemars = { workspace = true }
 moord = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
