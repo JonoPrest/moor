@@ -71,7 +71,21 @@ let make = (~tree: TreeView.t, ~focus: Focus.t, ~dispatch: Action.t => unit) => 
             onClick=onSelect
             onDoubleClick={_ =>
               dispatch(Viewport({file: {repoId, path}, firstRow: 0, lastRow: 59}))}>
-            <span className="tree-glyph tree-viewed"> {React.string(viewedGlyph(viewed))} </span>
+            <input
+              type_="checkbox"
+              className="tree-viewed"
+              ariaLabel={"viewed " ++ name}
+              title={viewed == ChangedSinceViewed ? "changed since viewed" : "viewed"}
+              checked={viewed == Viewed}
+              onClick={ev => ReactEvent.Mouse.stopPropagation(ev)}
+              onChange={_ =>
+                dispatch(
+                  viewed == Viewed
+                    ? UnmarkViewed({file: {repoId, path}})
+                    : MarkViewed({file: {repoId, path}}),
+                )}
+            />
+            <span className="tree-glyph"> {React.string(viewedGlyph(viewed))} </span>
             <span className="tree-name"> {React.string(name)} </span>
             <span className={"tree-change tree-change-" ++ String.toLowerCase(changeGlyph(change))}>
               {React.string(changeGlyph(change))}

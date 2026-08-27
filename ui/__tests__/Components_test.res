@@ -224,3 +224,21 @@ describe("NewReview", () => {
     expect(dispatch)->not_->toHaveBeenCalled
   })
 })
+
+describe("Tree (viewed)", () => {
+  test("the per-file checkbox marks and unmarks viewed without moving focus", () => {
+    let dispatch = fn()
+    let tree = Fixtures.parse(View.TreeView.schema, "client", "TreeView", "default")
+    let {container} = render(<Tree tree focus={Tree({index: 0})} dispatch />)
+    let boxes = Element.querySelectorAll(container, "input.tree-viewed")
+    // lib.rs (changed since viewed) and README.md (unviewed)
+    expect(Array.length(boxes))->toBe(2)
+    FireEvent.click(boxes->Array.getUnsafe(0))
+    let calls = mock(dispatch).calls
+    expect(Array.length(calls))->toBe(1)
+    switch calls->Array.getUnsafe(0)->Array.getUnsafe(0) {
+    | Action.MarkViewed({file}) => expect(file.path)->toBe("src/lib.rs")
+    | _ => expect(false)->toBe(true)
+    }
+  })
+})
