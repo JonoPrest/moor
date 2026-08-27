@@ -1,4 +1,6 @@
-# Code Review Tool — Architecture
+# Moor — Architecture
+
+Moor is a daemon-backed code review tool. Comments are *moored* to content (blobs), not to diffs or line numbers.
 
 Status: **draft v1** — core decisions resolved (§10).
 
@@ -23,7 +25,7 @@ Non-goals (for now): multi-machine sync of comments, hosting/PR integration, aut
 ```
 ┌─────────────┐  ┌─────────────┐  ┌───────────┐  ┌──────────────┐
 │ Tauri app   │  │ Browser     │  │ TUI       │  │ Agent / CLI  │
-│ (webview UI)│  │ (wasm core) │  │ (ratatui) │  │ (MCP / cr)   │
+│ (webview UI)│  │ (wasm core) │  │ (ratatui) │  │ (MCP / moor)   │
 └──────┬──────┘  └──────┬──────┘  └─────┬─────┘  └──────┬───────┘
        │ unix sock      │ websocket     │ unix sock     │ MCP (stdio/ws)
        └────────────────┴───────┬───────┴───────────────┘
@@ -42,33 +44,34 @@ Non-goals (for now): multi-machine sync of comments, hosting/PR integration, aut
                     └───────────┘ └─────────┘
 ```
 
-Remote use: the client tunnels the daemon's socket/port over SSH (`ssh -L` or `ssh host cr-daemon --stdio`). SSH is the only auth layer.
+Remote use: the client tunnels the daemon's socket/port over SSH (`ssh -L` or `ssh host moord --stdio`). SSH is the only auth layer.
 
 ## 3. Crate / package layout
 
 ```
 crates/
-  protocol/      wire types: requests, events, view/render models. serde. wasm-safe.
-  review-core/   git access, diffing, anchoring, event store, review logic. daemon-only.
-  daemon/        socket + websocket + MCP transports over review-core. file watcher.
-  client-core/   sans-I/O client state machine: cache, optimistic state, ViewModel. wasm-safe.
-  client-wasm/   wasm-bindgen shim around client-core.
-  client-tauri/  Tauri host: runs client-core natively, exposes dispatch/subscribe to the webview.
-  client-tui/    ratatui host (later).
-  cli/           `cr` command; thin RPC client. Used by shell-based agents and scripts.
+  moor-protocol/      wire types: requests, events, view/render models. serde. wasm-safe.
+  moor-review-core/   git access, diffing, anchoring, event store, review logic. daemon-only.
+  moord/              daemon: socket + websocket + MCP transports over review-core. file watcher.
+  moor-client-core/   sans-I/O client state machine: cache, optimistic state, ViewModel. wasm-safe.
+  moor-client-wasm/   wasm-bindgen shim around client-core.
+  moor-client-tauri/  Tauri host: runs client-core natively, exposes dispatch/subscribe to the webview.
+  moor-client-tui/    ratatui host (later).
+  moor-cli/           `moor` command; thin RPC client. Used by shell-based agents and scripts.
+  moor-mcp/           MCP stdio shim proxying to moord.
 ui/              ReScript + React + Vite. Shared by Tauri and browser.
   src/core/      Core.res interface + CoreTauri.res / CoreWasm.res adapters
   src/protocol/  Protocol.res — hand-written Sury schemas mirroring the Rust types
   src/components/
 ```
 
-Dependency rule: `protocol` ← everything. `client-core` never depends on `review-core`. Nothing in `client-core` or `protocol` may use tokio, std I/O, threads, `Instant`, or non-`js` `rand` (enforced by a CI `cargo check --target wasm32-unknown-unknown`).
+Dependency rule: `moor-protocol` ← everything. `moor-client-core` never depends on `moor-review-core`. Nothing in `moor-client-core` or `moor-protocol` may use tokio, std I/O, threads, `Instant`, or non-`js` `rand` (enforced by a CI `cargo check --target wasm32-unknown-unknown`).
 
 ## 4. Daemon
 
 ### 4.1 Core API
 
-`review-core` exposes one `Core` type with all operations. Transports (`unix`, `ws`, `mcp`) are adapters that map 1:1 onto it. There is no capability a transport adds; this is what guarantees human/agent parity.
+`moor-review-core` exposes one `Core` type with all operations. Transports (`unix`, `ws`, `mcp`) are adapters that map 1:1 onto it. There is no capability a transport adds; this is what guarantees human/agent parity.
 
 ### 4.2 Event-sourced store
 
@@ -151,7 +154,7 @@ Three levels of diff data:
 1. **Raw diff** — hunks of `+/-/context` lines from git. Daemon.
 2. **Render model** — the flat list of rows the screen shows. Daemon. Pure function of
    `(base_oid, head_oid, path, opts)`, cached on disk, identical for every client.
-3. **Overlays** — comment threads, selection, hover. `client-core` / UI.
+3. **Overlays** — comment threads, selection, hover. `moor-client-core` / UI.
 
 Render model rows:
 
@@ -170,7 +173,7 @@ collapsing, and syntax highlighting (tree-sitter/syntect, native, run once). Uni
 split is a UI choice over the same rows. Whole-file views (explorer) are the same `Cell`
 list with no diff rows.
 
-Comment → row placement is done in `client-core` (anchor `blob_oid + lines` → row by
+Comment → row placement is done in `moor-client-core` (anchor `blob_oid + lines` → row by
 `line_no` per side) so the daemon's render model stays comment-agnostic and cacheable.
 
 ### 4.7 Transports
@@ -180,11 +183,11 @@ Comment → row placement is done in `client-core` (anchor `blob_oid + lines` �
 - **MCP**, over stdio or the ws port. Tools map to core methods: `list_workspaces`, `list_reviews`, `create_review`, `get_diff`, `get_file`, `list_comments`, `add_comment`, `reply`, `resolve`, `suggest`, `request_review`, `subscribe_events`.
 - **Subscriptions**: `subscribe(scope, since_seq)` streams events from `since_seq`. Reconnect = resubscribe from last seen seq; no other sync mechanism.
 
-Encoding is an isolated layer; the Rust↔Rust hop may move to capnproto/flatbuffers later if measured to matter. JSON is the fixed contract between `client-core` and the UI.
+Encoding is an isolated layer; the Rust↔Rust hop may move to capnproto/flatbuffers later if measured to matter. JSON is the fixed contract between `moor-client-core` and the UI.
 
 ## 5. Client core (sans-I/O)
 
-`client-core` is a pure state machine. It performs no I/O; the host injects everything.
+`moor-client-core` is a pure state machine. It performs no I/O; the host injects everything.
 
 ```rust
 pub struct ClientCore { ... }
@@ -217,7 +220,7 @@ Ephemeral UI state (hover, focus) lives in the UI. Navigational state (open file
 
 ### 5.4 Deferred refresh
 
-Working-tree reviews auto-refresh, but `client-core` will not swap in a new render model while the user has an open comment editor. Incoming `ReviewTargetsResolved` events are queued; when the draft is submitted or discarded, the queue is drained, the comment is re-anchored against the new head, and the view updates. The UI shows a subtle "changes pending" indicator while held.
+Working-tree reviews auto-refresh, but `moor-client-core` will not swap in a new render model while the user has an open comment editor. Incoming `ReviewTargetsResolved` events are queued; when the draft is submitted or discarded, the queue is drained, the comment is re-anchored against the new head, and the view updates. The UI shows a subtle "changes pending" indicator while held.
 
 ### 5.5 Multi-repo tree
 
@@ -241,22 +244,22 @@ Drift is prevented by a **boundary test**: Rust emits a JSON fixture for every t
 
 ### 6.4 Diff rendering
 
-The UI renders the daemon's render model (§4.6) plus `client-core` overlays as a virtualized list (`@tanstack/react-virtual`). Unified vs split is a view option on the same rows. Review-level comments render in a review "conversation" panel; file-level comments render at the top of the file view.
+The UI renders the daemon's render model (§4.6) plus `moor-client-core` overlays as a virtualized list (`@tanstack/react-virtual`). Unified vs split is a view option on the same rows. Review-level comments render in a review "conversation" panel; file-level comments render at the top of the file view.
 
 ## 7. Agent integration
 
-- Agents connect via MCP (or `cr` CLI) with `Author::Agent{...}` provenance. Provenance is a structured field, not a tag.
+- Agents connect via MCP (or `moor` CLI) with `Author::Agent{...}` provenance. Provenance is a structured field, not a tag.
 - `ReviewRequested` events show as a card in human clients; agents can subscribe to events addressed to them (`awaiting_agent`).
 - **Suggestions**: a comment kind carrying a unified diff against a specific `blob_oid`. The UI renders "apply", which writes to the working tree and records `SuggestionApplied`.
 - Threads keep agent `session_id`, so a human reply to an agent comment can be routed back to that session.
 
 ## 8. Remote / SSH
 
-The daemon is unaware of remoteness. Clients connect to a local socket/port; the user (or the client, as a convenience) forwards it over SSH. The `cr` CLI can be run remotely via `ssh host cr --stdio` as a fallback transport.
+The daemon is unaware of remoteness. Clients connect to a local socket/port; the user (or the client, as a convenience) forwards it over SSH. The `moor` CLI can be run remotely via `ssh host moord --stdio` as a fallback transport.
 
 ## 9. Persistence & lifecycle
 
-- One daemon per machine, data dir `~/.local/share/cr/` (`state.redb`, logs, per-repo diff cache).
+- One daemon per machine, data dir `~/.local/share/moor/` (`state.redb`, logs, per-repo diff cache).
 - Reviews persist until `ReviewDeleted`. Deletion tombstones; compaction is offline and optional.
 - Daemon restart: reopen store; clients resubscribe from `last_seq`.
 
