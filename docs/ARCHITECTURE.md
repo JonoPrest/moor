@@ -147,6 +147,10 @@ When a review's resolved head/base changes:
 `File` anchors follow the path; they become `Outdated` if the file is deleted or renamed away.
 `Review` anchors never change. Comments are never dropped by ref movement.
 
+Re-anchoring runs off the core actor: the actor records `ReviewTargetsResolved`, then the blob
+diffs run on the blocking pool and emit one `CommentReanchored` event per comment as they finish.
+Clients show affected comments as "re-anchoring" in the interim rather than the daemon stalling.
+
 ### 4.6 Diff render model
 
 Three levels of diff data:
@@ -199,6 +203,8 @@ TreeDelta    { from_root, to_root, added: [TreeEntry], removed: [path], changed:
 - **WebSocket**, same frames, for browser clients.
 - **MCP**, over stdio or the ws port. Tools map to core methods: `list_workspaces`, `list_reviews`, `create_review`, `get_diff`, `get_file`, `list_comments`, `add_comment`, `reply`, `resolve`, `suggest`, `request_review`, `subscribe_events`.
 - **Subscriptions**: `subscribe(scope, since_seq)` streams events from `since_seq`. Reconnect = resubscribe from last seen seq; no other sync mechanism.
+- **Review open is one streamed request.** `open_review(id)` answers with an ordered stream — `ReviewSnapshot` (review, threads, comments) → `TreeSnapshot` per target ref → `FileRenderHeader` per changed file → first `RenderChunk` per file — rather than the client issuing hundreds of round-trips over SSH. The client consumes and its cache fills as a side effect; per-item requests remain for cache misses and viewport-driven chunks.
+- **Fresh clients never replay the log.** A client with no `last_seq` gets a materialized `ReviewSnapshot` plus `subscribe(since = current_seq)`. Only reconnects with a known `last_seq` replay, and only the gap.
 
 Encoding is an isolated layer; the Rust↔Rust hop may move to capnproto/flatbuffers later if measured to matter. JSON is the fixed contract between `moor-client-core` and the UI.
 
@@ -295,7 +301,20 @@ The daemon is unaware of remoteness. Clients connect to a local socket/port; the
 - Reviews persist until `ReviewDeleted`. Deletion tombstones; compaction is offline and optional.
 - Daemon restart: reopen store; clients resubscribe from `last_seq`.
 
-## 10. Decisions
+## 10. Measure before optimising
+
+Suspected bottlenecks with a ready solution, deliberately **not** built until a benchmark in the plan shows they matter. Each has a trigger and a candidate fix.
+
+| Suspect | Trigger to act | Candidate fix |
+|---------|----------------|---------------|
+| Working-tree snapshot cost on large repos | snapshot > 100 ms after a single-file edit in a 50k-file repo | rehash only watcher-reported paths; ignore rules at the watcher (`.gitignore`, `target/`, `node_modules/`) so builds don't storm it |
+| Rename detection on big add/delete sets | `changed_files` > 500 ms on a directory move | cap candidates (like `diff.renameLimit`); compute renames after the header stream and patch the tree with a follow-up message |
+| redb write rate under agent load | appending 200 comments in a loop > 1 s, or fsync visible in profiles | batch appends per actor tick; keep ephemeral state (viewed flags) out of the durable log |
+| Event log growth | log > 1M events or startup rebuild > 1 s | offline compaction of tombstoned reviews (design already permits it) |
+| Cold start over SSH with empty cache | first usable frame > 1 s on a 300-file review | already mitigated by streamed `open_review` order; further: gzip frames, lower first-chunk size |
+| Depth-limited tree fallback | `tree_snapshot` > 200 ms or > 5 MB | lazy subtrees (§4.7) — implement only when a real repo trips it |
+
+## 11. Decisions
 
 ### Resolved
 

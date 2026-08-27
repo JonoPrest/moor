@@ -41,7 +41,7 @@ Goal: headless engine. Given repos on disk, create workspaces/reviews, produce r
 - Domain: `Workspace`, `Repo`, `Review`, `ReviewTarget`, `RefSpec`, `Comment`, `Author`, `Anchor`, `CommentKind`, `CommentState`, `Thread`.
 - Events: `Event { seq, ts, author, client_id, client_seq, body: EventBody }` and each `EventBody` variant.
 - Render model: `Row`, `Cell`, `Span`, `FileRender`, `DiffSummary`.
-- RPC: `ClientMsg`, `ServerMsg`, `Request`/`Response` per method, `SubscribeScope`.
+- RPC: `ClientMsg`, `ServerMsg`, `Request`/`Response` per method, `SubscribeScope`, `OpenReviewItem` stream items, `ReviewSnapshot`, `ViewDelta` sections.
 - All `#[serde(tag = "type")]`, `deny_unknown_fields`.
 - **Fixtures**: `cargo xtask fixtures` writes `fixtures/protocol/<Type>/<variant>.json` for every variant (a `Fixtures` trait implemented per type; a test asserts every enum variant has a fixture via exhaustive match).
 - Tests: serde round-trip per fixture; `insta` snapshot of every fixture so wire changes are visible in review; `proptest` round-trip for IDs/ranges.
@@ -74,7 +74,7 @@ Goal: headless engine. Given repos on disk, create workspaces/reviews, produce r
 
 ### 1.7 Comments + anchoring (`moor_review_core::comments`)
 - `add_comment`, `reply`, `edit`, `delete`, `resolve_thread`, `unresolve_thread`; all emit events, all validate against current review state (e.g. `Lines` range within blob length).
-- `reanchor(review, old: ResolvedTargets, new: ResolvedTargets)` per §4.5, emitting `CommentReanchored { comment, anchor, state }`.
+- `reanchor(review, old: ResolvedTargets, new: ResolvedTargets)` per §4.5, emitting `CommentReanchored { comment, anchor, state }`; pure function of blobs so milestone 2 can run it off the actor.
 - Tests: table-driven anchoring cases (unchanged blob; lines shifted above; lines shifted within; lines modified → `Outdated`; file deleted; file renamed; base-side anchor when base moves). `proptest`: random edits *outside* the anchored range never produce `Outdated`. Persistence: comments survive store reopen with anchors intact.
 
 ### 1.8 `Core` façade
@@ -96,8 +96,10 @@ Goal: `moord` running, multiple clients connected, events streaming, MCP working
 ### 2.2 Unix socket server
 - tokio; one task per connection; `Core` behind `Arc<RwLock>` or actor (decide during impl; prefer actor with a command channel so `Core` stays single-threaded and simple).
 - `subscribe(scope, since)` → replay from store then live tail via broadcast.
+- `open_review` streamed in the order of §4.8; fresh subscribers get `ReviewSnapshot` + `since = current_seq`, never a log replay.
+- Re-anchoring runs on the blocking pool after `ReviewTargetsResolved`, emitting `CommentReanchored` incrementally.
 - Render work leaves the actor: `file_render` resolves blobs on the actor, then runs the pure render on `spawn_blocking`; header sent as soon as the diff is done, chunks streamed as `ServerMsg::RenderChunk` with the requested index first.
-- Tests: two clients, one writes, other receives with correct `Seq`; reconnect with `since` receives exactly the gap; slow subscriber doesn't block others; a 100k-line render in flight does not delay an `add_comment` from another client (latency assertion).
+- Tests: two clients, one writes, other receives with correct `Seq`; reconnect with `since` receives exactly the gap; slow subscriber doesn't block others; a 100k-line render in flight does not delay an `add_comment` from another client (latency assertion); `open_review` on a 300-file review completes headers in one stream with no client-initiated requests; re-anchoring 500 comments after a rebase does not block a concurrent `list_reviews` > 50 ms.
 
 ### 2.3 File watcher
 - `notify` per repo; debounce; triggers `resolve_targets` for working-tree reviews.
@@ -127,8 +129,12 @@ Goal: `moord` running, multiple clients connected, events streaming, MCP working
 
 Goal: sans-I/O client that models everything the UI needs; proven under races.
 
+### 3.0 Benchmarks gate (§10 of ARCHITECTURE)
+- Add `benches/` in `moor-review-core` and `moord` for each "measure before optimising" trigger: worktree snapshot after single edit (50k files), `changed_files` on directory move, 200-comment agent burst, `tree_snapshot` size/time. Run in CI on a synthetic repo; record numbers in `docs/BENCHMARKS.md`. Optimisations from that table are only implemented when a benchmark trips its trigger.
+
 ### 3.1 State machine skeleton
-- `ClientCore::handle(Input) -> Vec<Effect>`, `view() -> &ViewModel`.
+- `ClientCore::handle(Input) -> Vec<Effect>`, `view() -> &ViewModel`; `Effect::Render(ViewDelta)` carries only changed sections.
+- Draft text is not core state; `Action::DraftOpened{anchor}` / `DraftSubmitted{body}` / `DraftDiscarded` are the only crossings.
 - Typestate connection: `Disconnected | Connecting | Subscribed { last_seq }`.
 - Tests: every `Input` in every state either transitions or is rejected with a typed error; no panics (`proptest` over random input sequences).
 
@@ -170,7 +176,7 @@ Goal: usable desktop app.
 
 ### 4.2 Adapters
 - `Core.res` interface; `CoreTauri.res` (`invoke("dispatch")`, `listen("view")`); `CoreWasm.res` stub.
-- Tests: adapter unit tests with a mocked Tauri API.
+- Tests: adapter unit tests with a mocked Tauri API; assert no IPC message exceeds 64 KB during a scripted session (typing a comment, scrolling a 100k-line file).
 
 ### 4.3 Tauri host (`moor-client-tauri`)
 - Owns `ClientCore`, unix-socket transport (and ssh-forwarded path), KV via file, clock; pushes `ViewModel` diffs to webview.
