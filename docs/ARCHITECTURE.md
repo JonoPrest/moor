@@ -16,6 +16,7 @@ Status: **draft v1** — core decisions resolved (§10).
 - **Comments** are first-class, persisted, content-anchored, and record provenance (human vs agent, and which agent/session).
 - Comments can be **inline** (lines of a blob), **file-level** (a whole file, whether or not it is in the diff), or **review-level** (like a non-inline GitHub PR comment).
 - **Agents are peers**: everything a human can do through the UI, an agent can do through MCP/CLI, using the same core API.
+- **Keyboard-first**: everything is reachable without a mouse. A persistent hint bar shows the main bindings for the current context; `?` opens a full, searchable help overlay.
 - Clients apply mutations **optimistically** and reconcile after the fact.
 - State **persists across daemon restarts**; reviews live until explicitly deleted.
 
@@ -294,7 +295,31 @@ The Rust `ViewModel`/`Action`/`Event` types and their ReScript counterparts are 
 
 Drift is prevented by a **boundary test**: Rust emits a JSON fixture for every type/variant (serialize, and check it deserializes back); a ReScript test parses each fixture with the Sury schema and re-serializes it, and the outputs must match byte-for-byte after canonicalisation. Both directions are covered, so a protocol change that isn't mirrored fails CI.
 
-### 6.4 Diff rendering
+### 6.4 Keyboard model
+
+Every user operation is an `Action`; keybindings are a data table mapping `(Context, KeyChord) → Action`, not ad-hoc handlers in components.
+
+```
+Keymap  { bindings: [Binding { context, chord, action, label, primary: bool }] }
+Context = Global | ReviewList | Tree | Diff | Thread | Composer | CommitStepper | Help
+```
+
+- `client-core` owns the keymap (default table + user overrides from the host KV) and resolves
+  `Input::Key { context, chord }` → `Action`. The UI captures keys, sends chords, and renders
+  the results — it contains no key → behaviour logic, so bindings are identical across hosts
+  (Tauri, browser, TUI) and testable without a DOM.
+- Chords support sequences (`g g`, `] c`) with a short timeout; vim-style movement
+  (`j`/`k`, `n`/`p` next/prev hunk, `] f`/`[ f` next/prev file, `] c` next comment,
+  `v` mark viewed, `c` comment, `r` reply, `Enter` open, `Esc` back, `Cmd/Ctrl+P` file search,
+  `s` toggle split/unified, `w` toggle whitespace).
+- **Hint bar**: the UI renders the `primary: true` bindings for the active context along the
+  bottom edge, from the keymap — never hand-written.
+- **`?` help overlay**: all bindings for the active context plus Global, grouped and searchable,
+  generated from the same table. Shows user overrides and conflicts.
+- Focus is explicit state in the `ViewModel` (`focus: Context + target`), so "what does `j` do"
+  is always determined by core state, not DOM focus.
+
+### 6.5 Diff rendering
 
 The UI renders the daemon's render model (§4.6) plus `moor-client-core` overlays as a virtualized list (`@tanstack/react-virtual`). Unified vs split is a view option on the same rows. Review-level comments render in a review "conversation" panel; file-level comments render at the top of the file view.
 

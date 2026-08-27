@@ -161,6 +161,8 @@ Goal: sans-I/O client that models everything the UI needs; proven under races.
 - Merged file tree, current file rows + comment overlays, thread list, review conversation, commit stepper, progress.
 - Explorer model built from `TreeSnapshot`: nested tree, expand state, breadcrumbs, fuzzy path index; all client-local.
 - `ViewPrefs { layout, ignore_whitespace, context_lines }`, persisted; `Action::SetLayout` emits only `Render`, never `Send`.
+- Keymap (§6.4): default `Keymap` table, override loading from KV, chord sequence parser with timeout (`Input::Tick`), `Input::Key` → `Action` resolution by focus context; `ViewModel.hints` (primary bindings for current focus) and `ViewModel.help` (full grouped list when open).
+- Tests: every `Action` variant reachable from at least one binding (exhaustive-match test); no two bindings conflict within a context; sequences resolve/expire correctly; `?` in every context yields a non-empty help list; keymap round-trips through the override file format.
 - Viewed state derivation (`Viewed | ChangedSinceViewed | Unviewed`) and collapse behaviour; progress counts.
 - Commit stepper view from `CommitInfo`.
 - Comment→row placement from anchors.
@@ -196,8 +198,14 @@ Goal: usable desktop app.
 - Suggestions with apply.
 - Tests: ReScript component tests for row rendering (each `Row` variant in both unified and split layout), placeholder → chunk swap, composer state; Playwright smoke against the Tauri dev build for the core flow, including opening a 10k-line file and scrolling end-to-end without a long task > 100 ms.
 
-### 4.5 Polish
-- Keyboard nav, "changes pending" indicator, remote connection UX (ssh target picker).
+### 4.5 Keyboard UI
+- Key capture component: normalises browser key events to `KeyChord`, forwards to core, swallows handled keys; text inputs (composer, search) get raw keys except `Esc`/submit chords.
+- Hint bar and `?` help overlay rendered from `ViewModel.hints` / `ViewModel.help` (searchable).
+- Focus rings and scroll-into-view driven by `ViewModel.focus`.
+- Tests: component tests that the hint bar reflects the focus context; Playwright script performing the full review flow (open review, navigate files/hunks, comment, reply, mark viewed, step commits, toggle layout) using keyboard only — no mouse events.
+
+### 4.6 Polish
+- "changes pending" indicator, remote connection UX (ssh target picker).
 
 ---
 
