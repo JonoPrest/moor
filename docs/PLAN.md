@@ -129,10 +129,12 @@ Goal: sans-I/O client that models everything the UI needs; proven under races.
 - Typestate connection: `Disconnected | Connecting | Subscribed { last_seq }`.
 - Tests: every `Input` in every state either transitions or is rejected with a typed error; no panics (`proptest` over random input sequences).
 
-### 3.2 Cache
-- `ContentCache` keyed by OID / `(base, head, path, opts)`; LRU with size budget; `Load`/`Persist` effects for the host KV.
+### 3.2 Cache (§5.1)
+- `ContentCache` keyed by OID / `(base_oid, head_oid, opts)`; two tiers, each LRU with a byte budget.
+- Memory tier in `client-core`; open-review entries pinned. Disk tier via `Persist`/`Load` effects to the host KV; memory eviction writes through; memory miss → `Load` from disk → only then `Send` to daemon.
+- Host KV implementations: Tauri = redb file under the app data dir; browser = IndexedDB; TUI = redb file.
 - Prefetch policy: on review open request all `FileRender`s; on file open request sibling entries.
-- Tests: cache hit produces no `Send`; miss produces exactly one `Send` and dedupes concurrent misses; eviction respects budget.
+- Tests: memory hit → no effects; memory miss + disk hit → exactly one `Load`, no `Send`; full miss → `Load` then `Send`, concurrent misses deduped; eviction respects both budgets and writes through; pinned entries survive pressure; restart simulation (new `ClientCore` over same KV) serves previous review without `Send`.
 
 ### 3.3 Optimistic mutations
 - `PendingEvent` list; local apply; on own `CommittedEvent` → drop pending; on foreign → rebase.

@@ -205,7 +205,14 @@ Hosts (Tauri, wasm, TUI) own: transport, local KV store, clock. This makes the c
 
 ### 5.1 Cache
 
-Content-addressed, so never stale: blobs by OID, trees by OID, diff render models by `(base, head, path)`. On opening a review the daemon streams the full diff set and touched blobs; the file explorer prefetches siblings. Cache hit ⇒ zero-latency navigation.
+Content-addressed, so never stale: blobs by OID, trees by OID, diff render models by `(base_oid, head_oid, opts)`. On opening a review the daemon streams the full diff set and touched blobs; the file explorer prefetches siblings. Cache hit ⇒ zero-latency navigation.
+
+Two tiers, both LRU with a **byte budget**:
+
+1. **Memory** (default 256 MB) — inside `client-core`. Entries for the currently open review are pinned and never evicted.
+2. **Disk** (default 2 GB) — via the host KV store (`Persist`/`Load` effects). Memory eviction writes through to disk; a memory miss checks disk before asking the daemon. Survives client restarts, so reopening a review over SSH is served locally.
+
+Both budgets are configurable. Because keys are OIDs, on-disk entries never need invalidation; the disk tier is only ever trimmed by LRU or cleared explicitly.
 
 ### 5.2 Optimistic mutations
 
