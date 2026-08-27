@@ -2,15 +2,15 @@
 //! with a typed error, never panics, and a rejection changes nothing.
 
 use moor_client_core::{
-    Action, ClientCore, Config, Connection, ConnectionView, CoreError, Effect, IdSeed, Input,
-    TransportEvent, ViewDelta,
+    Action, CacheConfig, ClientCore, Config, Connection, ConnectionView, CoreError, Effect, IdSeed,
+    Input, TransportEvent, ViewDelta,
 };
 use moor_protocol::{
     Anchor, Author, BuildInfo, ClientId, ClientMsg, ClientSeq, Comment, CommentKind, CommentState,
-    Event, EventBody, Mutation, NonEmpty, Oid, ProtocolVersion, RefSpec, RepoId, Request,
-    RequestId, ResolvedRef, ResolvedSource, ResolvedTarget, Response, Review, ReviewId,
+    Event, EventBody, Mutation, NonEmpty, Oid, ProtocolVersion, RefSpec, RenderOpts, RepoId,
+    Request, RequestId, ResolvedRef, ResolvedSource, ResolvedTarget, Response, Review, ReviewId,
     ReviewSnapshot, ReviewStatus, ReviewTarget, RpcError, SchemaVersion, Seq, ServerMsg, Since,
-    SubscribeScope, ThreadId, Timestamp, TreeOid, ViewSection, WorkspaceId,
+    StreamItem, SubscribeScope, ThreadId, Timestamp, TreeOid, ViewSection, WorkspaceId,
 };
 use proptest::prelude::*;
 
@@ -26,6 +26,7 @@ fn config() -> Config {
             machine: "host".into(),
         },
         id_seed: IdSeed(7),
+        cache: CacheConfig::default(),
     }
 }
 
@@ -130,7 +131,8 @@ fn rendered(effects: &[Effect]) -> Vec<ViewSection> {
             | Effect::Disconnect
             | Effect::Send(_)
             | Effect::Persist { .. }
-            | Effect::Load { .. } => None,
+            | Effect::Load { .. }
+            | Effect::Remove { .. } => None,
         })
         .flatten()
         .collect()
@@ -144,7 +146,8 @@ fn sent_request(effects: &[Effect]) -> Option<(RequestId, Request)> {
         | Effect::Disconnect
         | Effect::Render(_)
         | Effect::Persist { .. }
-        | Effect::Load { .. } => None,
+        | Effect::Load { .. }
+        | Effect::Remove { .. } => None,
     })
 }
 
@@ -184,14 +187,22 @@ fn open(core: &mut ClientCore, id: ReviewId) {
         .handle(Input::User(Action::OpenReview { review_id: id }))
         .unwrap();
     let (req, request) = sent_request(&effects).unwrap();
-    assert_eq!(request, Request::ReviewSnapshot { review_id: id });
-    core.handle(Input::Server(ServerMsg::Response {
+    assert_eq!(
+        request,
+        Request::OpenReview {
+            review_id: id,
+            opts: RenderOpts::default()
+        }
+    );
+    core.handle(Input::Server(ServerMsg::StreamItem {
         id: req,
-        response: Response::ReviewSnapshot {
+        item: StreamItem::ReviewSnapshot {
             snapshot: snapshot(id, Seq::new(1)),
         },
     }))
     .unwrap();
+    core.handle(Input::Server(ServerMsg::StreamEnd { id: req }))
+        .unwrap();
 }
 
 #[test]
@@ -486,7 +497,12 @@ fn events_update_only_what_they_touch() {
         .unwrap();
     assert_eq!(
         rendered(&effects),
-        vec![ViewSection::Diff, ViewSection::Threads, ViewSection::Draft]
+        vec![
+            ViewSection::Tree,
+            ViewSection::Diff,
+            ViewSection::Threads,
+            ViewSection::Draft
+        ]
     );
     assert!(core.view().review.is_none());
     assert_eq!(

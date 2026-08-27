@@ -13,11 +13,14 @@
 //! - Draft text never enters the core. `Action::DraftOpened` /
 //!   `DraftSubmitted { body }` / `DraftDiscarded` are the only crossings.
 //! - `Effect::Render` names only the [`ViewSection`]s that changed.
+//! - Content (trees, render headers, chunks) is fetched through one path in
+//!   `content.rs`: memory → disk (`Load`) → daemon (`Send`).
 
 #![deny(clippy::wildcard_enum_match_arm)]
 
 mod cache;
 mod connection;
+mod content;
 mod ids;
 mod view;
 
@@ -32,8 +35,9 @@ use strum::EnumDiscriminants;
 
 pub use cache::{Bytes, CacheKey, CacheValue, ContentCache, Evicted, RenderKey};
 pub use connection::{Connection, ConnectionKind};
+pub use content::{CacheConfig, DiskTier, DiskTierKind, FileRef, PREFETCH_RADIUS};
 pub use ids::IdSeed;
-pub use view::{ConnectionView, Draft, OpenReview, ViewDelta, ViewModel};
+pub use view::{ConnectionView, Draft, OpenFile, OpenReview, ViewDelta, ViewModel};
 
 pub use moor_protocol as protocol;
 
@@ -90,6 +94,14 @@ pub enum Action {
         body: String,
     },
     DraftDiscarded,
+    /// The host shows rows `first_row..=last_row` of `file`. Opens the file
+    /// if it was not; drives chunk (pre)fetching.
+    Viewport {
+        file: FileRef,
+        first_row: u32,
+        last_row: u32,
+    },
+    CloseFile,
 }
 
 /// Something the host must do for the core.
@@ -106,6 +118,10 @@ pub enum Effect {
         value: Vec<u8>,
     },
     Load {
+        key: Key,
+    },
+    /// Delete a key from the host store (disk-tier trimming).
+    Remove {
         key: Key,
     },
     Render(ViewDelta),
@@ -129,6 +145,10 @@ pub enum CoreError {
     },
     #[error("no review is open")]
     NoOpenReview,
+    #[error("{0:?} is not a file of the open review")]
+    UnknownFile(FileRef),
+    #[error("no file is open")]
+    NoOpenFile,
     #[error("a draft is already open")]
     DraftAlreadyOpen,
     #[error("no draft is open")]
@@ -144,11 +164,67 @@ pub enum CoreError {
 
 /// What a `RequestId` is waiting for, so the reply can be routed.
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum InFlight {
+pub(crate) enum InFlight {
     Subscribe,
     ListReviews,
-    ReviewSnapshot { review_id: ReviewId },
-    Mutate { client_seq: ClientSeq },
+    /// Streamed open (local daemon): snapshot, trees, headers, first chunks.
+    OpenReview {
+        review_id: ReviewId,
+    },
+    /// Piecewise open (disk tier on): snapshot only, the rest by key.
+    ReviewSnapshot {
+        review_id: ReviewId,
+    },
+    ListFiles {
+        review_id: ReviewId,
+    },
+    TreeSnapshot {
+        root: moor_protocol::TreeOid,
+    },
+    FileRender {
+        render: RenderKey,
+        stop_after: moor_protocol::ChunkIndex,
+    },
+    RenderChunk {
+        key: CacheKey,
+    },
+    Mutate {
+        client_seq: ClientSeq,
+    },
+}
+
+impl InFlight {
+    /// Whether this request counts against `CacheConfig::max_in_flight`.
+    fn is_content(&self) -> bool {
+        match self {
+            InFlight::TreeSnapshot { .. }
+            | InFlight::FileRender { .. }
+            | InFlight::RenderChunk { .. } => true,
+            InFlight::Subscribe
+            | InFlight::ListReviews
+            | InFlight::OpenReview { .. }
+            | InFlight::ReviewSnapshot { .. }
+            | InFlight::ListFiles { .. }
+            | InFlight::Mutate { .. } => false,
+        }
+    }
+
+    /// The cache key this request fills, if it is a single-key fetch.
+    fn key(&self) -> Option<CacheKey> {
+        match self {
+            InFlight::TreeSnapshot { root } => Some(CacheKey::Tree { root: *root }),
+            InFlight::FileRender { render, .. } => Some(CacheKey::Header {
+                render: render.clone(),
+            }),
+            InFlight::RenderChunk { key } => Some(key.clone()),
+            InFlight::Subscribe
+            | InFlight::ListReviews
+            | InFlight::OpenReview { .. }
+            | InFlight::ReviewSnapshot { .. }
+            | InFlight::ListFiles { .. }
+            | InFlight::Mutate { .. } => None,
+        }
+    }
 }
 
 /// Configuration fixed for the life of a `ClientCore`.
@@ -160,6 +236,7 @@ pub struct Config {
     /// Entropy for ids the core mints (comment ids). Hosts pass real random
     /// bits; tests pass a constant for reproducibility.
     pub id_seed: IdSeed,
+    pub cache: CacheConfig,
 }
 
 /// The client state machine. See the crate docs.
@@ -175,12 +252,14 @@ pub struct ClientCore {
     ids: ids::IdGen,
     /// `ReviewTargetsResolved` events held back while a draft is open (§5.4).
     deferred: Vec<EventBody>,
+    content: content::Content,
 }
 
 impl ClientCore {
     #[must_use]
     pub fn new(config: Config) -> Self {
         let ids = ids::IdGen::new(config.id_seed);
+        let content = content::Content::new(config.cache);
         Self {
             config,
             connection: Connection::Disconnected { last_seq: None },
@@ -191,6 +270,7 @@ impl ClientCore {
             in_flight: BTreeMap::new(),
             ids,
             deferred: Vec::new(),
+            content,
         }
     }
 
@@ -210,7 +290,7 @@ impl ClientCore {
             Input::User(action) => self.user(action),
             Input::Server(msg) => self.server(msg),
             Input::Transport(ev) => Ok(self.transport(ev)),
-            Input::Stored { key, .. } => Err(CoreError::UnknownKey(key)),
+            Input::Stored { key, value } => self.stored(key, value),
             Input::Tick(ms) => {
                 self.now = self.now.max(ms);
                 Ok(Vec::new())
@@ -225,6 +305,8 @@ impl ClientCore {
         }
     }
 
+    // One arm per variant; splitting would hide the exhaustive match.
+    #[allow(clippy::too_many_lines)]
     fn user(&mut self, action: Action) -> Result<Vec<Effect>, CoreError> {
         match action {
             Action::Connect => match self.connection {
@@ -255,25 +337,39 @@ impl ClientCore {
             }
             Action::OpenReview { review_id } => {
                 self.require_subscribed()?;
-                Ok(vec![self.request(
-                    Request::ReviewSnapshot { review_id },
-                    InFlight::ReviewSnapshot { review_id },
-                )])
+                let opts = self.content.config.render_opts;
+                let (request, waiting) = match self.content.config.disk {
+                    DiskTier::Disabled => (
+                        Request::OpenReview { review_id, opts },
+                        InFlight::OpenReview { review_id },
+                    ),
+                    DiskTier::Enabled { .. } => (
+                        Request::ReviewSnapshot { review_id },
+                        InFlight::ReviewSnapshot { review_id },
+                    ),
+                };
+                Ok(vec![self.request(request, waiting)])
             }
             Action::CloseReview => {
                 if self.view.review.is_none() {
                     return Err(CoreError::NoOpenReview);
                 }
-                self.view.review = None;
-                self.view.draft = None;
-                self.view.pending_refresh = false;
-                self.deferred.clear();
-                Ok(vec![render(&[
+                let mut effects = Vec::new();
+                self.close_review(&mut effects);
+                effects.push(render(&[
+                    ViewSection::Tree,
                     ViewSection::Diff,
                     ViewSection::Threads,
                     ViewSection::Draft,
-                ])])
+                ]));
+                Ok(effects)
             }
+            Action::Viewport {
+                file,
+                first_row,
+                last_row,
+            } => self.viewport(file, first_row, last_row),
+            Action::CloseFile => self.close_file(),
             Action::DraftOpened { anchor } => {
                 if self.view.review.is_none() {
                     return Err(CoreError::NoOpenReview);
@@ -312,7 +408,7 @@ impl ClientCore {
                 );
                 self.view.draft = None;
                 let mut effects = vec![send];
-                effects.push(self.drain_deferred());
+                effects.extend(self.drain_deferred());
                 Ok(effects)
             }
             Action::DraftDiscarded => {
@@ -320,9 +416,32 @@ impl ClientCore {
                     return Err(CoreError::NoDraft);
                 }
                 self.view.draft = None;
-                Ok(vec![self.drain_deferred()])
+                Ok(self.drain_deferred())
             }
         }
+    }
+
+    /// Drop the open review and everything content-side it pinned.
+    fn close_review(&mut self, effects: &mut Vec<Effect>) {
+        self.view.review = None;
+        self.view.draft = None;
+        self.view.pending_refresh = false;
+        self.deferred.clear();
+        self.review_closed(effects);
+    }
+
+    /// A review snapshot arrived (streamed or single): it becomes the open
+    /// review, replacing any other.
+    fn install_snapshot(
+        &mut self,
+        snapshot: moor_protocol::ReviewSnapshot,
+        effects: &mut Vec<Effect>,
+    ) {
+        self.review_closed(effects);
+        self.view.review = Some(OpenReview::new(snapshot));
+        self.view.draft = None;
+        self.view.pending_refresh = false;
+        self.deferred.clear();
     }
 
     fn require_subscribed(&self) -> Result<(), CoreError> {
@@ -334,7 +453,7 @@ impl ClientCore {
         }
     }
 
-    fn request(&mut self, request: Request, waiting: InFlight) -> Effect {
+    pub(crate) fn request(&mut self, request: Request, waiting: InFlight) -> Effect {
         let id = RequestId::new(self.next_request);
         self.next_request += 1;
         self.in_flight.insert(id, waiting);
@@ -370,7 +489,7 @@ impl ClientCore {
                 let last_seq = self.connection.last_seq();
                 let was_down = matches!(self.connection, Connection::Disconnected { .. });
                 self.connection = Connection::Disconnected { last_seq };
-                self.in_flight.clear();
+                self.clear_in_flight();
                 if was_down {
                     return Vec::new();
                 }
@@ -380,6 +499,8 @@ impl ClientCore {
         }
     }
 
+    // One arm per variant; splitting would hide the exhaustive match.
+    #[allow(clippy::too_many_lines)]
     fn server(&mut self, msg: ServerMsg) -> Result<Vec<Effect>, CoreError> {
         match msg {
             ServerMsg::Welcome { .. } => match self.connection {
@@ -412,7 +533,7 @@ impl ClientCore {
                     self.connection = Connection::Disconnected {
                         last_seq: self.connection.last_seq(),
                     };
-                    self.in_flight.clear();
+                    self.clear_in_flight();
                     self.view.connection = ConnectionView::Rejected {
                         error: error.clone(),
                     };
@@ -423,34 +544,47 @@ impl ClientCore {
                 }
             },
             ServerMsg::Response { id, response } => self.response(id, response),
-            ServerMsg::StreamItem { id, item } => {
-                self.require_in_flight(id)?;
-                // No streaming request is issued yet (3.2 adds OpenReview).
-                let got = match item {
-                    StreamItem::ReviewSnapshot { .. } => "ReviewSnapshot",
-                    StreamItem::TreeSnapshot { .. } => "TreeSnapshot",
-                    StreamItem::Header { .. } => "Header",
-                    StreamItem::Chunk { .. } => "Chunk",
-                };
-                Err(CoreError::UnexpectedResponse {
-                    id,
-                    expected: "Response",
-                    got,
-                })
-            }
+            ServerMsg::StreamItem { id, item } => self.stream_item(id, item),
             ServerMsg::StreamEnd { id } => {
-                self.require_in_flight(id)?;
-                Err(CoreError::UnexpectedResponse {
-                    id,
-                    expected: "Response",
-                    got: "StreamEnd",
-                })
+                let Some(waiting) = self.in_flight.remove(&id) else {
+                    return Err(CoreError::UnknownRequest(id));
+                };
+                let mut effects = Vec::new();
+                match waiting {
+                    InFlight::OpenReview { .. } => {
+                        if self.view.review.is_some() {
+                            effects.push(render(&[ViewSection::Tree, ViewSection::Diff]));
+                        }
+                    }
+                    InFlight::FileRender { render, .. } => {
+                        // The header may never have come (cancelled early or
+                        // errored); clear the pending mark so it can be retried.
+                        self.content_failed(&CacheKey::Header { render });
+                        self.content_done(&mut effects);
+                    }
+                    InFlight::Subscribe
+                    | InFlight::ListReviews
+                    | InFlight::ReviewSnapshot { .. }
+                    | InFlight::ListFiles { .. }
+                    | InFlight::TreeSnapshot { .. }
+                    | InFlight::RenderChunk { .. }
+                    | InFlight::Mutate { .. } => {
+                        self.in_flight.insert(id, waiting);
+                        return Err(CoreError::UnexpectedResponse {
+                            id,
+                            expected: "Response",
+                            got: "StreamEnd",
+                        });
+                    }
+                }
+                Ok(effects)
             }
             ServerMsg::Error { id, error } => {
                 let Some(waiting) = self.in_flight.remove(&id) else {
                     return Err(CoreError::UnknownRequest(id));
                 };
                 self.view.last_error = Some(error);
+                let mut effects = Vec::new();
                 let mut sections = vec![ViewSection::Connection];
                 if let InFlight::Subscribe = waiting {
                     // Subscription failed: stay connected but not subscribed;
@@ -460,7 +594,14 @@ impl ClientCore {
                 if let InFlight::Mutate { .. } = waiting {
                     sections.push(ViewSection::Threads);
                 }
-                Ok(vec![render(&sections)])
+                if let Some(key) = waiting.key() {
+                    self.content_failed(&key);
+                }
+                if waiting.is_content() {
+                    self.content_done(&mut effects);
+                }
+                effects.push(render(&sections));
+                Ok(effects)
             }
             ServerMsg::Event { event } => match self.connection {
                 Connection::Subscribed { last_seq } if event.seq <= last_seq => {
@@ -479,9 +620,8 @@ impl ClientCore {
                     Err(self.wrong_state(InputKind::Server))
                 }
             },
-            ServerMsg::TreeDelta { .. } => match self.connection {
-                // Consumed by the explorer cache in 3.2; nothing to show yet.
-                Connection::Subscribed { .. } => Ok(Vec::new()),
+            ServerMsg::TreeDelta { delta } => match self.connection {
+                Connection::Subscribed { .. } => Ok(self.tree_delta(&delta)),
                 Connection::Disconnected { .. } | Connection::Connecting { .. } => {
                     Err(self.wrong_state(InputKind::Server))
                 }
@@ -489,14 +629,135 @@ impl ClientCore {
         }
     }
 
-    fn require_in_flight(&self, id: RequestId) -> Result<(), CoreError> {
-        if self.in_flight.contains_key(&id) {
-            Ok(())
-        } else {
-            Err(CoreError::UnknownRequest(id))
+    fn clear_in_flight(&mut self) {
+        let keys: Vec<CacheKey> = self.in_flight.values().filter_map(InFlight::key).collect();
+        for k in &keys {
+            self.content_failed(k);
         }
+        self.in_flight.clear();
+        self.content_reset_in_flight();
     }
 
+    // One arm per variant; splitting would hide the exhaustive match.
+    #[allow(clippy::too_many_lines)]
+    fn stream_item(&mut self, id: RequestId, item: StreamItem) -> Result<Vec<Effect>, CoreError> {
+        let Some(waiting) = self.in_flight.get(&id).cloned() else {
+            return Err(CoreError::UnknownRequest(id));
+        };
+        let got = stream_item_name(&item);
+        let unexpected = |expected| CoreError::UnexpectedResponse { id, expected, got };
+        let mut effects = Vec::new();
+        match (waiting, item) {
+            (InFlight::OpenReview { review_id }, StreamItem::ReviewSnapshot { snapshot }) => {
+                if snapshot.review.id != review_id {
+                    return Err(unexpected("ReviewSnapshot for the requested review"));
+                }
+                self.install_snapshot(snapshot, &mut effects);
+                self.expect_streamed_trees(&mut effects);
+                effects.push(render(&[
+                    ViewSection::Diff,
+                    ViewSection::Threads,
+                    ViewSection::Conversation,
+                    ViewSection::Draft,
+                ]));
+            }
+            (InFlight::OpenReview { .. }, StreamItem::TreeSnapshot { snapshot }) => {
+                let key = CacheKey::Tree {
+                    root: snapshot.root_oid,
+                };
+                self.arrived(
+                    key,
+                    CacheValue::Tree { snapshot },
+                    content::Arrival::Stream,
+                    &mut effects,
+                );
+            }
+            (InFlight::OpenReview { .. }, StreamItem::Header { header }) => {
+                let key = CacheKey::Header {
+                    render: RenderKey::of_header(&header),
+                };
+                self.arrived(
+                    key,
+                    CacheValue::Header { header },
+                    content::Arrival::Stream,
+                    &mut effects,
+                );
+            }
+            (
+                InFlight::OpenReview { .. },
+                StreamItem::Chunk {
+                    repo_id,
+                    path,
+                    chunk,
+                },
+            ) => {
+                let Some(render) = self.view.review.as_ref().and_then(|r| {
+                    r.files
+                        .iter()
+                        .find(|k| k.repo_id == repo_id && k.path == path)
+                        .cloned()
+                }) else {
+                    return Err(unexpected("Chunk of a file whose header was streamed"));
+                };
+                let key = CacheKey::Chunk {
+                    render,
+                    index: chunk.index,
+                };
+                self.arrived(
+                    key,
+                    CacheValue::Chunk { chunk },
+                    content::Arrival::Stream,
+                    &mut effects,
+                );
+            }
+            (InFlight::FileRender { render, .. }, StreamItem::Header { header }) => {
+                if RenderKey::of_header(&header) != render {
+                    return Err(unexpected("Header of the requested file"));
+                }
+                let key = CacheKey::Header { render };
+                self.arrived(
+                    key,
+                    CacheValue::Header { header },
+                    content::Arrival::Stream,
+                    &mut effects,
+                );
+            }
+            (
+                InFlight::FileRender { render, stop_after },
+                StreamItem::Chunk {
+                    repo_id,
+                    path,
+                    chunk,
+                },
+            ) => {
+                if repo_id != render.repo_id || path != render.path {
+                    return Err(unexpected("Chunk of the requested file"));
+                }
+                self.stream_chunk(id, &render, stop_after, chunk, &mut effects);
+            }
+            (
+                InFlight::FileRender { .. },
+                StreamItem::ReviewSnapshot { .. } | StreamItem::TreeSnapshot { .. },
+            ) => return Err(unexpected("Header or Chunk")),
+            (
+                InFlight::Subscribe
+                | InFlight::ListReviews
+                | InFlight::ReviewSnapshot { .. }
+                | InFlight::ListFiles { .. }
+                | InFlight::TreeSnapshot { .. }
+                | InFlight::RenderChunk { .. }
+                | InFlight::Mutate { .. },
+                StreamItem::ReviewSnapshot { .. }
+                | StreamItem::TreeSnapshot { .. }
+                | StreamItem::Header { .. }
+                | StreamItem::Chunk { .. },
+            ) => return Err(unexpected("Response")),
+        }
+        Ok(effects)
+    }
+
+    // One arm per variant; splitting would hide the exhaustive match.
+    #[allow(clippy::too_many_lines)]
     fn response(&mut self, id: RequestId, response: Response) -> Result<Vec<Effect>, CoreError> {
         let Some(waiting) = self.in_flight.get(&id).cloned() else {
             return Err(CoreError::UnknownRequest(id));
@@ -525,16 +786,67 @@ impl ClientCore {
                         got: "ReviewSnapshot for another review",
                     });
                 }
-                self.view.review = Some(OpenReview { snapshot });
-                self.view.draft = None;
-                self.view.pending_refresh = false;
-                self.deferred.clear();
-                vec![render(&[
+                let mut effects = Vec::new();
+                self.install_snapshot(snapshot, &mut effects);
+                self.review_opened_piecewise(review_id, &mut effects);
+                effects.push(render(&[
                     ViewSection::Diff,
                     ViewSection::Threads,
                     ViewSection::Conversation,
                     ViewSection::Draft,
-                ])]
+                ]));
+                effects
+            }
+            (InFlight::ListFiles { review_id }, Response::Files { files }) => {
+                let mut effects = Vec::new();
+                if self.open_mut(review_id).is_some() {
+                    let sections = self.review_files(review_id, files, &mut effects);
+                    effects.push(render(&sections));
+                }
+                effects
+            }
+            (InFlight::TreeSnapshot { root }, Response::TreeSnapshot { snapshot }) => {
+                if snapshot.root_oid != root {
+                    return Err(CoreError::UnexpectedResponse {
+                        id,
+                        expected: "TreeSnapshot of the requested root",
+                        got: "TreeSnapshot of another root",
+                    });
+                }
+                let mut effects = Vec::new();
+                self.arrived(
+                    CacheKey::Tree { root },
+                    CacheValue::Tree { snapshot },
+                    content::Arrival::Response,
+                    &mut effects,
+                );
+                self.content_done(&mut effects);
+                effects
+            }
+            (InFlight::RenderChunk { key }, Response::RenderChunk { chunk }) => {
+                let CacheKey::Chunk { index, .. } = &key else {
+                    return Err(CoreError::UnexpectedResponse {
+                        id,
+                        expected: "RenderChunk",
+                        got: "RenderChunk for a non-chunk key",
+                    });
+                };
+                if chunk.index != *index {
+                    return Err(CoreError::UnexpectedResponse {
+                        id,
+                        expected: "RenderChunk with the requested index",
+                        got: "RenderChunk with another index",
+                    });
+                }
+                let mut effects = Vec::new();
+                self.arrived(
+                    key,
+                    CacheValue::Chunk { chunk },
+                    content::Arrival::Response,
+                    &mut effects,
+                );
+                self.content_done(&mut effects);
+                effects
             }
             (InFlight::Mutate { .. }, Response::Committed { event }) => {
                 // The same event is also broadcast; applying here covers a
@@ -556,7 +868,11 @@ impl ClientCore {
                 let expected = match waiting {
                     InFlight::Subscribe => "Subscribed",
                     InFlight::ListReviews => "Reviews",
+                    InFlight::OpenReview { .. } | InFlight::FileRender { .. } => "StreamItem",
                     InFlight::ReviewSnapshot { .. } => "ReviewSnapshot",
+                    InFlight::ListFiles { .. } => "Files",
+                    InFlight::TreeSnapshot { .. } => "TreeSnapshot",
+                    InFlight::RenderChunk { .. } => "RenderChunk",
                     InFlight::Mutate { .. } => "Committed",
                 };
                 return Err(CoreError::UnexpectedResponse { id, expected, got });
@@ -573,6 +889,7 @@ impl ClientCore {
     #[allow(clippy::too_many_lines)]
     fn apply_event(&mut self, body: EventBody) -> Vec<Effect> {
         let mut sections = Vec::new();
+        let mut effects = Vec::new();
         match body {
             EventBody::ReviewCreated { review } => {
                 self.view.reviews.retain(|r| r.id != review.id);
@@ -602,11 +919,13 @@ impl ClientCore {
                     sections.push(ViewSection::ReviewList);
                 }
                 if self.open_mut(review_id).is_some() {
-                    self.view.review = None;
-                    self.view.draft = None;
-                    self.view.pending_refresh = false;
-                    self.deferred.clear();
-                    sections.extend([ViewSection::Diff, ViewSection::Threads, ViewSection::Draft]);
+                    self.close_review(&mut effects);
+                    sections.extend([
+                        ViewSection::Tree,
+                        ViewSection::Diff,
+                        ViewSection::Threads,
+                        ViewSection::Draft,
+                    ]);
                 }
             }
             EventBody::ReviewTargetsResolved { review_id, targets } => {
@@ -621,6 +940,13 @@ impl ClientCore {
                     } else if let Some(open) = self.open_mut(review_id) {
                         open.snapshot.resolved = Some(targets);
                         sections.push(ViewSection::Diff);
+                        // New heads mean new trees and renders: refetch the
+                        // trees and the file list; headers re-key by blob.
+                        self.want_review_trees(&mut effects);
+                        effects.push(self.request(
+                            Request::ListFiles { review_id },
+                            InFlight::ListFiles { review_id },
+                        ));
                     }
                 }
             }
@@ -705,11 +1031,10 @@ impl ClientCore {
             | EventBody::RepoAttached { .. }
             | EventBody::RepoDetached { .. } => {}
         }
-        if sections.is_empty() {
-            Vec::new()
-        } else {
-            vec![render(&sections)]
+        if !sections.is_empty() {
+            effects.push(render(&sections));
         }
+        effects
     }
 
     fn open_mut(&mut self, review_id: ReviewId) -> Option<&mut OpenReview> {
@@ -720,24 +1045,42 @@ impl ClientCore {
     }
 
     /// Apply refreshes held back during a draft; always renders `Draft`
-    /// (the draft just closed) plus whatever the refreshes touched.
-    fn drain_deferred(&mut self) -> Effect {
+    /// (the draft just closed) plus whatever the refreshes touched, after
+    /// any fetches the refreshes issued.
+    fn drain_deferred(&mut self) -> Vec<Effect> {
         let deferred = std::mem::take(&mut self.deferred);
         self.view.pending_refresh = false;
         let mut sections = vec![ViewSection::Draft];
+        let mut effects = Vec::new();
         for body in deferred {
             for effect in self.apply_event(body) {
-                if let Effect::Render(delta) = effect {
-                    sections.extend(delta.sections);
+                match effect {
+                    Effect::Render(delta) => sections.extend(delta.sections),
+                    Effect::Connect
+                    | Effect::Disconnect
+                    | Effect::Send(_)
+                    | Effect::Persist { .. }
+                    | Effect::Load { .. }
+                    | Effect::Remove { .. } => effects.push(effect),
                 }
             }
         }
-        render(&sections)
+        effects.push(render(&sections));
+        effects
     }
 }
 
-fn render(sections: &[ViewSection]) -> Effect {
+pub(crate) fn render(sections: &[ViewSection]) -> Effect {
     Effect::Render(ViewDelta::new(sections))
+}
+
+fn stream_item_name(item: &StreamItem) -> &'static str {
+    match item {
+        StreamItem::ReviewSnapshot { .. } => "ReviewSnapshot",
+        StreamItem::TreeSnapshot { .. } => "TreeSnapshot",
+        StreamItem::Header { .. } => "Header",
+        StreamItem::Chunk { .. } => "Chunk",
+    }
 }
 
 fn response_name(r: &Response) -> &'static str {

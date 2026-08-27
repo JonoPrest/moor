@@ -1,7 +1,9 @@
 //! What the UI renders. Hosts read it after each `Effect::Render`, which
 //! names the sections that changed.
 
-use moor_protocol::{Anchor, Review, ReviewSnapshot, RpcError, ViewSection};
+use moor_protocol::{Anchor, Review, ReviewSnapshot, RpcError, TreeOid, ViewSection};
+
+use crate::cache::RenderKey;
 use serde::{Deserialize, Serialize};
 use strum::EnumDiscriminants;
 
@@ -48,11 +50,39 @@ pub struct Draft {
     pub anchor: Anchor,
 }
 
-/// The review currently on screen.
+/// The file the user is looking at and where. Rows are indices into the
+/// render model; the core turns them into chunk requests.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OpenFile {
+    pub render: RenderKey,
+    pub first_row: u32,
+    pub last_row: u32,
+}
+
+/// The review currently on screen. Content (trees, headers, chunks) lives in
+/// the cache; this names what of it belongs to the review.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OpenReview {
     pub snapshot: ReviewSnapshot,
+    /// Tree roots of the resolved targets (base and head per repo).
+    pub trees: Vec<TreeOid>,
+    /// Changed files, in daemon order; one render key each.
+    pub files: Vec<RenderKey>,
+    pub open_file: Option<OpenFile>,
+}
+
+impl OpenReview {
+    #[must_use]
+    pub fn new(snapshot: ReviewSnapshot) -> Self {
+        Self {
+            snapshot,
+            trees: Vec::new(),
+            files: Vec::new(),
+            open_file: None,
+        }
+    }
 }
 
 /// Everything the UI needs, kept identical across hosts. 3.5 fills in the
