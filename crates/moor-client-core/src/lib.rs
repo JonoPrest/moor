@@ -41,6 +41,7 @@ use moor_protocol::{
     Response, ReviewId, ReviewSnapshot, RpcError, Seq, ServerMsg, Since, StreamItem,
     SubscribeScope, ThreadId, Timestamp, ViewSection, WorkspaceId,
 };
+use serde::{Deserialize, Serialize};
 use strum::EnumDiscriminants;
 
 pub use cache::{Bytes, CacheKey, CacheValue, ContentCache, Evicted, RenderKey};
@@ -107,9 +108,11 @@ pub enum TransportEvent {
     Disconnected,
 }
 
-/// A user intent, already resolved from keys or clicks by the host.
-#[derive(Debug, Clone, PartialEq, Eq, EnumDiscriminants)]
+/// A user intent, already resolved from keys or clicks by the host. Crosses
+/// the host ↔ UI boundary (Tauri `dispatch`), hence serde.
+#[derive(Debug, Clone, PartialEq, Eq, EnumDiscriminants, Serialize, Deserialize)]
 #[strum_discriminants(name(ActionKind), derive(Hash, PartialOrd, Ord, strum::EnumIter))]
+#[serde(tag = "type", deny_unknown_fields)]
 pub enum Action {
     Connect,
     Disconnect,

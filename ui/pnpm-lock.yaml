@@ -20,6 +20,9 @@ importers:
       react-dom:
         specifier: ^19.0.0
         version: 19.2.8(react@19.2.8)
+      rescript-schema:
+        specifier: ^9.3.4
+        version: 9.3.4(rescript@11.1.4)
     devDependencies:
       '@tailwindcss/vite':
         specifier: ^4.3.3
@@ -711,6 +714,14 @@ packages:
   react@19.2.8:
     resolution: {integrity: sha512-PWaYA1L/q9u2u7xYQi+Y3L3Yfnie7XyLeaJICV1MGD6LprsBxcAqGjYyr0eY3p+QdsA+x/Irkt4Qif8D63+Sbw==}
     engines: {node: '>=0.10.0'}
+
+  rescript-schema@9.3.4:
+    resolution: {integrity: sha512-VPhkkHCSQSo2KienoMD4Adu/yS8WhckmsUFFrNhKrt5yqeiJt+pY6/V+puuRIFLlWSIqGyu5/pxqSNUg3VLyxA==}
+    peerDependencies:
+      rescript: 11.x
+    peerDependenciesMeta:
+      rescript:
+        optional: true
 
   rescript@11.1.4:
     resolution: {integrity: sha512-0bGU0bocihjSC6MsE3TMjHjY0EUpchyrREquLS8VsZ3ohSMD+VHUEwimEfB3kpBI1vYkw3UFZ3WD8R28guz/Vw==}
@@ -1414,6 +1425,10 @@ snapshots:
   react-refresh@0.18.0: {}
 
   react@19.2.8: {}
+
+  rescript-schema@9.3.4(rescript@11.1.4):
+    optionalDependencies:
+      rescript: 11.1.4
 
   rescript@11.1.4: {}
 
