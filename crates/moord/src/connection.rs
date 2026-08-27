@@ -94,6 +94,7 @@ where
         subs: Mutex::new(Subscriptions::default()),
     });
     let tail = tokio::spawn(event_tail(Arc::clone(&conn)));
+    let delta_tail = tokio::spawn(delta_tail(Arc::clone(&conn)));
     let mut in_flight: HashMap<RequestId, AbortHandle> = HashMap::new();
 
     let result = read_loop(&conn, &mut rd, &mut in_flight).await;
@@ -102,6 +103,7 @@ where
         h.abort();
     }
     tail.abort();
+    delta_tail.abort();
     drop(conn);
     drop(outbox);
     // Let queued frames drain before closing.
@@ -197,6 +199,31 @@ async fn event_tail(conn: Arc<Connection>) {
                     id: RequestId::new(0),
                     error: RpcError::SeqTooOld { oldest },
                 });
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+        }
+    }
+}
+
+/// Forward working-tree deltas matching this connection's scopes.
+async fn delta_tail(conn: Arc<Connection>) {
+    let mut rx = conn.daemon.subscribe_deltas();
+    loop {
+        match rx.recv().await {
+            Ok(delta) => {
+                let subs = conn.subs.lock().await;
+                if subs
+                    .scopes
+                    .iter()
+                    .any(|s| conn.daemon.delta_matches(s, &delta))
+                {
+                    conn.outbox.send(ServerMsg::TreeDelta {
+                        delta: (*delta).clone(),
+                    });
+                }
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                tracing::warn!(skipped = n, "delta subscriber lagged");
             }
             Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
         }

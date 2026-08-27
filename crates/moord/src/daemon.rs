@@ -11,7 +11,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use moor_protocol::{
-    BuildInfo, Event, EventBody, ReviewId, RpcError, SchemaVersion, SubscribeScope, WorkspaceId,
+    BuildInfo, Event, EventBody, ReviewId, RpcError, SchemaVersion, SubscribeScope, TreeDelta,
+    WorkspaceId,
 };
 use moor_review_core::{Core, CoreError, Ctx, DataDir};
 use tokio::sync::{broadcast, oneshot};
@@ -26,6 +27,7 @@ pub struct Daemon {
     core: Arc<Core>,
     writer: std::sync::mpsc::Sender<WriteJob>,
     events: broadcast::Sender<Arc<Event>>,
+    deltas: broadcast::Sender<Arc<TreeDelta>>,
     review_workspaces: Mutex<HashMap<ReviewId, WorkspaceId>>,
     pub build: BuildInfo,
 }
@@ -94,10 +96,12 @@ impl Daemon {
             })
             .map_err(CoreError::Io)?;
         let (events, _) = broadcast::channel(EVENT_BACKLOG);
+        let (deltas, _) = broadcast::channel(EVENT_BACKLOG);
         Ok(Arc::new(Self {
             core,
             writer,
             events,
+            deltas,
             review_workspaces: Mutex::new(HashMap::new()),
             build,
         }))
@@ -154,6 +158,36 @@ impl Daemon {
     #[must_use]
     pub fn subscribe(&self) -> broadcast::Receiver<Arc<Event>> {
         self.events.subscribe()
+    }
+
+    /// Subscribe to working-tree deltas.
+    #[must_use]
+    pub fn subscribe_deltas(&self) -> broadcast::Receiver<Arc<TreeDelta>> {
+        self.deltas.subscribe()
+    }
+
+    /// Publish a working-tree delta (from the file watcher).
+    pub fn broadcast_delta(&self, delta: TreeDelta) {
+        let _ = self.deltas.send(Arc::new(delta));
+    }
+
+    /// Does a working-tree delta for `delta.repo_id` concern `scope`?
+    /// `All` and the repo's workspace always; a review only if it targets
+    /// that repo's working tree.
+    #[must_use]
+    pub fn delta_matches(&self, scope: &SubscribeScope, delta: &TreeDelta) -> bool {
+        match scope {
+            SubscribeScope::All => true,
+            SubscribeScope::Workspace { workspace_id } => self
+                .core
+                .workspace(*workspace_id)
+                .is_ok_and(|w| w.repos.iter().any(|r| r.id == delta.repo_id)),
+            SubscribeScope::Review { review_id } => self
+                .core
+                .working_tree_reviews(delta.repo_id)
+                .is_ok_and(|rs| rs.contains(review_id)),
+            SubscribeScope::AwaitingAgent { .. } => false,
+        }
     }
 
     /// A `Ctx` for a connection's author at the current wall-clock time.

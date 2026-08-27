@@ -4,7 +4,7 @@ use moor_protocol::{
     BlobOid, ChangeKind, CommitInfo, CommitOid, EntityKind, EventBody, FileChange,
     FileRenderHeader, NonEmpty, RefSpec, RenderOpts, RenderTarget, Repo, RepoId, RepoPath,
     ResolvedRef, ResolvedSource, ResolvedTarget, Review, ReviewId, ReviewSnapshot, ReviewStatus,
-    ReviewTarget, TreeEntryKind, TreeSnapshot, ViewedMark, Workspace, WorkspaceId,
+    ReviewTarget, TreeDelta, TreeEntryKind, TreeSnapshot, ViewedMark, Workspace, WorkspaceId,
 };
 
 use crate::core::{Core, CoreError, Ctx};
@@ -625,4 +625,42 @@ fn first_line(bytes: &[u8]) -> Option<&str> {
         .position(|b| *b == b'\n')
         .unwrap_or(bytes.len());
     std::str::from_utf8(&bytes[..end]).ok()
+}
+
+impl Core {
+    // ---- working tree (used by the file watcher) --------------------------
+
+    /// Snapshot the working tree of `repo_id` as a real tree object.
+    pub fn working_tree(&self, repo_id: RepoId) -> Result<ResolvedRef, CoreError> {
+        Ok(self.repo(repo_id)?.working_tree()?)
+    }
+
+    /// Entries that differ between two trees of `repo_id`.
+    pub fn tree_delta(
+        &self,
+        repo_id: RepoId,
+        from: moor_protocol::TreeOid,
+        to: moor_protocol::TreeOid,
+    ) -> Result<TreeDelta, CoreError> {
+        Ok(self.repo(repo_id)?.tree_delta(repo_id, from, to)?)
+    }
+
+    /// Live reviews with a working-tree target on `repo_id`, across all
+    /// workspaces.
+    pub fn working_tree_reviews(&self, repo_id: RepoId) -> Result<Vec<ReviewId>, CoreError> {
+        let mut out = Vec::new();
+        for ws in self.store.workspaces()? {
+            for rec in self.store.reviews(ws.id)? {
+                let live = matches!(rec.lifecycle, ReviewLifecycle::Live);
+                let uses = rec.review.targets.iter().any(|t| {
+                    t.repo_id == repo_id
+                        && (t.base == RefSpec::WorkingTree || t.head == RefSpec::WorkingTree)
+                });
+                if live && uses {
+                    out.push(rec.review.id);
+                }
+            }
+        }
+        Ok(out)
+    }
 }

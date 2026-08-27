@@ -726,7 +726,13 @@ enum_fixture!(
     Author,
     AuthorKind,
     "Author",
-    [human_author(), agent_author()]
+    [
+        human_author(),
+        agent_author(),
+        Author::Daemon {
+            machine: "workstation".into()
+        }
+    ]
 );
 unit_enum_fixture!(Side, "Side");
 enum_fixture!(

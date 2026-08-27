@@ -37,6 +37,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4", features = ["derive", "env"] }
 gethostname = "1"
+notify = "8"
 
 [workspace.lints.rust]
 missing_debug_implementations = "deny"

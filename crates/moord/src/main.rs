@@ -64,6 +64,7 @@ async fn main() -> anyhow::Result<()> {
     let server =
         UnixServer::bind(&socket).with_context(|| format!("binding {}", socket.display()))?;
     tracing::info!(socket = %socket.display(), data_dir = %data_dir.display(), "listening");
+    let watcher = moord::watcher::Watcher::start(Arc::clone(&daemon));
     let shutdown = CancellationToken::new();
     let signal = shutdown.clone();
     tokio::spawn(async move {
@@ -72,5 +73,6 @@ async fn main() -> anyhow::Result<()> {
         signal.cancel();
     });
     server.run(Arc::clone(&daemon), shutdown).await;
+    watcher.stop();
     Ok(())
 }

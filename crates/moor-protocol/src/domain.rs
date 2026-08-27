@@ -175,6 +175,10 @@ pub enum Author {
         invoked_by: Option<Human>,
         via: AgentVia,
     },
+    /// The daemon itself, e.g. re-resolving targets after a file change.
+    Daemon {
+        machine: String,
+    },
 }
 
 impl Author {
@@ -193,7 +197,7 @@ impl Author {
                 name: name.clone(),
                 machine: machine.clone(),
             }),
-            Author::Agent { .. } => None,
+            Author::Agent { .. } | Author::Daemon { .. } => None,
         }
     }
 }
