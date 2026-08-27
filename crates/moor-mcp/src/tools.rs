@@ -38,11 +38,10 @@ pub fn all() -> Vec<Tool> {
         },
         Tool {
             name: "list_reviews",
-            description: "Reviews in a workspace.",
+            description: "Reviews in a workspace. Without workspace_id: the workspace whose attached repo contains this server's working directory.",
             input_schema: json!({
                 "type": "object", "additionalProperties": false,
-                "required": ["workspace_id"],
-                "properties": { "workspace_id": id("Workspace ULID") }
+                "properties": { "workspace_id": id("Workspace ULID (optional)") }
             }),
         },
         Tool {
@@ -56,19 +55,19 @@ pub fn all() -> Vec<Tool> {
         },
         Tool {
             name: "create_review",
-            description: "Create a review over one or more repos. Returns the new review.",
+            description: "Create a review over one or more repos. Returns the new review. Without workspace_id: the workspace containing this server's working directory; a target may omit repo_id to mean the repo containing it.",
             input_schema: json!({
                 "type": "object", "additionalProperties": false,
-                "required": ["workspace_id", "title", "targets"],
+                "required": ["title", "targets"],
                 "properties": {
-                    "workspace_id": id("Workspace ULID"),
+                    "workspace_id": id("Workspace ULID (optional)"),
                     "title": { "type": "string" },
                     "targets": {
                         "type": "array", "minItems": 1,
                         "items": {
                             "type": "object", "additionalProperties": false,
-                            "required": ["repo_id", "base", "head"],
-                            "properties": { "repo_id": id("Repo ULID"), "base": ref_spec(), "head": ref_spec() }
+                            "required": ["base", "head"],
+                            "properties": { "repo_id": id("Repo ULID (optional)"), "base": ref_spec(), "head": ref_spec() }
                         }
                     }
                 }
@@ -220,7 +219,8 @@ pub fn all() -> Vec<Tool> {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ListReviews {
-    pub workspace_id: WorkspaceId,
+    #[serde(default)]
+    pub workspace_id: Option<WorkspaceId>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -232,7 +232,8 @@ pub struct ByReview {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TargetSpec {
-    pub repo_id: RepoId,
+    #[serde(default)]
+    pub repo_id: Option<RepoId>,
     pub base: RefSpec,
     pub head: RefSpec,
 }
@@ -240,7 +241,8 @@ pub struct TargetSpec {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CreateReview {
-    pub workspace_id: WorkspaceId,
+    #[serde(default)]
+    pub workspace_id: Option<WorkspaceId>,
     pub title: String,
     pub targets: Vec<TargetSpec>,
 }

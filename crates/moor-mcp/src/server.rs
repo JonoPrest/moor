@@ -3,6 +3,7 @@
 //! clients pipeline rarely and the daemon connection is shared, so
 //! serialising keeps event long-polls from interleaving with other calls.
 
+use std::path::Path;
 use std::time::Duration;
 
 use moor_protocol::{
@@ -252,7 +253,11 @@ impl Server {
             "list_workspaces" => Ok(json!({ "workspaces": ops.workspaces().await? })),
             "list_reviews" => {
                 let p: tools::ListReviews = serde_json::from_value(args)?;
-                Ok(json!({ "reviews": ops.reviews(p.workspace_id).await? }))
+                let workspace_id = match p.workspace_id {
+                    Some(w) => w,
+                    None => ops.locate(Path::new(".")).await?.workspace.id,
+                };
+                Ok(json!({ "reviews": ops.reviews(workspace_id).await? }))
             }
             "get_review" => {
                 let p: tools::ByReview = serde_json::from_value(args)?;
@@ -329,19 +334,34 @@ impl Server {
         match name {
             "create_review" => {
                 let p: tools::CreateReview = serde_json::from_value(args)?;
+                let ops = self.ops_mut()?;
+                let implicit =
+                    p.workspace_id.is_none() || p.targets.iter().any(|t| t.repo_id.is_none());
+                let here = if implicit {
+                    Some(ops.locate(Path::new(".")).await?)
+                } else {
+                    None
+                };
+                let workspace_id = p
+                    .workspace_id
+                    .or_else(|| here.as_ref().map(|h| h.workspace.id))
+                    .ok_or_else(|| ToolError::Invalid("workspace_id".into()))?;
                 let targets = NonEmpty::new(
                     p.targets
                         .into_iter()
-                        .map(|t| ReviewTarget {
-                            repo_id: t.repo_id,
-                            base: t.base,
-                            head: t.head,
+                        .map(|t| {
+                            Ok(ReviewTarget {
+                                repo_id: t
+                                    .repo_id
+                                    .or_else(|| here.as_ref().map(|h| h.repo.id))
+                                    .ok_or_else(|| ToolError::Invalid("repo_id".into()))?,
+                                base: t.base,
+                                head: t.head,
+                            })
                         })
-                        .collect(),
+                        .collect::<Result<Vec<_>, ToolError>>()?,
                 )?;
-                let ops = self.ops_mut()?;
-                let (review_id, event) =
-                    ops.create_review(p.workspace_id, p.title, targets).await?;
+                let (review_id, event) = ops.create_review(workspace_id, p.title, targets).await?;
                 let snap = ops.snapshot(review_id).await?;
                 Ok(json!({ "review": snap.review, "resolved": snap.resolved, "event": event }))
             }

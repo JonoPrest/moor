@@ -3,12 +3,13 @@
 //! a streamed render, long-poll events) and id generation for mutations.
 //! Both front ends are thin printers over this.
 
+use std::path::Path;
 use std::time::Duration;
 
 use moor_protocol::{
     Anchor, BlobOid, ChunkIndex, CommentId, CommentKind, ContextHash, Event, FileChange,
     FileRenderHeader, LineNo, LineRange, Mutation, NonEmpty, RefSpec, RenderChunk, RenderOpts,
-    RepoId, RepoPath, Request, ResolvedSource, Response, Review, ReviewId, ReviewSnapshot,
+    Repo, RepoId, RepoPath, Request, ResolvedSource, Response, Review, ReviewId, ReviewSnapshot,
     ReviewTarget, RpcError, Seq, Side, Since, StreamItem, SubscribeScope, ThreadId, TreeEntryKind,
     Workspace, WorkspaceId,
 };
@@ -57,6 +58,13 @@ pub struct NewThread {
 }
 
 /// Events collected by one long-poll and where to resume from.
+/// The workspace and attached repo that contain a directory.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Located {
+    pub workspace: Workspace,
+    pub repo: Repo,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Polled {
     pub events: Vec<Event>,
@@ -78,6 +86,54 @@ impl Ops {
         match self.client.request(Request::ListWorkspaces).await? {
             Response::Workspaces { workspaces } => Ok(workspaces),
             _ => Err(OpsError::Shape),
+        }
+    }
+
+    /// The workspace whose attached repo contains `dir` (the deepest repo
+    /// path that is a prefix of `dir`, after canonicalising). This is how
+    /// front ends default `--workspace`/`--repo` from the working directory
+    /// instead of from shared mutable "current" state, so concurrent
+    /// sessions in different projects never interfere. `Invalid` when no
+    /// repo contains `dir` or several workspaces attach the same one.
+    pub async fn locate(&self, dir: &Path) -> Result<Located, OpsError> {
+        let dir = std::fs::canonicalize(dir)
+            .map_err(|e| OpsError::Invalid(format!("{}: {e}", dir.display())))?;
+        let mut best: Vec<Located> = Vec::new();
+        for ws in self.workspaces().await? {
+            for repo in &ws.repos {
+                let root = Path::new(&repo.path);
+                if !dir.starts_with(root) {
+                    continue;
+                }
+                let depth = root.components().count();
+                let best_depth = best
+                    .first()
+                    .map_or(0, |b| Path::new(&b.repo.path).components().count());
+                if depth > best_depth {
+                    best.clear();
+                }
+                if depth >= best_depth {
+                    best.push(Located {
+                        workspace: ws.clone(),
+                        repo: repo.clone(),
+                    });
+                }
+            }
+        }
+        match best.len() {
+            1 => Ok(best.remove(0)),
+            0 => Err(OpsError::Invalid(format!(
+                "{} is not inside any attached repo; pass --workspace or attach it first",
+                dir.display()
+            ))),
+            _ => Err(OpsError::Invalid(format!(
+                "{} is attached in several workspaces ({}); pass --workspace",
+                dir.display(),
+                best.iter()
+                    .map(|b| format!("{} \"{}\"", b.workspace.id, b.workspace.name))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))),
         }
     }
 

@@ -13,7 +13,7 @@ use predicates::prelude::*;
 use tokio_util::sync::CancellationToken;
 
 struct Harness {
-    _dir: tempfile::TempDir,
+    dir: tempfile::TempDir,
     socket: PathBuf,
     shutdown: CancellationToken,
     repo: TestRepo,
@@ -30,6 +30,7 @@ impl Harness {
     fn moor(&self) -> Command {
         let mut c = Command::cargo_bin("moor").unwrap();
         c.env("MOOR_SOCKET", &self.socket)
+            .env("MOOR_CONFIG", self.dir.path().join("no-config.toml"))
             .env("MOOR_USER", "ada")
             .env_remove("MOOR_AGENT");
         c
@@ -79,7 +80,7 @@ fn start() -> Harness {
         .build()
         .unwrap();
     Harness {
-        _dir: dir,
+        dir,
         socket,
         shutdown,
         repo,
@@ -88,6 +89,7 @@ fn start() -> Harness {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)] // one scenario end to end
 fn workspace_review_comment_round_trip() {
     let h = start();
     let ws = h.out(&["workspace", "add", "w"]);
@@ -115,6 +117,34 @@ fn workspace_review_comment_round_trip() {
         .assert()
         .success()
         .stdout(predicate::str::contains("main..feature"));
+    // No `--workspace`: inferred from the working directory (any depth),
+    // never from shared state. Outside every repo it says what to do.
+    let sub = h.repo.path().join("sub/dir");
+    std::fs::create_dir_all(&sub).unwrap();
+    h.moor()
+        .current_dir(&sub)
+        .args(["review", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("main..feature"));
+    h.moor()
+        .current_dir(h.dir.path())
+        .args(["review", "list"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("pass --workspace"));
+    let again = h
+        .moor()
+        .current_dir(h.repo.path())
+        .args(["review", "create", "--base", "main", "--head", "HEAD"])
+        .assert()
+        .success();
+    assert_eq!(
+        String::from_utf8_lossy(&again.get_output().stdout)
+            .trim()
+            .len(),
+        26
+    );
     h.moor()
         .args(["files", &review])
         .assert()
@@ -197,15 +227,17 @@ fn errors_are_reported_not_panicked() {
         .stderr(predicate::str::contains("NotFound"));
     let mut c = Command::cargo_bin("moor").unwrap();
     c.env("MOOR_SOCKET", "/tmp/definitely-not-a-moord.sock")
+        .env("MOOR_CONFIG", h.dir.path().join("no-config.toml"))
         .args(["--no-autostart", "workspace", "list"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("not running"));
 }
 
-/// Contexts live in the config file; `daemon` manages the daemon of the
-/// current one, including auto-start on first use and an ssh context whose
-/// remote side is exercised through a stand-in `ssh`.
+/// Contexts live in the config file and are always selected per process
+/// (`-c` / `MOOR_CONTEXT`), never by a persisted "current"; `daemon` manages
+/// the selected one, including auto-start on first use and an ssh context
+/// whose remote side is exercised through a stand-in `ssh`.
 #[test]
 #[allow(clippy::too_many_lines)] // one scenario end to end
 fn contexts_and_daemon_lifecycle() {
@@ -233,31 +265,38 @@ fn contexts_and_daemon_lifecycle() {
             .to_string()
     };
 
-    // Empty config: the implicit local context is current.
-    assert!(out(&["context", "list"]).starts_with("* local\tlocal (implicit)"));
-    // First added context becomes current.
-    assert!(
-        out(&[
-            "context",
-            "add-local",
-            "box",
-            "--data-dir",
-            data.to_str().unwrap(),
-            "--socket",
-            socket.to_str().unwrap()
-        ])
-        .ends_with("(now current)")
-    );
+    // Empty config: only the implicit local context.
+    assert_eq!(out(&["context", "list"]), "local\tlocal (implicit)");
+    out(&[
+        "context",
+        "add-local",
+        "box",
+        "--data-dir",
+        data.to_str().unwrap(),
+        "--socket",
+        socket.to_str().unwrap(),
+    ]);
     out(&["context", "add-ws", "shared", "ws://127.0.0.1:1/"]);
     let list = out(&["context", "list"]);
-    assert!(list.contains("* box\tlocal data_dir="), "{list}");
-    assert!(list.contains("  shared\tws ws://127.0.0.1:1/"), "{list}");
-    assert!(out(&["context", "show"]).starts_with("box\t"));
-    assert!(
-        std::fs::read_to_string(&cfg)
+    assert!(list.contains("box\tlocal data_dir="), "{list}");
+    assert!(list.contains("shared\tws ws://127.0.0.1:1/"), "{list}");
+    // Adding never changes what an unflagged command targets.
+    assert!(out(&["context", "show"]).starts_with("local\t"));
+    assert!(out(&["-c", "box", "context", "show"]).starts_with("box\t"));
+    assert!(!std::fs::read_to_string(&cfg).unwrap().contains("current"));
+    // The rest of the scenario selects `box` via the environment.
+    let moor = || {
+        let mut c = moor();
+        c.env("MOOR_CONTEXT", "box");
+        c
+    };
+    let out = |args: &[&str]| -> String {
+        let a = moor().args(args).assert().success();
+        String::from_utf8(a.get_output().stdout.clone())
             .unwrap()
-            .contains("current = \"box\"")
-    );
+            .trim()
+            .to_string()
+    };
 
     // Nothing running yet; a plain command auto-starts the daemon.
     assert_eq!(
@@ -274,15 +313,13 @@ fn contexts_and_daemon_lifecycle() {
     assert_eq!(out(&["daemon", "start"]), "already running");
     assert!(out(&["daemon", "status", "--all"]).contains("shared\tws ws://127.0.0.1:1/\tstopped"));
 
-    // Selecting another context by flag, then by `use`.
+    // Selecting another context by flag.
     assert!(out(&["-c", "shared", "context", "show"]).starts_with("shared\t"));
-    out(&["context", "use", "shared"]);
     moor()
-        .args(["daemon", "stop"])
+        .args(["-c", "shared", "daemon", "stop"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("managed elsewhere"));
-    out(&["context", "use", "box"]);
 
     // An ssh context: `ssh` is replaced by a script that ignores the host
     // and runs the same daemon's proxy locally.

@@ -1,11 +1,15 @@
 //! Client configuration shared by the CLI, MCP shim and desktop app: a set
-//! of named **contexts** (where a daemon is and how to reach it) and which
-//! one is current, kubectl-style. Stored as TOML at
-//! `$XDG_CONFIG_HOME/moor/config.toml` (default `~/.config/moor/config.toml`).
+//! of named **contexts** (where a daemon is and how to reach it). Stored as
+//! TOML at `$XDG_CONFIG_HOME/moor/config.toml` (default
+//! `~/.config/moor/config.toml`).
+//!
+//! Deliberately **no "current" context**: the file holds definitions only.
+//! Each process picks its context explicitly (`--context`, `MOOR_CONTEXT`)
+//! or gets the implicit [`DEFAULT_CONTEXT`], so a CLI or MCP session for one
+//! project can never redirect another, and the desktop app keeps its own
+//! selection in its own state.
 //!
 //! ```toml
-//! current = "laptop"
-//!
 //! [contexts.laptop]
 //! type = "Local"
 //!
@@ -103,14 +107,11 @@ impl Context {
     }
 }
 
-/// The whole config file.
+/// The whole config file. Unknown top-level keys are ignored (not denied)
+/// so a file written by a newer or older client still loads; contexts
+/// themselves stay strict.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Config {
-    /// Name of the context used when none is given. Absent means
-    /// [`DEFAULT_CONTEXT`], an implicit local context.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub current: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub contexts: BTreeMap<String, Context>,
 }
@@ -146,17 +147,11 @@ impl Config {
         Ok(())
     }
 
-    /// The current context's name.
-    #[must_use]
-    pub fn current_name(&self) -> &str {
-        self.current.as_deref().unwrap_or(DEFAULT_CONTEXT)
-    }
-
-    /// Resolve `name` (or the current one). An unconfigured
-    /// [`DEFAULT_CONTEXT`] is an implicit `Local` with defaults, so a fresh
-    /// install works with no config file.
+    /// Resolve `name` (or [`DEFAULT_CONTEXT`]). An unconfigured default is
+    /// an implicit `Local` with defaults, so a fresh install works with no
+    /// config file.
     pub fn resolve(&self, name: Option<&str>) -> Result<(String, Context), ConfigError> {
-        let name = name.unwrap_or_else(|| self.current_name());
+        let name = name.unwrap_or(DEFAULT_CONTEXT);
         if let Some(c) = self.contexts.get(name) {
             return Ok((name.to_string(), c.clone()));
         }
@@ -172,22 +167,10 @@ impl Config {
         Err(ConfigError::NoSuchContext(name.to_string()))
     }
 
-    /// Make `name` current; it must exist (or be the implicit default).
-    pub fn use_context(&mut self, name: &str) -> Result<(), ConfigError> {
-        self.resolve(Some(name))?;
-        self.current = Some(name.to_string());
-        Ok(())
-    }
-
     pub fn remove(&mut self, name: &str) -> Result<Context, ConfigError> {
-        let c = self
-            .contexts
+        self.contexts
             .remove(name)
-            .ok_or_else(|| ConfigError::NoSuchContext(name.to_string()))?;
-        if self.current.as_deref() == Some(name) {
-            self.current = None;
-        }
-        Ok(c)
+            .ok_or_else(|| ConfigError::NoSuchContext(name.to_string()))
     }
 }
 
@@ -222,18 +205,18 @@ mod tests {
                 url: "ws://h:7677".into(),
             },
         );
-        cfg.use_context("box").unwrap();
         cfg.save(&path).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
-        assert!(text.contains("current = \"box\""), "{text}");
         assert!(text.contains("type = \"Ssh\""), "{text}");
         let back = Config::load(&path).unwrap();
         assert_eq!(back, cfg);
-        assert_eq!(back.resolve(None).unwrap().0, "box");
+        assert_eq!(back.resolve(Some("box")).unwrap().0, "box");
+        // No "current": resolving nothing is always the implicit default.
+        assert_eq!(back.resolve(None).unwrap().0, "local");
 
         let mut back = back;
         back.remove("box").unwrap();
-        assert_eq!(back.current, None);
-        assert_eq!(back.resolve(None).unwrap().0, "local");
+        assert!(back.resolve(Some("box")).is_err());
+        assert!(Config::load(&path).is_ok());
     }
 }

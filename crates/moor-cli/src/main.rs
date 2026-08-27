@@ -24,7 +24,8 @@ use std::fmt::Write as _;
 #[command(name = "moor", version, about)]
 struct Cli {
     /// Named context from the config file (see `moor context`). Default:
-    /// the current one, or an implicit local daemon.
+    /// `local`, an implicit daemon on this machine. There is no persisted
+    /// "current" context: pass this flag or set `MOOR_CONTEXT`.
     #[arg(long, short = 'c', env = "MOOR_CONTEXT", global = true)]
     context: Option<String>,
     /// Config file. Default: `$XDG_CONFIG_HOME/moor/config.toml`.
@@ -115,14 +116,11 @@ enum Cmd {
 
 #[derive(Debug, Subcommand)]
 enum ContextCmd {
-    /// Contexts and which is current.
+    /// Configured contexts.
     List,
-    /// The current context's name and details.
+    /// The selected context's name and details (`-c`, `MOOR_CONTEXT`, or
+    /// the implicit `local`).
     Show,
-    /// Make a context current.
-    Use {
-        name: String,
-    },
     /// A daemon on this machine.
     AddLocal {
         name: String,
@@ -176,7 +174,8 @@ enum WorkspaceCmd {
     /// Attach a git repository to a workspace; prints the repo id.
     Attach {
         workspace: WorkspaceId,
-        path: PathBuf,
+        /// Default: the current directory.
+        path: Option<PathBuf>,
         /// Display name. Default: the directory name.
         #[arg(long)]
         name: Option<String>,
@@ -187,8 +186,10 @@ enum WorkspaceCmd {
 enum ReviewCmd {
     /// Create a review; prints its id.
     Create {
+        /// Default: the workspace whose attached repo contains the current
+        /// directory.
         #[arg(long)]
-        workspace: WorkspaceId,
+        workspace: Option<WorkspaceId>,
         /// Base ref: branch name, tag:NAME, full commit oid, `HEAD`,
         /// `upstream`, or `worktree`.
         #[arg(long)]
@@ -196,15 +197,18 @@ enum ReviewCmd {
         /// Head ref, same forms as `--base`.
         #[arg(long)]
         head: String,
-        /// Repo to review. Optional when the workspace has exactly one.
+        /// Repo to review. Default: the one containing the current
+        /// directory, else the workspace's only repo.
         #[arg(long)]
         repo: Option<RepoId>,
         #[arg(long)]
         title: Option<String>,
     },
     List {
+        /// Default: the workspace whose attached repo contains the current
+        /// directory.
         #[arg(long)]
-        workspace: WorkspaceId,
+        workspace: Option<WorkspaceId>,
     },
     /// Review, targets, files and thread counts.
     Show { review: ReviewId },
@@ -501,6 +505,7 @@ async fn workspace(ops: &mut Ops, cmd: WorkspaceCmd, json: bool) -> anyhow::Resu
             path,
             name,
         } => {
+            let path = path.unwrap_or_else(|| PathBuf::from("."));
             let path =
                 std::fs::canonicalize(&path).with_context(|| format!("{}", path.display()))?;
             let display = name.unwrap_or_else(|| {
@@ -525,18 +530,27 @@ async fn review(ops: &mut Ops, cmd: ReviewCmd, json: bool) -> anyhow::Result<()>
             repo,
             title,
         } => {
-            let repo_id = if let Some(r) = repo {
-                r
-            } else {
-                let ws = ops.workspaces().await?;
-                let w = ws
-                    .iter()
-                    .find(|w| w.id == workspace)
-                    .ok_or_else(|| anyhow::anyhow!("no workspace {workspace}"))?;
-                match w.repos.as_slice() {
-                    [only] => only.id,
-                    [] => bail!("workspace has no repos; attach one first"),
-                    _ => bail!("workspace has several repos; pass --repo"),
+            let (workspace, repo_id) = match (workspace, repo) {
+                (Some(w), Some(r)) => (w, r),
+                (Some(workspace), None) => {
+                    let ws = ops.workspaces().await?;
+                    let w = ws
+                        .iter()
+                        .find(|w| w.id == workspace)
+                        .ok_or_else(|| anyhow::anyhow!("no workspace {workspace}"))?;
+                    let repo_id = match w.repos.as_slice() {
+                        [only] => only.id,
+                        [] => bail!("workspace has no repos; attach one first"),
+                        _ => match ops.locate(Path::new(".")).await {
+                            Ok(l) if l.workspace.id == workspace => l.repo.id,
+                            _ => bail!("workspace has several repos; pass --repo"),
+                        },
+                    };
+                    (workspace, repo_id)
+                }
+                (None, repo) => {
+                    let l = ops.locate(Path::new(".")).await?;
+                    (l.workspace.id, repo.unwrap_or(l.repo.id))
                 }
             };
             let target = ReviewTarget {
@@ -551,6 +565,10 @@ async fn review(ops: &mut Ops, cmd: ReviewCmd, json: bool) -> anyhow::Result<()>
             emit(json, &event, || id.to_string())
         }
         ReviewCmd::List { workspace } => {
+            let workspace = match workspace {
+                Some(w) => w,
+                None => ops.locate(Path::new(".")).await?.workspace.id,
+            };
             let reviews = ops.reviews(workspace).await?;
             emit(json, &reviews, || {
                 reviews
@@ -769,30 +787,15 @@ fn context_cmd(
 ) -> anyhow::Result<()> {
     match cmd {
         ContextCmd::List => emit(json, cfg, || {
-            let current = cfg.current_name();
             let mut rows: Vec<String> = cfg
                 .contexts
                 .iter()
-                .map(|(n, c)| {
-                    format!(
-                        "{} {n}\t{}",
-                        if n == current { "*" } else { " " },
-                        c.describe()
-                    )
-                })
+                .map(|(n, c)| format!("{n}\t{}", c.describe()))
                 .collect();
             if !cfg.contexts.contains_key(moor_config::DEFAULT_CONTEXT) {
                 rows.insert(
                     0,
-                    format!(
-                        "{} {}\tlocal (implicit)",
-                        if current == moor_config::DEFAULT_CONTEXT {
-                            "*"
-                        } else {
-                            " "
-                        },
-                        moor_config::DEFAULT_CONTEXT
-                    ),
+                    format!("{}\tlocal (implicit)", moor_config::DEFAULT_CONTEXT),
                 );
             }
             rows.join("\n")
@@ -802,11 +805,6 @@ fn context_cmd(
             emit(json, &(&name, &ctx), || {
                 format!("{name}\t{}", ctx.describe())
             })
-        }
-        ContextCmd::Use { name } => {
-            cfg.use_context(&name)?;
-            cfg.save(path)?;
-            emit(json, &name, || format!("current context: {name}"))
         }
         ContextCmd::AddLocal {
             name,
@@ -839,7 +837,7 @@ fn context_cmd(
     }
 }
 
-/// Add (or replace) a context; the first one added becomes current.
+/// Add (or replace) a context.
 fn add(
     cfg: &mut moor_config::Config,
     path: &Path,
@@ -847,18 +845,10 @@ fn add(
     ctx: &Context,
     json: bool,
 ) -> anyhow::Result<()> {
-    let first = cfg.contexts.is_empty();
     cfg.contexts.insert(name.to_string(), ctx.clone());
-    if first {
-        cfg.current = Some(name.to_string());
-    }
     cfg.save(path)?;
     emit(json, &(&name, &ctx), || {
-        format!(
-            "added {name}\t{}{}",
-            ctx.describe(),
-            if first { " (now current)" } else { "" }
-        )
+        format!("added {name}\t{}", ctx.describe())
     })
 }
 

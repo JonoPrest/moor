@@ -13,7 +13,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 #[command(name = "moor-mcp", version, about)]
 struct Args {
     /// Named context from the config file (see `moor context`). Default:
-    /// the current one, or an implicit local daemon.
+    /// `local`, an implicit daemon on this machine.
     #[arg(long, short = 'c', env = "MOOR_CONTEXT")]
     context: Option<String>,
     /// Config file. Default: `$XDG_CONFIG_HOME/moor/config.toml`.
