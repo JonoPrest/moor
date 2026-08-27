@@ -1720,6 +1720,7 @@ dependencies = [
  "moord",
  "serde",
  "serde_json",
+ "strum",
  "tempfile",
  "thiserror",
  "tokio",

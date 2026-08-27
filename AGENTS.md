@@ -19,6 +19,13 @@ for the design and `docs/PLAN.md` for the milestones before making changes.
 - Exhaustive matching on domain enums — no `_ =>` arms in `moor-review-core`/`moor-client-core`
   (clippy `wildcard_enum_match_arm` is on).
 - Sans-I/O cores (`moor-client-core`) return `Vec<Effect>`; tests assert exactly which effects.
+- **Names are enums, not strings — in adapters too.** Tool names, RPC methods, subcommands
+  and config keys are parsed into an enum once at the edge (`ToolName`, `Method`,
+  `ToolCall::parse`) and matched exhaustively; never `match s.as_str() { "list_reviews" => .. }`
+  or a `const MUTATING: &[&str]`. Classification (read vs write, streamed vs single) is a
+  type (`Call::Query | Call::Mutating`), so a new variant fails to compile until every
+  site handles it. The wire spelling lives in one `serde`/`strum` rename, and a test
+  checks that every variant is advertised.
 
 ### Testing — every piece proves itself
 

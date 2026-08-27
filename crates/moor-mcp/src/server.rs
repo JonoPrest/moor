@@ -13,21 +13,39 @@ use moor_protocol::{
 use moord::client::{Client, Identity};
 use moord::ops::{Ops, OpsError};
 use moord::render_text as text;
+use serde::Deserialize;
 use serde_json::{Value, json};
+use strum::EnumString;
 
 use crate::jsonrpc::{self, Incoming, Outgoing};
-use crate::tools;
+use crate::tools::{self, Call, MutatingCall, QueryCall, ToolCall, ToolName};
 
-/// Tools that append to the log; the rest only read.
-const MUTATING: &[&str] = &[
-    "create_review",
-    "update_review",
-    "add_comment",
-    "suggest",
-    "reply",
-    "resolve",
-    "request_review",
-];
+/// JSON-RPC methods this server answers. Anything else is
+/// `METHOD_NOT_FOUND`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString)]
+enum Method {
+    #[strum(serialize = "initialize")]
+    Initialize,
+    #[strum(serialize = "ping")]
+    Ping,
+    #[strum(serialize = "tools/list")]
+    ToolsList,
+    #[strum(serialize = "tools/call")]
+    ToolsCall,
+}
+
+/// `params` of `tools/call`. `name` is parsed to a `ToolName` here so an
+/// unknown tool is a JSON-RPC error, while bad arguments are a tool error.
+#[derive(Debug, Deserialize)]
+struct CallParams {
+    name: ToolName,
+    #[serde(default = "empty_object")]
+    arguments: Value,
+}
+
+fn empty_object() -> Value {
+    json!({})
+}
 
 /// MCP protocol revision this server implements.
 pub const MCP_VERSION: &str = "2025-06-18";
@@ -148,47 +166,49 @@ impl Server {
             ));
         }
         let id = msg.id?;
-        Some(match msg.method.as_str() {
-            "initialize" => match self.initialize(&msg.params).await {
+        let Ok(method) = msg.method.parse::<Method>() else {
+            return Some(Outgoing::error(
+                id,
+                jsonrpc::METHOD_NOT_FOUND,
+                format!("method not found: {}", msg.method),
+            ));
+        };
+        Some(match method {
+            Method::Initialize => match self.initialize(&msg.params).await {
                 Ok(v) => Outgoing::result(id, v),
                 Err(e) => Outgoing::error(id, jsonrpc::INTERNAL_ERROR, e.to_string()),
             },
-            "ping" => Outgoing::result(id, json!({})),
-            "tools/list" => Outgoing::result(
+            Method::Ping => Outgoing::result(id, json!({})),
+            Method::ToolsList => Outgoing::result(
                 id,
                 json!({
                     "tools": tools::all().into_iter().map(|t| json!({
-                        "name": t.name,
+                        "name": <&'static str>::from(t.name),
                         "description": t.description,
                         "inputSchema": t.input_schema,
                     })).collect::<Vec<_>>()
                 }),
             ),
-            "tools/call" => {
-                let name = msg.params.get("name").and_then(Value::as_str);
-                let args = msg
-                    .params
-                    .get("arguments")
-                    .cloned()
-                    .unwrap_or_else(|| json!({}));
-                match name {
-                    None => Outgoing::error(id, jsonrpc::INVALID_PARAMS, "missing tool name"),
-                    Some(name) => match self.call(name, args).await {
-                        Ok(v) => Outgoing::result(id, tool_ok(&v)),
-                        Err(ToolError::Invalid(m))
-                            if !tools::all().iter().any(|t| t.name == name) =>
-                        {
-                            Outgoing::error(id, jsonrpc::INVALID_PARAMS, m)
-                        }
-                        Err(e) => Outgoing::result(id, tool_err(&e)),
-                    },
+            Method::ToolsCall => {
+                let params: CallParams = match serde_json::from_value(msg.params) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        return Some(Outgoing::error(
+                            id,
+                            jsonrpc::INVALID_PARAMS,
+                            format!("invalid tools/call params: {e}"),
+                        ));
+                    }
+                };
+                let call = match ToolCall::parse(params.name, params.arguments) {
+                    Ok(c) => c,
+                    Err(e) => return Some(Outgoing::result(id, tool_err(&ToolError::from(e)))),
+                };
+                match self.call(call).await {
+                    Ok(v) => Outgoing::result(id, tool_ok(&v)),
+                    Err(e) => Outgoing::result(id, tool_err(&e)),
                 }
             }
-            other => Outgoing::error(
-                id,
-                jsonrpc::METHOD_NOT_FOUND,
-                format!("method not found: {other}"),
-            ),
         })
     }
 
@@ -238,29 +258,26 @@ impl Server {
         self.ops.as_mut().ok_or(ToolError::NotInitialized)
     }
 
-    /// Run a tool by name. Public so tests can bypass JSON-RPC.
-    pub async fn call(&mut self, name: &str, args: Value) -> Result<Value, ToolError> {
-        if MUTATING.contains(&name) {
-            self.call_mutating(name, args).await
-        } else {
-            self.call_query(name, args).await
+    /// Run a decoded tool call. Public so tests can bypass JSON-RPC.
+    pub async fn call(&mut self, call: ToolCall) -> Result<Value, ToolError> {
+        match call.classify() {
+            Call::Query(q) => self.call_query(q).await,
+            Call::Mutating(m) => self.call_mutating(m).await,
         }
     }
 
-    async fn call_query(&self, name: &str, args: Value) -> Result<Value, ToolError> {
+    async fn call_query(&self, call: QueryCall) -> Result<Value, ToolError> {
         let ops = self.ops()?;
-        match name {
-            "list_workspaces" => Ok(json!({ "workspaces": ops.workspaces().await? })),
-            "list_reviews" => {
-                let p: tools::ListReviews = serde_json::from_value(args)?;
+        match call {
+            QueryCall::ListWorkspaces => Ok(json!({ "workspaces": ops.workspaces().await? })),
+            QueryCall::ListReviews(p) => {
                 let workspace_id = match p.workspace_id {
                     Some(w) => w,
                     None => ops.locate(Path::new(".")).await?.workspace.id,
                 };
                 Ok(json!({ "reviews": ops.reviews(workspace_id).await? }))
             }
-            "get_review" => {
-                let p: tools::ByReview = serde_json::from_value(args)?;
+            QueryCall::GetReview(p) => {
                 let snap = ops.snapshot(p.review_id).await?;
                 let files = ops.files(p.review_id).await?;
                 Ok(json!({
@@ -272,8 +289,7 @@ impl Server {
                     "seq": snap.seq,
                 }))
             }
-            "get_diff" => {
-                let p: tools::GetDiff = serde_json::from_value(args)?;
+            QueryCall::GetDiff(p) => {
                 let render_opts = RenderOpts {
                     ignore_whitespace: p.ignore_whitespace,
                     context_lines: p
@@ -292,8 +308,7 @@ impl Server {
                     "text": text::render(&header, &chunks),
                 }))
             }
-            "get_file" => {
-                let p: tools::GetFile = serde_json::from_value(args)?;
+            QueryCall::GetFile(p) => {
                 let path = RepoPath::new(p.path)?;
                 let (repo_id, blob_oid, header, chunks) =
                     ops.file_at(p.review_id, p.repo_id, &path, p.side).await?;
@@ -307,13 +322,11 @@ impl Server {
                     "text": text::render_blob(&header, &chunks),
                 }))
             }
-            "list_comments" => {
-                let p: tools::ByReview = serde_json::from_value(args)?;
+            QueryCall::ListComments(p) => {
                 let snap = ops.snapshot(p.review_id).await?;
                 Ok(json!({ "threads": snap.threads, "comments": snap.comments, "seq": snap.seq }))
             }
-            "subscribe_events" => {
-                let p: tools::SubscribeEvents = serde_json::from_value(args)?;
+            QueryCall::SubscribeEvents(p) => {
                 let scope = match (p.review_id, p.workspace_id, p.awaiting_agent) {
                     (Some(review_id), _, _) => SubscribeScope::Review { review_id },
                     (None, Some(workspace_id), _) => SubscribeScope::Workspace { workspace_id },
@@ -326,14 +339,12 @@ impl Server {
                     .await?;
                 Ok(json!({ "events": polled.events, "last_seq": polled.last_seq }))
             }
-            other => Err(ToolError::Invalid(format!("unknown tool: {other}"))),
         }
     }
 
-    async fn call_mutating(&mut self, name: &str, args: Value) -> Result<Value, ToolError> {
-        match name {
-            "create_review" => {
-                let p: tools::CreateReview = serde_json::from_value(args)?;
+    async fn call_mutating(&mut self, call: MutatingCall) -> Result<Value, ToolError> {
+        match call {
+            MutatingCall::CreateReview(p) => {
                 let ops = self.ops_mut()?;
                 let implicit =
                     p.workspace_id.is_none() || p.targets.iter().any(|t| t.repo_id.is_none());
@@ -365,8 +376,7 @@ impl Server {
                 let snap = ops.snapshot(review_id).await?;
                 Ok(json!({ "review": snap.review, "resolved": snap.resolved, "event": event }))
             }
-            "update_review" => {
-                let p: tools::UpdateReview = serde_json::from_value(args)?;
+            MutatingCall::UpdateReview(p) => {
                 let event = self
                     .ops_mut()?
                     .mutate(Mutation::UpdateReview {
@@ -377,24 +387,16 @@ impl Server {
                     .await?;
                 Ok(json!({ "event": event }))
             }
-            "add_comment" => {
-                let p: tools::AddComment = serde_json::from_value(args)?;
-                self.add_comment(p).await
-            }
-            "suggest" => {
-                let p: tools::Suggest = serde_json::from_value(args)?;
-                self.suggest(p).await
-            }
-            "reply" => {
-                let p: tools::Reply = serde_json::from_value(args)?;
+            MutatingCall::AddComment(p) => self.add_comment(p).await,
+            MutatingCall::Suggest(p) => self.suggest(p).await,
+            MutatingCall::Reply(p) => {
                 let (comment_id, event) = self
                     .ops_mut()?
                     .reply(p.review_id, p.thread_id, p.body)
                     .await?;
                 Ok(json!({ "comment_id": comment_id, "event": event }))
             }
-            "resolve" => {
-                let p: tools::Resolve = serde_json::from_value(args)?;
+            MutatingCall::Resolve(p) => {
                 let m = if p.resolved {
                     Mutation::ResolveThread {
                         review_id: p.review_id,
@@ -409,8 +411,7 @@ impl Server {
                 let event = self.ops_mut()?.mutate(m).await?;
                 Ok(json!({ "event": event }))
             }
-            "request_review" => {
-                let p: tools::RequestReview = serde_json::from_value(args)?;
+            MutatingCall::RequestReview(p) => {
                 let event = self
                     .ops_mut()?
                     .mutate(Mutation::RequestReview {
@@ -421,9 +422,9 @@ impl Server {
                     .await?;
                 Ok(json!({ "event": event }))
             }
-            other => Err(ToolError::Invalid(format!("unknown tool: {other}"))),
         }
     }
+
     async fn add_comment(&mut self, p: tools::AddComment) -> Result<Value, ToolError> {
         let ops = self.ops_mut()?;
         let anchor = match (p.path, p.start_line) {
