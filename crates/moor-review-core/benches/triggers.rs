@@ -169,7 +169,7 @@ fn comment_burst(repo: &TestRepo) -> Line {
     Line {
         name: "200-comment burst (Core::add_comment)",
         median,
-        trigger: Duration::from_millis(1000),
+        trigger: Duration::from_secs(1),
         note: "durable redb append per comment".into(),
     }
 }

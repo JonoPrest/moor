@@ -165,12 +165,8 @@ fn classify(scope: &str) -> Option<SpanClass> {
         }
         "variable" => SpanClass::Variable,
         "punctuation" => SpanClass::Punctuation,
-        "meta" => {
-            if scope.starts_with("meta.attribute") || scope.starts_with("meta.annotation") {
-                SpanClass::Attribute
-            } else {
-                return None;
-            }
+        "meta" if scope.starts_with("meta.attribute") || scope.starts_with("meta.annotation") => {
+            SpanClass::Attribute
         }
         _ => return None,
     })

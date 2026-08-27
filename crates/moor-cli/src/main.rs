@@ -759,7 +759,7 @@ async fn events(
         let mut since = since.map_or(Since::Now, |n| Since::After { seq: Seq::new(n) });
         loop {
             let timeout = if follow {
-                Duration::from_secs(3600)
+                Duration::from_hours(1)
             } else {
                 Duration::ZERO
             };
