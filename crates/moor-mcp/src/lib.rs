@@ -7,7 +7,6 @@
 
 pub mod jsonrpc;
 pub mod server;
-pub mod text;
 pub mod tools;
 
 pub use server::{Endpoint, Server};

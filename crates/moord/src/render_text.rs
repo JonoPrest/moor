@@ -1,4 +1,4 @@
-//! Plain-text renderings of protocol values for tool results. Agents read
+//! Plain-text renderings of protocol values for the CLI and MCP tool results. Agents read
 //! text, so a diff comes back looking like `git diff` with line numbers
 //! rather than as row JSON.
 
