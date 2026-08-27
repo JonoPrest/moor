@@ -18,6 +18,10 @@ pub enum ParseIdError {
     Oid(String),
 }
 
+/// `ulid_id!(Name)` defines a `Copy` newtype over `ulid::Ulid` with
+/// `from_parts`/`nil`/`timestamp_ms`, `Display`/`FromStr` in canonical ULID
+/// form, and serde as that string. One macro so every id type is identical
+/// except in name, which is the whole point of the newtypes.
 macro_rules! ulid_id {
     ($(#[$doc:meta])* $name:ident) => {
         $(#[$doc])*
@@ -187,6 +191,9 @@ impl<'de> Deserialize<'de> for Oid {
     }
 }
 
+/// `oid_newtype!(Name)` defines a `Copy` newtype over [`Oid`] with
+/// `new`/`from_bytes`/`oid`, hex `Display`/`FromStr`, and transparent serde.
+/// Blob/commit/tree ids share a representation but must not be mixed up.
 macro_rules! oid_newtype {
     ($(#[$doc:meta])* $name:ident) => {
         $(#[$doc])*

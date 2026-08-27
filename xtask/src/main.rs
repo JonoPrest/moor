@@ -14,17 +14,17 @@ fn main() -> anyhow::Result<()> {
     }
 }
 
-fn repo_root() -> PathBuf {
+fn repo_root() -> anyhow::Result<PathBuf> {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
-        .expect("xtask lives one level below the repo root")
-        .to_path_buf()
+        .map(Path::to_path_buf)
+        .context("xtask must live one level below the repo root")
 }
 
 /// Write `fixtures/protocol/<Type>/<variant>.json` for every fixture and
 /// delete files no fixture produces any more.
 fn fixtures() -> anyhow::Result<()> {
-    let dir = repo_root().join("fixtures").join("protocol");
+    let dir = repo_root()?.join("fixtures").join("protocol");
     std::fs::create_dir_all(&dir)?;
 
     let mut wanted = BTreeSet::new();
@@ -32,7 +32,10 @@ fn fixtures() -> anyhow::Result<()> {
     for f in moor_protocol::fixtures::all()? {
         let path = dir.join(f.rel_path());
         wanted.insert(path.clone());
-        std::fs::create_dir_all(path.parent().expect("has parent"))?;
+        let parent = path
+            .parent()
+            .with_context(|| format!("{} has no parent directory", path.display()))?;
+        std::fs::create_dir_all(parent)?;
         let mut json = serde_json::to_string_pretty(&f.value)?;
         json.push('\n');
         let current = std::fs::read_to_string(&path).ok();
