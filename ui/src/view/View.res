@@ -468,3 +468,113 @@ let viewModel: S.t<viewModel> = S.object(s => {
   draft: s.field("draft", S.null(draft)),
   pendingRefresh: s.field("pending_refresh", S.bool),
 })
+
+module ViewPatch = {
+  // One section of the model, as the host pushes it (client-core `patch.rs`).
+  type t =
+    | Connection({connection: ConnectionView.t, lastError: option<Rpc.rpcError>})
+    | ReviewList({reviews: array<Domain.review>})
+    | Tree({tree: treeView})
+    | Diff({diff: option<diffView>, prefs: viewPrefs})
+    | Threads({threads: array<threadView>})
+    | Conversation({conversation: array<threadView>})
+    | CommitStepper({stepper: option<commitStepper>})
+    | Progress({progress: progress})
+    | Focus({focus: Focus.t})
+    | Hints({hints: array<hint>})
+    | Help({help: option<helpView>})
+    | Draft({draft: option<draft>, pendingRefresh: bool})
+  let schema: S.t<t> = S.union([
+    S.object(s => {
+      s.tag("type", "Connection")
+      Connection({
+        connection: s.field("connection", ConnectionView.schema),
+        lastError: s.field("last_error", S.null(Rpc.rpcError)),
+      })
+    }),
+    S.object(s => {
+      s.tag("type", "ReviewList")
+      ReviewList({reviews: s.field("reviews", S.array(Domain.review))})
+    }),
+    S.object(s => {
+      s.tag("type", "Tree")
+      Tree({tree: s.field("tree", treeView)})
+    }),
+    S.object(s => {
+      s.tag("type", "Diff")
+      Diff({diff: s.field("diff", S.null(diffView)), prefs: s.field("prefs", viewPrefs)})
+    }),
+    S.object(s => {
+      s.tag("type", "Threads")
+      Threads({threads: s.field("threads", S.array(threadView))})
+    }),
+    S.object(s => {
+      s.tag("type", "Conversation")
+      Conversation({conversation: s.field("conversation", S.array(threadView))})
+    }),
+    S.object(s => {
+      s.tag("type", "CommitStepper")
+      CommitStepper({stepper: s.field("stepper", S.null(commitStepper))})
+    }),
+    S.object(s => {
+      s.tag("type", "Progress")
+      Progress({progress: s.field("progress", progress)})
+    }),
+    S.object(s => {
+      s.tag("type", "Focus")
+      Focus({focus: s.field("focus", Focus.schema)})
+    }),
+    S.object(s => {
+      s.tag("type", "Hints")
+      Hints({hints: s.field("hints", S.array(hint))})
+    }),
+    S.object(s => {
+      s.tag("type", "Help")
+      Help({help: s.field("help", S.null(helpView))})
+    }),
+    S.object(s => {
+      s.tag("type", "Draft")
+      Draft({
+        draft: s.field("draft", S.null(draft)),
+        pendingRefresh: s.field("pending_refresh", S.bool),
+      })
+    }),
+  ])
+
+  /// Install a patch into the UI's copy of the model.
+  let apply = (model: viewModel, patch: t): viewModel =>
+    switch patch {
+    | Connection({connection, lastError}) => {...model, connection, lastError}
+    | ReviewList({reviews}) => {...model, reviews}
+    | Tree({tree}) => {...model, tree}
+    | Diff({diff, prefs}) => {...model, diff, prefs}
+    | Threads({threads}) => {...model, threads}
+    | Conversation({conversation}) => {...model, conversation}
+    | CommitStepper({stepper}) => {...model, stepper}
+    | Progress({progress}) => {...model, progress}
+    | Focus({focus}) => {...model, focus}
+    | Hints({hints}) => {...model, hints}
+    | Help({help}) => {...model, help}
+    | Draft({draft, pendingRefresh}) => {...model, draft, pendingRefresh}
+    }
+}
+
+/// The model before any patch arrives.
+let empty: viewModel = {
+  prefs: {layout: Unified, ignoreWhitespace: false, contextLines: 3},
+  tree: {roots: [], breadcrumbs: [], search: None},
+  progress: {viewed: 0, changedSinceViewed: 0, total: 0},
+  diff: None,
+  threads: [],
+  conversation: [],
+  stepper: None,
+  focus: Focus.ReviewList({index: 0}),
+  hints: [],
+  help: None,
+  connection: ConnectionView.Disconnected,
+  lastError: None,
+  reviews: [],
+  review: None,
+  draft: None,
+  pendingRefresh: false,
+}

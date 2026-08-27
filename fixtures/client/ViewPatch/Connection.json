@@ -1,0 +1,11 @@
+{
+  "connection": {
+    "type": "Subscribed"
+  },
+  "last_error": {
+    "id": "01HF7YAVYG0000000000000005",
+    "kind": "Comment",
+    "type": "NotFound"
+  },
+  "type": "Connection"
+}

@@ -31,6 +31,7 @@ mod explorer;
 mod focus;
 mod ids;
 mod keymap;
+mod patch;
 mod view;
 
 use std::collections::BTreeMap;
@@ -64,6 +65,7 @@ pub use keymap::{
     Binding, Command, Conflict, Context, HelpEntry, HelpGroup, HelpView, Hint, KeyChord, KeyCode,
     KeyParseError, KeySeq, Keymap, Lookup, Modifiers, NamedKey, Override, Overrides, label,
 };
+pub use patch::{ViewPatch, ViewPatchKind};
 pub use view::{
     ConnectionView, ConnectionViewKind, Draft, Layout, OpenFile, OpenReview, PendingEvent,
     ViewDelta, ViewModel, ViewPrefs,

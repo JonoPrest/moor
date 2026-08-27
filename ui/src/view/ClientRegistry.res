@@ -39,6 +39,7 @@ let schemas: dict<S.t<unknown>> = Dict.fromArray([
   ("Override", erase(View.override)),
   ("Overrides", erase(View.overrides)),
   ("ViewDelta", erase(View.viewDelta)),
+  ("ViewPatch", erase(View.ViewPatch.schema)),
 ])
 
 let names: array<string> = Dict.keysToArray(schemas)

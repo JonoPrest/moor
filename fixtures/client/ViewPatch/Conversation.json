@@ -1,0 +1,30 @@
+{
+  "conversation": [
+    {
+      "author": {
+        "machine": "laptop",
+        "name": "ada",
+        "type": "Human"
+      },
+      "created": 1700000002000,
+      "id": "01HF7YAVYG0000000000000005",
+      "outdated": false,
+      "pending": true,
+      "place": {
+        "end": 12,
+        "file": {
+          "path": "src/lib.rs",
+          "repo_id": "01HF7YAT000000000000000002"
+        },
+        "side": "Head",
+        "start": 10,
+        "type": "Lines"
+      },
+      "replies": 1,
+      "resolved": false,
+      "root": "01HF7YAVYG0000000000000005",
+      "summary": "This should be a newtype."
+    }
+  ],
+  "type": "Conversation"
+}

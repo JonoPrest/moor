@@ -14,6 +14,9 @@ importers:
       '@rescript/react':
         specifier: ^0.13.1
         version: 0.13.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@tauri-apps/api':
+        specifier: ^2.11.1
+        version: 2.11.1
       react:
         specifier: ^19.0.0
         version: 19.2.8
@@ -362,6 +365,9 @@ packages:
     resolution: {integrity: sha512-yYU8cogLeSh/ms2jh8Fj7jaba/EWa7Ja6GoUqYZaraEuCI5YS6ms6ObZgjjedm+jm6XZjdNRWBpPP6Z86oOxcw==}
     peerDependencies:
       vite: ^5.2.0 || ^6 || ^7 || ^8
+
+  '@tauri-apps/api@2.11.1':
+    resolution: {integrity: sha512-M2FPuYND2m+wh5hfW9ZpSdxMPdEJovPBWwoHJmwUpysTYNHaOkVFN419m/K0LIgjb/7KU2vBgsUepJWugQCvAA==}
 
   '@types/babel__core@7.20.5':
     resolution: {integrity: sha512-qoQprZvz5wQFJwMDqeseRXWv3rqMvhgpbXFfVyWhbx9X47POIA6i/+dXefEmZKoAgOaTdaIgNSMqMIU61yRyzA==}
@@ -1143,6 +1149,8 @@ snapshots:
       '@tailwindcss/oxide': 4.3.3
       tailwindcss: 4.3.3
       vite: 8.2.2(@types/node@24.13.3)(jiti@2.7.0)
+
+  '@tauri-apps/api@2.11.1': {}
 
   '@types/babel__core@7.20.5':
     dependencies:

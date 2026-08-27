@@ -1,0 +1,10 @@
+{
+  "hints": [
+    {
+      "command": "NextFile",
+      "keys": "] f",
+      "label": "next file"
+    }
+  ],
+  "type": "Hints"
+}

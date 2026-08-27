@@ -157,6 +157,7 @@ registry!(
     Override,
     Overrides,
     ViewDelta,
+    ViewPatch,
 );
 
 /// All fixtures of all registered types.
@@ -606,6 +607,52 @@ enum_fixture!(
             repo_id: repo_id()?,
         },
         Action::StepCommit { selected: Some(0) },
+    ]
+);
+enum_fixture!(
+    ViewPatch,
+    ViewPatchKind,
+    "ViewPatch",
+    [
+        ViewPatch::Connection {
+            connection: ConnectionView::Subscribed,
+            last_error: Some(proto_named::<RpcError>("NotFound")?),
+        },
+        ViewPatch::ReviewList {
+            reviews: vec![proto::<Review>()?],
+        },
+        ViewPatch::Tree {
+            tree: local::<TreeView>()?,
+        },
+        ViewPatch::Diff {
+            diff: Some(local::<DiffView>()?),
+            prefs: local::<ViewPrefs>()?,
+        },
+        ViewPatch::Threads {
+            threads: vec![local::<ThreadView>()?],
+        },
+        ViewPatch::Conversation {
+            conversation: vec![local::<ThreadView>()?],
+        },
+        ViewPatch::CommitStepper {
+            stepper: Some(local::<CommitStepper>()?),
+        },
+        ViewPatch::Progress {
+            progress: local::<Progress>()?,
+        },
+        ViewPatch::Focus {
+            focus: Focus::Diff { row: 121 },
+        },
+        ViewPatch::Hints {
+            hints: vec![local::<Hint>()?],
+        },
+        ViewPatch::Help {
+            help: Some(local::<HelpView>()?),
+        },
+        ViewPatch::Draft {
+            draft: Some(local::<Draft>()?),
+            pending_refresh: true,
+        },
     ]
 );
 struct_fixture!(

@@ -1,0 +1,29 @@
+{
+  "help": {
+    "conflicts": [
+      {
+        "commands": [
+          "MoveDown",
+          "PrevHunk"
+        ],
+        "context": "Diff",
+        "keys": "j"
+      }
+    ],
+    "groups": [
+      {
+        "context": "Diff",
+        "entries": [
+          {
+            "command": "GoTop",
+            "keys": "g g",
+            "label": "top",
+            "overridden": true,
+            "primary": false
+          }
+        ]
+      }
+    ]
+  },
+  "type": "Help"
+}
