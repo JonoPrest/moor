@@ -29,6 +29,13 @@ use moor_protocol::{
 pub use highlight::{Highlighter, detect_lang};
 use lines::{Line, split_lines};
 
+/// Split a blob into line texts (no terminators), as the render model sees
+/// them. Used by anchoring so line numbers agree with rendered rows.
+#[must_use]
+pub fn lines_of(bytes: &[u8]) -> Vec<String> {
+    split_lines(bytes).into_iter().map(|l| l.text).collect()
+}
+
 /// Rows per chunk. Fixed so chunk indexes are stable for a given render.
 pub const CHUNK_ROWS: u32 = 500;
 

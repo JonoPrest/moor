@@ -62,6 +62,12 @@ macro_rules! ulid_id {
             pub fn timestamp_ms(self) -> u64 {
                 self.0.timestamp_ms()
             }
+
+            /// Random component (80 bits).
+            #[must_use]
+            pub fn random(self) -> u128 {
+                self.0.random()
+            }
         }
 
         impl fmt::Debug for $name {

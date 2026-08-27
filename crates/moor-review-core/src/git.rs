@@ -203,6 +203,18 @@ impl Repo {
         Ok(obj.take_data())
     }
 
+    /// Write `bytes` as a blob object and return its id.
+    pub fn hash_blob(&self, bytes: &[u8]) -> Result<BlobOid, GitError> {
+        let repo = self.local();
+        let id = repo.write_blob(bytes).map_err(|e| GitError::Object {
+            oid: Oid::zero(),
+            reason: e.to_string(),
+        })?;
+        oid_from_gix(id.detach())
+            .map(BlobOid::new)
+            .ok_or_else(|| GitError::Parse("non-SHA1 object id".into()))
+    }
+
     fn blob_size(repo: &gix::Repository, id: gix::ObjectId) -> Result<u64, GitError> {
         let header = repo.find_header(id).map_err(|e| GitError::Object {
             oid: oid_from_gix(id).unwrap_or(Oid::zero()),

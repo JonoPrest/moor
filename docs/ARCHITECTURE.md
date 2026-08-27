@@ -159,8 +159,14 @@ When a review's resolved head/base changes:
 2. blob changed → diff old→new blob, map `lines` through the diff.
 3. mapped region's context hash mismatches → mark `Outdated`, keep last good anchor, still shown (collapsed) in the UI.
 
-`File` anchors follow the path; they become `Outdated` if the file is deleted or renamed away.
-`Review` anchors never change. Comments are never dropped by ref movement.
+`File` anchors follow the path, including detected renames; they become `Outdated` only if the
+file disappears. `Lines` anchors follow renames the same way. `Review` anchors never change.
+Comments are never dropped by ref movement, and an `Outdated` comment is re-tried from its last
+good anchor on every resolution, so it returns to `Live` when the content does.
+
+The `context_hash` covers the anchored lines plus 3 on each side. The daemon computes it from
+blob content when a comment is created (a client-supplied value is replaced) and rejects line
+ranges beyond the blob's length.
 
 Re-anchoring runs off the core actor: the actor records `ReviewTargetsResolved`, then the blob
 diffs run on the blocking pool and emit one `CommentReanchored` event per comment as they finish.
