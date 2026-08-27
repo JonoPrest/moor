@@ -7,10 +7,12 @@ description = "Git access, diffing, anchoring, event store and review logic for 
 
 [dependencies]
 moor-protocol = { workspace = true }
+gix = { version = "0.87", default-features = false, features = ["revision", "sha1"] }
 redb = "4"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+tempfile = { workspace = true }
 
 [dev-dependencies]
 moor-test-support = { workspace = true }

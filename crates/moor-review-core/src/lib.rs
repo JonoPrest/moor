@@ -5,6 +5,7 @@
 
 #![deny(clippy::wildcard_enum_match_arm)]
 
+pub mod git;
 pub mod store;
 
 pub use moor_protocol as protocol;
