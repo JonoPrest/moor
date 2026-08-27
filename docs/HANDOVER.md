@@ -59,13 +59,20 @@ Written 2026-08-27 at the end of the session that finished Milestone 3 and
 
 ## Not done / blocked
 
-- **Tauri wrapper crate** (`moor-client-tauri`): needs `webkit2gtk-4.1`
-  and `gtk+-3.0` dev libraries to build; absent on this machine, so it is
-  not written. It is thin: `tauri::Builder` with three commands that call
+- **Tauri wrapper crate** (`moor-client-tauri`, binary `moor-desktop`):
+  landed 2026-08-27 (macOS needs no extra libs; CI's rust job now installs
+  webkit2gtk for Ubuntu). `tauri::Builder` with three commands that call
   `Handle`, a task draining the patch receiver into `app.emit("view", …)`,
-  socket path from `moor-config`, KV at `app_data_dir()/kv.redb`,
-  `IdSeed` from `getrandom`. CI would need the libs installed (the `ui`
-  job does not build it).
+  socket via `moor-config` → `moord::contexts::local_spec` +
+  `ensure_daemon` (autostart), KV at `app_data_dir()/kv.redb`, seed from
+  `fastrand`. `moor-desktop [context]`; only `Local` contexts work (ssh/ws
+  → `SetupError::NotLocal`, see 4.6). Dev: `cargo tauri dev` is not
+  installed; `pnpm --dir ui build` then `cargo run -p moor-client-tauri`
+  serves `ui/dist`. Icon is a placeholder square. Smoke-tested by hand:
+  launches, daemon autostarts, no panic; Playwright still not wired.
+  Gotcha: `moor_client_host::spawn` calls `tokio::spawn`, and Tauri's
+  `setup` runs outside its runtime — `start_host` enters
+  `tauri::async_runtime::handle()` first.
 - 4.4: expanders — `Row::Expander` renders but has no action; the
   protocol has no "expand hidden lines" request (a render with more
   context, or `BlobRender` rows spliced in, would be needed). Playwright
