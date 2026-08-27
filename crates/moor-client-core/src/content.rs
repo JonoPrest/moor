@@ -762,6 +762,11 @@ impl ClientCore {
             });
         }
         if changed_file {
+            // A newly opened file takes the keys, unless a modal panel has
+            // them (a host scroll of the same file never moves focus).
+            if !matches!(self.view.focus, crate::Focus::Composer | crate::Focus::Help) {
+                self.view.focus = crate::Focus::Diff { row: first_row };
+            }
             let evicted = self.retain_review_pins();
             self.content.write_through(evicted, &mut effects);
             let mine: Vec<CacheKey> = self

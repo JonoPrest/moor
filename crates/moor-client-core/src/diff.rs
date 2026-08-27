@@ -299,6 +299,40 @@ fn placements(snapshot: &ReviewSnapshot, render: &RenderKey) -> Vec<Placement> {
     out
 }
 
+/// Every cached row of `render` with its threads, for navigation that must
+/// see past the viewport (next hunk, next comment). Chunks not cached are
+/// simply absent.
+pub(crate) fn all_rows(
+    cache: &ContentCache,
+    snapshot: &ReviewSnapshot,
+    render: &RenderKey,
+) -> Vec<DiffRow> {
+    let Some(CacheValue::Header { header }) = cache.peek(&CacheKey::Header {
+        render: render.clone(),
+    }) else {
+        return Vec::new();
+    };
+    let RenderContent::Text {
+        chunk_rows,
+        chunk_count,
+        ..
+    } = header.content
+    else {
+        return Vec::new();
+    };
+    let placements = placements(snapshot, render);
+    let mut rows = Vec::new();
+    for ci in 0..chunk_count {
+        if let Some(CacheValue::Chunk { chunk }) = cache.peek(&CacheKey::Chunk {
+            render: render.clone(),
+            index: ChunkIndex::new(ci),
+        }) {
+            place_rows(chunk, ci * chunk_rows, 0, u32::MAX, &placements, &mut rows);
+        }
+    }
+    rows
+}
+
 /// Build the diff view for `render` over rows `first_row..=last_row`.
 pub(crate) fn diff_view(
     cache: &ContentCache,

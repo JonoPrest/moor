@@ -2,13 +2,15 @@
 //! names the sections that changed.
 
 use moor_protocol::{
-    Anchor, ClientSeq, EventBody, RenderOpts, Review, ReviewSnapshot, RpcError, TreeOid,
+    Anchor, ClientSeq, EventBody, RenderOpts, Review, ReviewSnapshot, RpcError, ThreadId, TreeOid,
     ViewSection,
 };
 
 use crate::cache::RenderKey;
 use crate::diff::{CommitStepper, DiffView, ThreadView};
 use crate::explorer::{Progress, TreeView};
+use crate::focus::Focus;
+use crate::keymap::{HelpView, Hint};
 use serde::{Deserialize, Serialize};
 use strum::EnumDiscriminants;
 
@@ -49,10 +51,12 @@ pub enum ConnectionView {
 }
 
 /// A comment editor is open at `anchor`. Its text stays in the host.
+/// `reply_to` makes it a reply in that thread (the anchor is the root's).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Draft {
     pub anchor: Anchor,
+    pub reply_to: Option<ThreadId>,
 }
 
 /// The file the user is looking at and where. Rows are indices into the
@@ -160,6 +164,12 @@ pub struct ViewModel {
     /// Review-level threads (the conversation panel).
     pub conversation: Vec<ThreadView>,
     pub stepper: Option<CommitStepper>,
+    /// Where keys go (§6.4). Always valid for the current lists.
+    pub focus: Focus,
+    /// Primary bindings for the focused context, for the hint bar.
+    pub hints: Vec<Hint>,
+    /// The `?` overlay while open.
+    pub help: Option<HelpView>,
     pub connection: ConnectionView,
     /// Last request error the daemon returned; cleared on (re)subscribe.
     pub last_error: Option<RpcError>,

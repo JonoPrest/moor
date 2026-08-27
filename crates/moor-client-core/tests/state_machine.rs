@@ -333,7 +333,10 @@ fn draft_lifecycle_defers_refresh_and_submits_one_add_comment() {
             anchor: Anchor::Review,
         }))
         .unwrap();
-    assert_eq!(rendered(&effects), vec![ViewSection::Draft]);
+    assert_eq!(
+        rendered(&effects),
+        vec![ViewSection::Draft, ViewSection::Focus, ViewSection::Hints]
+    );
     assert_eq!(
         core.handle(Input::User(Action::DraftOpened {
             anchor: Anchor::Review
@@ -408,8 +411,10 @@ fn draft_lifecycle_defers_refresh_and_submits_one_add_comment() {
         vec![
             ViewSection::Threads,
             ViewSection::Draft,
+            ViewSection::Focus, // composer closed
             ViewSection::Diff,
             ViewSection::Conversation, // the comment is review-anchored
+            ViewSection::Hints,
         ]
     );
     let open = core.view().review.as_ref().unwrap();
@@ -518,6 +523,8 @@ fn events_update_only_what_they_touch() {
             ViewSection::Threads,
             ViewSection::Draft,
             ViewSection::Conversation,
+            ViewSection::Focus, // back to the review list
+            ViewSection::Hints,
         ]
     );
     assert!(core.view().review.is_none());
@@ -744,6 +751,43 @@ fn action_strategy() -> impl Strategy<Value = Action> {
                 path: moor_protocol::RepoPath::new("a.rs").unwrap(),
             }
         }),
+        (1u128..4).prop_map(|n| Action::ReplyOpened {
+            thread_id: ThreadId::from_parts(5, n)
+        }),
+        prop_oneof![
+            (0usize..3).prop_map(|index| moor_client_core::Focus::ReviewList { index }),
+            (0usize..3).prop_map(|index| moor_client_core::Focus::Tree { index }),
+            (0u32..300).prop_map(|row| moor_client_core::Focus::Diff { row }),
+            (0usize..3).prop_map(|index| moor_client_core::Focus::Thread { index }),
+            Just(moor_client_core::Focus::Composer),
+            (0usize..3).prop_map(|index| moor_client_core::Focus::CommitStepper { index }),
+            Just(moor_client_core::Focus::Help),
+        ]
+        .prop_map(|focus| Action::SetFocus { focus }),
+        Just(Action::ToggleHelp),
+    ]
+}
+
+fn key_strategy() -> impl Strategy<Value = moor_client_core::KeyChord> {
+    use moor_client_core::{KeyChord, NamedKey};
+    prop_oneof![
+        prop::sample::select(vec![
+            'j', 'k', 'g', 'G', ']', '[', 'f', 'c', 'v', 'r', 'x', 's', 'w', '?', 'n', 'p', 'z'
+        ])
+        .prop_map(KeyChord::char),
+        prop::sample::select(vec![
+            NamedKey::Enter,
+            NamedKey::Esc,
+            NamedKey::Tab,
+            NamedKey::Down,
+            NamedKey::Up
+        ])
+        .prop_map(KeyChord::named),
+        Just({
+            let mut c = KeyChord::char('p');
+            c.mods.ctrl = true;
+            c
+        }),
     ]
 }
 
@@ -859,6 +903,7 @@ fn input_strategy() -> impl Strategy<Value = Input> {
         2 => prop_oneof![Just(TransportEvent::Connected), Just(TransportEvent::Disconnected)].prop_map(Input::Transport),
         1 => Just(Input::Stored { key: "k".into(), value: None }),
         1 => (0u64..10_000).prop_map(Input::Tick),
+        3 => key_strategy().prop_map(Input::Key),
     ]
 }
 
@@ -873,6 +918,12 @@ proptest! {
             let cache_len = core.cache().len();
             match core.handle(input.clone()) {
                 Ok(effects) => {
+                    // Focus is always valid for the current lists.
+                    prop_assert_eq!(
+                        moor_client_core::clamp_focus(core.view(), core.view().focus),
+                        core.view().focus,
+                        "focus out of range after {:?}", input
+                    );
                     for e in &effects {
                         if let Effect::Render(delta) = e {
                             prop_assert!(!delta.sections.is_empty(), "empty render for {input:?}");

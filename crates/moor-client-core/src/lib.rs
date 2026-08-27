@@ -28,7 +28,9 @@ mod content;
 mod diff;
 mod events;
 mod explorer;
+mod focus;
 mod ids;
+mod keymap;
 mod view;
 
 use std::collections::BTreeMap;
@@ -55,7 +57,12 @@ pub use explorer::{
     MAX_HITS, Progress, SearchHit, SearchView, TreeNode, TreeNodeKind, TreeView, ViewedState,
     viewed_state,
 };
+pub use focus::{Focus, FocusKind, NoTarget, PAGE_ROWS, clamp as clamp_focus, visible_nodes};
 pub use ids::IdSeed;
+pub use keymap::{
+    Binding, Command, Conflict, Context, HelpEntry, HelpGroup, HelpView, Hint, KeyChord, KeyCode,
+    KeyParseError, KeySeq, Keymap, Lookup, Modifiers, NamedKey, Override, Overrides, label,
+};
 pub use view::{
     ConnectionView, Draft, Layout, OpenFile, OpenReview, PendingEvent, ViewDelta, ViewModel,
     ViewPrefs,
@@ -83,7 +90,13 @@ pub enum Input {
     },
     /// The host's clock advanced. Drives timeouts and id generation.
     Tick(Millis),
+    /// A key press, resolved against the keymap and the focus (§6.4).
+    Key(KeyChord),
 }
+
+/// After this long without a further chord, a pending sequence (`g` of
+/// `g g`) is dropped.
+pub const SEQ_TIMEOUT_MS: Millis = 800;
 
 /// What the transport layer observed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -96,7 +109,7 @@ pub enum TransportEvent {
 
 /// A user intent, already resolved from keys or clicks by the host.
 #[derive(Debug, Clone, PartialEq, Eq, EnumDiscriminants)]
-#[strum_discriminants(name(ActionKind), derive(Hash))]
+#[strum_discriminants(name(ActionKind), derive(Hash, PartialOrd, Ord, strum::EnumIter))]
 pub enum Action {
     Connect,
     Disconnect,
@@ -116,6 +129,14 @@ pub enum Action {
         body: String,
     },
     DraftDiscarded,
+    /// The user started writing a reply in `thread_id`.
+    ReplyOpened {
+        thread_id: ThreadId,
+    },
+    SetFocus {
+        focus: Focus,
+    },
+    ToggleHelp,
     /// Reply in an existing thread of the open review.
     Reply {
         thread_id: ThreadId,
@@ -234,6 +255,14 @@ pub enum CoreError {
     NotHuman,
     #[error("no commit list to step through")]
     NoStepper,
+    #[error("no thread {0}")]
+    UnknownThread(ThreadId),
+    #[error("{0:?} indexes past the end of its list")]
+    FocusOutOfRange(Focus),
+    #[error("{0} is not bound in this context")]
+    UnboundKey(String),
+    #[error(transparent)]
+    NoTarget(#[from] NoTarget),
     #[error("commit index {0} is out of range")]
     CommitOutOfRange(usize),
     #[error("nothing was loaded under key {0:?}")]
@@ -348,8 +377,15 @@ pub struct ClientCore {
     pending: Vec<Pending>,
     explorer: explorer::ExplorerState,
     stepper: Option<CommitStepper>,
-    /// `Effect::Load` for the prefs issued; answered or not.
+    /// `Effect::Load` for the prefs and keymap issued; answered or not.
     prefs_loaded: bool,
+    keymap: Keymap,
+    /// Chords of a sequence in progress, and when it started.
+    chords: Vec<KeyChord>,
+    chord_started: Millis,
+    help_open: bool,
+    /// Focus to return to when the composer or help closes.
+    focus_return: Option<Focus>,
 }
 
 /// A mutation applied locally and awaiting the daemon's echo.
@@ -385,12 +421,33 @@ impl ClientCore {
             explorer: explorer::ExplorerState::default(),
             stepper: None,
             prefs_loaded: false,
+            keymap: Keymap::default_table(),
+            chords: Vec::new(),
+            chord_started: 0,
+            help_open: false,
+            focus_return: None,
         }
     }
 
     #[must_use]
     pub fn client_id(&self) -> ClientId {
         self.config.client_id
+    }
+
+    #[must_use]
+    pub fn author(&self) -> &Author {
+        &self.config.author
+    }
+
+    #[must_use]
+    pub fn keymap(&self) -> &Keymap {
+        &self.keymap
+    }
+
+    /// Chords of the sequence in progress (`g` while waiting for `g g`).
+    #[must_use]
+    pub fn pending_chords(&self) -> &[KeyChord] {
+        &self.chords
     }
 
     /// Mutations awaiting the daemon, oldest first.
@@ -416,11 +473,18 @@ impl ClientCore {
             Input::Server(msg) => self.server(msg)?,
             Input::Transport(ev) => self.transport(ev),
             Input::Stored { key, value } if key == ViewPrefs::KEY => self.prefs_stored(value),
+            Input::Stored { key, value } if key == Keymap::KEY => self.keymap_stored(value),
             Input::Stored { key, value } => self.stored(key, value)?,
             Input::Tick(ms) => {
                 self.now = self.now.max(ms);
+                if !self.chords.is_empty()
+                    && self.now.saturating_sub(self.chord_started) >= SEQ_TIMEOUT_MS
+                {
+                    self.chords.clear();
+                }
                 Vec::new()
             }
+            Input::Key(chord) => self.key(chord)?,
         };
         // One `Render` per input: the union of every section touched, in
         // first-touched order, after every other effect.
@@ -528,6 +592,21 @@ impl ClientCore {
             self.view.stepper.clone_from(&self.stepper);
             sections.push(ViewSection::CommitStepper);
         }
+        let focus = focus::clamp(&self.view, self.view.focus);
+        if focus != self.view.focus {
+            self.view.focus = focus;
+            sections.push(ViewSection::Focus);
+        }
+        let hints = self.keymap.hints(focus.context());
+        if hints != self.view.hints {
+            self.view.hints = hints;
+            sections.push(ViewSection::Hints);
+        }
+        let help = self.help_open.then(|| self.keymap.help(focus.context()));
+        if help != self.view.help {
+            self.view.help = help;
+            sections.push(ViewSection::Help);
+        }
         sections
     }
 
@@ -557,6 +636,52 @@ impl ClientCore {
             }
         }
         ids
+    }
+
+    /// Resolve a key press. The chord buffer is the one piece of state a
+    /// rejected input may change: an unbound or unresolvable sequence
+    /// clears it, so the next key starts fresh.
+    fn key(&mut self, chord: KeyChord) -> Result<Vec<Effect>, CoreError> {
+        let context = self.view.focus.context();
+        let mut pressed = self.chords.clone();
+        pressed.push(chord);
+        match self.keymap.lookup(context, &pressed) {
+            Lookup::Prefix => {
+                if self.chords.is_empty() {
+                    self.chord_started = self.now;
+                }
+                self.chords = pressed;
+                Ok(Vec::new())
+            }
+            Lookup::Command(command) => {
+                self.chords.clear();
+                let action = focus::resolve(self, command)?;
+                self.user(action)
+            }
+            Lookup::None => {
+                self.chords.clear();
+                if context == Context::Composer {
+                    // Text for the host's editor, not a command.
+                    Ok(Vec::new())
+                } else {
+                    let seq =
+                        KeySeq::new(pressed).map_or_else(|_| chord.to_string(), |s| s.to_string());
+                    Err(CoreError::UnboundKey(seq))
+                }
+            }
+        }
+    }
+
+    /// The stored keymap overrides arrived (or were absent / unreadable:
+    /// the defaults stay).
+    fn keymap_stored(&mut self, value: Option<Vec<u8>>) -> Vec<Effect> {
+        let Some(overrides) = value.and_then(|b| serde_json::from_slice::<Overrides>(&b).ok())
+        else {
+            return Vec::new();
+        };
+        self.keymap = Keymap::with_overrides(&overrides);
+        // Hints and help are derived after this returns.
+        Vec::new()
     }
 
     /// The stored preferences arrived (or were absent).
@@ -626,6 +751,9 @@ impl ClientCore {
                         self.prefs_loaded = true;
                         effects.push(Effect::Load {
                             key: ViewPrefs::KEY.to_owned(),
+                        });
+                        effects.push(Effect::Load {
+                            key: Keymap::KEY.to_owned(),
                         });
                     }
                     Ok(effects)
@@ -743,8 +871,65 @@ impl ClientCore {
                 if self.view.draft.is_some() {
                     return Err(CoreError::DraftAlreadyOpen);
                 }
-                self.view.draft = Some(Draft { anchor });
-                Ok(vec![render(&[ViewSection::Draft])])
+                self.view.draft = Some(Draft {
+                    anchor,
+                    reply_to: None,
+                });
+                self.enter(Focus::Composer);
+                Ok(vec![render(&[ViewSection::Draft, ViewSection::Focus])])
+            }
+            Action::ReplyOpened { thread_id } => {
+                let Some(open) = &self.view.review else {
+                    return Err(CoreError::NoOpenReview);
+                };
+                if self.view.draft.is_some() {
+                    return Err(CoreError::DraftAlreadyOpen);
+                }
+                let root = open
+                    .snapshot
+                    .threads
+                    .iter()
+                    .find(|t| t.id == thread_id)
+                    .and_then(|t| open.snapshot.comments.iter().find(|c| c.id == t.root))
+                    .ok_or(CoreError::UnknownThread(thread_id))?;
+                self.view.draft = Some(Draft {
+                    anchor: root.anchor.clone(),
+                    reply_to: Some(thread_id),
+                });
+                self.enter(Focus::Composer);
+                Ok(vec![render(&[ViewSection::Draft, ViewSection::Focus])])
+            }
+            Action::SetFocus { focus } => {
+                if focus::clamp(&self.view, focus) != focus {
+                    return Err(CoreError::FocusOutOfRange(focus));
+                }
+                self.view.focus = focus;
+                let mut effects = Vec::new();
+                // A focused row outside the viewport scrolls the viewport.
+                if let Focus::Diff { row } = focus
+                    && let Some(open) = &self.view.review
+                    && let Some(f) = &open.open_file
+                    && (row < f.first_row || row > f.last_row)
+                {
+                    let file = FileRef {
+                        repo_id: f.render.repo_id,
+                        path: f.render.path.clone(),
+                    };
+                    let first_row = row.saturating_sub(PAGE_ROWS / 2);
+                    effects.extend(self.viewport(file, first_row, first_row + PAGE_ROWS - 1)?);
+                }
+                effects.push(render(&[ViewSection::Focus]));
+                Ok(effects)
+            }
+            Action::ToggleHelp => {
+                if self.help_open {
+                    self.help_open = false;
+                    self.leave();
+                } else {
+                    self.help_open = true;
+                    self.enter(Focus::Help);
+                }
+                Ok(vec![render(&[ViewSection::Help, ViewSection::Focus])])
             }
             Action::DraftSubmitted { body } => {
                 let Some(review) = &self.view.review else {
@@ -756,15 +941,27 @@ impl ClientCore {
                 self.require_subscribed()?;
                 let review_id = review.snapshot.review.id;
                 let anchor = draft.anchor.clone();
+                let reply_to = draft.reply_to;
                 let comment_id = self.ids.comment_id(self.now);
-                let mut effects = self.mutate(Mutation::AddComment {
-                    review_id,
-                    comment_id,
-                    kind: CommentKind::Note,
-                    anchor,
-                    body,
-                })?;
+                let mutation = match reply_to {
+                    Some(thread_id) => Mutation::Reply {
+                        review_id,
+                        thread_id,
+                        comment_id,
+                        kind: CommentKind::Note,
+                        body,
+                    },
+                    None => Mutation::AddComment {
+                        review_id,
+                        comment_id,
+                        kind: CommentKind::Note,
+                        anchor,
+                        body,
+                    },
+                };
+                let mut effects = self.mutate(mutation)?;
                 self.view.draft = None;
+                self.leave();
                 effects.extend(self.drain_deferred());
                 Ok(effects)
             }
@@ -813,8 +1010,25 @@ impl ClientCore {
                     return Err(CoreError::NoDraft);
                 }
                 self.view.draft = None;
+                self.leave();
                 Ok(self.drain_deferred())
             }
+        }
+    }
+
+    /// Move focus into a modal panel (composer, help), remembering where
+    /// to come back to.
+    fn enter(&mut self, focus: Focus) {
+        if self.focus_return.is_none() {
+            self.focus_return = Some(self.view.focus);
+        }
+        self.view.focus = focus;
+    }
+
+    /// Leave the modal panel; `derive` clamps the restored focus.
+    fn leave(&mut self) {
+        if let Some(f) = self.focus_return.take() {
+            self.view.focus = f;
         }
     }
 
@@ -976,6 +1190,8 @@ impl ClientCore {
         self.committed = None;
         self.pending.clear();
         self.stepper = None;
+        self.focus_return = None;
+        self.help_open = false;
         self.review_closed(effects);
     }
 
@@ -997,6 +1213,8 @@ impl ClientCore {
         self.view.review = Some(OpenReview::new(snapshot));
         self.pending = pending;
         self.rebase();
+        // Keys go to the explorer of the review that just opened.
+        self.view.focus = Focus::Tree { index: 0 };
     }
 
     fn require_subscribed(&self) -> Result<(), CoreError> {
@@ -1241,6 +1459,7 @@ impl ClientCore {
                     ViewSection::Threads,
                     ViewSection::Conversation,
                     ViewSection::Draft,
+                    ViewSection::Focus,
                 ]));
             }
             (InFlight::OpenReview { .. }, StreamItem::TreeSnapshot { snapshot }) => {
@@ -1402,6 +1621,7 @@ impl ClientCore {
                     ViewSection::Threads,
                     ViewSection::Conversation,
                     ViewSection::Draft,
+                    ViewSection::Focus,
                 ]));
                 effects
             }
@@ -1613,7 +1833,7 @@ impl ClientCore {
     fn drain_deferred(&mut self) -> Vec<Effect> {
         let deferred = std::mem::take(&mut self.deferred);
         self.view.pending_refresh = false;
-        let mut sections = vec![ViewSection::Draft];
+        let mut sections = vec![ViewSection::Draft, ViewSection::Focus];
         let mut effects = Vec::new();
         for event in deferred {
             for effect in self.apply_event(event) {
@@ -1631,6 +1851,12 @@ impl ClientCore {
         effects.push(render(&sections));
         effects
     }
+}
+
+/// What `command` would do right now, without doing it. Hosts use this
+/// for menus and tests use it to prove every action is reachable.
+pub fn resolve_command(core: &ClientCore, command: Command) -> Result<Action, NoTarget> {
+    focus::resolve(core, command)
 }
 
 pub(crate) fn render(sections: &[ViewSection]) -> Effect {

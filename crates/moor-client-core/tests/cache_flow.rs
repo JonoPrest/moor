@@ -501,6 +501,8 @@ fn streamed_open_fills_and_pins_the_cache_and_renders_once_at_end() {
             ViewSection::Threads,
             ViewSection::Conversation,
             ViewSection::Draft,
+            ViewSection::Focus, // keys now go to the explorer
+            ViewSection::Hints,
             // tree 1 is the base tree: the explorer shows heads, so no render
             ViewSection::Tree, // tree 2 (derived)
             ViewSection::Tree, // header a.rs (derived)
@@ -548,7 +550,12 @@ fn memory_hit_produces_no_effects_but_a_render() {
     assert!(loads(&effects).is_empty());
     assert_eq!(
         rendered(&effects),
-        vec![ViewSection::Focus, ViewSection::Tree, ViewSection::Diff]
+        vec![
+            ViewSection::Focus,
+            ViewSection::Tree,
+            ViewSection::Diff,
+            ViewSection::Hints
+        ]
     );
     assert_eq!(
         core.view().tree.breadcrumbs,
@@ -559,7 +566,12 @@ fn memory_hit_produces_no_effects_but_a_render() {
     let effects = core.handle(Input::User(Action::CloseFile)).unwrap();
     assert_eq!(
         rendered(&effects),
-        vec![ViewSection::Focus, ViewSection::Tree, ViewSection::Diff]
+        vec![
+            ViewSection::Focus,
+            ViewSection::Tree,
+            ViewSection::Diff,
+            ViewSection::Hints
+        ]
     );
     assert!(!core.cache().is_pinned(&chunk_key("b.rs", 0)));
     assert!(core.cache().is_pinned(&header_key("b.rs")));
@@ -1268,6 +1280,8 @@ fn close_review_releases_pins_and_drops_queued_fetches() {
             ViewSection::Tree,
             ViewSection::Progress,
             ViewSection::Diff,
+            ViewSection::Focus,
+            ViewSection::Hints,
         ]
     );
     assert_eq!(core.content_queued(), 0);
@@ -1424,7 +1438,10 @@ fn prefs_are_loaded_once_on_connect_persisted_on_change_and_re_key_renders() {
     let effects = core.handle(Input::User(Action::Connect)).unwrap();
     assert_eq!(
         loads(&effects),
-        vec![moor_client_core::ViewPrefs::KEY.to_string()]
+        vec![
+            moor_client_core::ViewPrefs::KEY.to_string(),
+            moor_client_core::Keymap::KEY.to_string()
+        ]
     );
     // Stored prefs: split layout, whitespace ignored.
     let stored = moor_client_core::ViewPrefs {

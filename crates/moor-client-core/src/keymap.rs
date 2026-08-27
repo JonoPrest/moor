@@ -1,0 +1,790 @@
+//! Keyboard model (ARCHITECTURE §6.4): a data table mapping
+//! `(Context, KeySeq) → Command`, a chord/sequence parser, and the hint and
+//! help views generated from the table. The UI captures keys and sends
+//! chords; every behaviour lives here so it is identical across hosts.
+//!
+//! A [`Command`] is what a key *means* ("next file"); the focus model
+//! (`focus.rs`) turns it into an [`crate::Action`] with concrete targets.
+
+use std::fmt;
+use std::str::FromStr;
+
+use serde::{Deserialize, Serialize};
+use strum::{Display, EnumIter, EnumString, IntoEnumIterator};
+
+/// Where the user's focus is; decides which bindings apply.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumString, Display,
+)]
+pub enum Context {
+    Global,
+    ReviewList,
+    Tree,
+    Diff,
+    Thread,
+    Composer,
+    CommitStepper,
+    Help,
+}
+
+/// What a key means. Unit-only: targets come from the focus at resolution.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumString, Display,
+)]
+pub enum Command {
+    MoveDown,
+    MoveUp,
+    PageDown,
+    PageUp,
+    GoTop,
+    GoBottom,
+    NextHunk,
+    PrevHunk,
+    NextFile,
+    PrevFile,
+    NextComment,
+    PrevComment,
+    /// Open what is focused: a review, a file, a thread's location.
+    Open,
+    /// Leave the current level: close help, discard a draft, close the
+    /// file, close the review.
+    Back,
+    /// Cycle focus between the panels.
+    NextPanel,
+    ToggleViewed,
+    Comment,
+    Reply,
+    /// Delete the focused thread's root comment (own comments only).
+    Delete,
+    ToggleResolved,
+    FileSearch,
+    ToggleLayout,
+    ToggleWhitespace,
+    ToggleHelp,
+    Connect,
+    Disconnect,
+    /// Fetch the commit list for the focused repo.
+    Commits,
+}
+
+/// A named key that is not a character.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumString, Display,
+)]
+#[strum(serialize_all = "lowercase")]
+pub enum NamedKey {
+    Enter,
+    Esc,
+    Tab,
+    Backspace,
+    Space,
+    Up,
+    Down,
+    Left,
+    Right,
+    PageUp,
+    PageDown,
+    Home,
+    End,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(tag = "type", deny_unknown_fields)]
+pub enum KeyCode {
+    Char { c: char },
+    Named { key: NamedKey },
+}
+
+/// Modifier keys held with a key. Shift is implied by an upper-case
+/// `Char` and only meaningful on named keys.
+// Four independent flags is the domain; a bit set would hide the names.
+#[allow(clippy::struct_excessive_bools)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct Modifiers {
+    pub ctrl: bool,
+    pub alt: bool,
+    pub shift: bool,
+    /// Command on macOS, Super/Windows elsewhere.
+    pub meta: bool,
+}
+
+/// One key press with its modifiers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct KeyChord {
+    pub key: KeyCode,
+    pub mods: Modifiers,
+}
+
+impl KeyChord {
+    #[must_use]
+    pub const fn char(c: char) -> Self {
+        Self {
+            key: KeyCode::Char { c },
+            mods: Modifiers {
+                ctrl: false,
+                alt: false,
+                shift: false,
+                meta: false,
+            },
+        }
+    }
+
+    #[must_use]
+    pub const fn named(key: NamedKey) -> Self {
+        Self {
+            key: KeyCode::Named { key },
+            mods: Modifiers {
+                ctrl: false,
+                alt: false,
+                shift: false,
+                meta: false,
+            },
+        }
+    }
+}
+
+/// Why a chord or sequence text could not be parsed.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum KeyParseError {
+    #[error("empty key sequence")]
+    Empty,
+    #[error("unknown modifier {0:?}")]
+    UnknownModifier(String),
+    #[error("unknown key {0:?}")]
+    UnknownKey(String),
+}
+
+impl fmt::Display for KeyChord {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.mods.ctrl {
+            f.write_str("ctrl+")?;
+        }
+        if self.mods.alt {
+            f.write_str("alt+")?;
+        }
+        if self.mods.shift {
+            f.write_str("shift+")?;
+        }
+        if self.mods.meta {
+            f.write_str("meta+")?;
+        }
+        match self.key {
+            KeyCode::Char { c: ' ' } => f.write_str("space"),
+            KeyCode::Char { c } => write!(f, "{c}"),
+            KeyCode::Named { key } => write!(f, "{key}"),
+        }
+    }
+}
+
+impl FromStr for KeyChord {
+    type Err = KeyParseError;
+
+    /// `ctrl+p`, `shift+enter`, `?`, `g`, `space`. Modifiers are
+    /// case-insensitive; a single character is taken as is.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.is_empty() {
+            return Err(KeyParseError::Empty);
+        }
+        let mut mods = Modifiers::default();
+        let mut parts: Vec<&str> = s.split('+').collect();
+        // A literal '+' key: "ctrl++" splits into ["ctrl", "", ""].
+        let last = if parts.len() >= 2 && parts[parts.len() - 1].is_empty() {
+            parts.pop();
+            parts.pop();
+            "+"
+        } else {
+            parts.pop().unwrap_or_default()
+        };
+        for m in parts {
+            match m.to_ascii_lowercase().as_str() {
+                "ctrl" | "control" | "c" => mods.ctrl = true,
+                "alt" | "option" | "a" => mods.alt = true,
+                "shift" | "s" => mods.shift = true,
+                "meta" | "cmd" | "super" | "win" | "m" => mods.meta = true,
+                other => return Err(KeyParseError::UnknownModifier(other.to_owned())),
+            }
+        }
+        let mut chars = last.chars();
+        let key = match (chars.next(), chars.next()) {
+            (Some(c), None) => KeyCode::Char { c },
+            (Some(_), Some(_)) => KeyCode::Named {
+                key: NamedKey::from_str(&last.to_ascii_lowercase())
+                    .map_err(|_| KeyParseError::UnknownKey(last.to_owned()))?,
+            },
+            (None, _) => return Err(KeyParseError::Empty),
+        };
+        Ok(Self { key, mods })
+    }
+}
+
+/// One or more chords pressed in order (`g g`, `] c`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct KeySeq(Vec<KeyChord>);
+
+impl KeySeq {
+    #[must_use]
+    pub fn single(chord: KeyChord) -> Self {
+        Self(vec![chord])
+    }
+
+    pub fn new(chords: Vec<KeyChord>) -> Result<Self, KeyParseError> {
+        if chords.is_empty() {
+            Err(KeyParseError::Empty)
+        } else {
+            Ok(Self(chords))
+        }
+    }
+
+    #[must_use]
+    pub fn chords(&self) -> &[KeyChord] {
+        &self.0
+    }
+
+    #[must_use]
+    pub fn starts_with(&self, prefix: &[KeyChord]) -> bool {
+        self.0.starts_with(prefix)
+    }
+}
+
+impl fmt::Display for KeySeq {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (i, c) in self.0.iter().enumerate() {
+            if i > 0 {
+                f.write_str(" ")?;
+            }
+            write!(f, "{c}")?;
+        }
+        Ok(())
+    }
+}
+
+impl FromStr for KeySeq {
+    type Err = KeyParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let chords = s
+            .split_whitespace()
+            .map(KeyChord::from_str)
+            .collect::<Result<Vec<_>, _>>()?;
+        Self::new(chords)
+    }
+}
+
+impl Serialize for KeySeq {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for KeySeq {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        s.parse().map_err(serde::de::Error::custom)
+    }
+}
+
+/// One row of the table.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Binding {
+    pub context: Context,
+    pub keys: KeySeq,
+    pub command: Command,
+    /// Shown in the hint bar for its context.
+    pub primary: bool,
+}
+
+/// A user override: same shape as a binding; replaces every default
+/// binding of `command` in `context`. `keys: None` unbinds it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Override {
+    pub context: Context,
+    pub command: Command,
+    pub keys: Option<KeySeq>,
+    #[serde(default)]
+    pub primary: bool,
+}
+
+/// The override file: what the host stores under [`Keymap::KEY`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct Overrides {
+    pub bindings: Vec<Override>,
+}
+
+/// Two bindings that cannot both fire.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Conflict {
+    pub context: Context,
+    pub keys: KeySeq,
+    pub commands: Vec<Command>,
+}
+
+/// The full table plus which rows came from overrides.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Keymap {
+    bindings: Vec<Binding>,
+    overridden: Vec<(Context, Command)>,
+}
+
+/// How a chord sequence matched the table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Lookup {
+    /// Exactly one binding matched.
+    Command(Command),
+    /// Some binding starts with the sequence; wait for more.
+    Prefix,
+    None,
+}
+
+/// `keys!("] c")` parses a sequence literal at table-build time. Only used
+/// on literals in this module, so the parse cannot fail; a bad literal
+/// shows up in `default_table_parses`.
+macro_rules! keys {
+    ($s:literal) => {
+        $s.parse::<KeySeq>()
+            .unwrap_or_else(|_| KeySeq::single(KeyChord::char('\0')))
+    };
+}
+
+impl Keymap {
+    /// Host KV key the overrides live under.
+    pub const KEY: &'static str = "moor/keymap";
+
+    /// The built-in table (§6.4). Vim-style movement plus a few chords.
+    #[must_use]
+    pub fn default_table() -> Self {
+        use Command as C;
+        use Context as X;
+        let b = |context: Context, keys: KeySeq, command: Command, primary: bool| Binding {
+            context,
+            keys,
+            command,
+            primary,
+        };
+        let bindings = vec![
+            // Global
+            b(X::Global, keys!("?"), C::ToggleHelp, true),
+            b(X::Global, keys!("tab"), C::NextPanel, false),
+            b(X::Global, keys!("ctrl+p"), C::FileSearch, true),
+            b(X::Global, keys!("meta+p"), C::FileSearch, false),
+            b(X::Global, keys!("s"), C::ToggleLayout, false),
+            b(X::Global, keys!("w"), C::ToggleWhitespace, false),
+            b(X::Global, keys!("esc"), C::Back, false),
+            b(X::Global, keys!("ctrl+shift+c"), C::Connect, false),
+            b(X::Global, keys!("ctrl+shift+d"), C::Disconnect, false),
+            // Review list
+            b(X::ReviewList, keys!("j"), C::MoveDown, true),
+            b(X::ReviewList, keys!("k"), C::MoveUp, true),
+            b(X::ReviewList, keys!("down"), C::MoveDown, false),
+            b(X::ReviewList, keys!("up"), C::MoveUp, false),
+            b(X::ReviewList, keys!("g g"), C::GoTop, false),
+            b(X::ReviewList, keys!("G"), C::GoBottom, false),
+            b(X::ReviewList, keys!("enter"), C::Open, true),
+            // Tree
+            b(X::Tree, keys!("j"), C::MoveDown, true),
+            b(X::Tree, keys!("k"), C::MoveUp, true),
+            b(X::Tree, keys!("down"), C::MoveDown, false),
+            b(X::Tree, keys!("up"), C::MoveUp, false),
+            b(X::Tree, keys!("g g"), C::GoTop, false),
+            b(X::Tree, keys!("G"), C::GoBottom, false),
+            b(X::Tree, keys!("enter"), C::Open, true),
+            b(X::Tree, keys!("v"), C::ToggleViewed, true),
+            b(X::Tree, keys!("] f"), C::NextFile, false),
+            b(X::Tree, keys!("[ f"), C::PrevFile, false),
+            b(X::Tree, keys!("c"), C::Commits, false),
+            // Diff
+            b(X::Diff, keys!("j"), C::MoveDown, true),
+            b(X::Diff, keys!("k"), C::MoveUp, true),
+            b(X::Diff, keys!("down"), C::MoveDown, false),
+            b(X::Diff, keys!("up"), C::MoveUp, false),
+            b(X::Diff, keys!("ctrl+d"), C::PageDown, false),
+            b(X::Diff, keys!("ctrl+u"), C::PageUp, false),
+            b(X::Diff, keys!("pagedown"), C::PageDown, false),
+            b(X::Diff, keys!("pageup"), C::PageUp, false),
+            b(X::Diff, keys!("g g"), C::GoTop, false),
+            b(X::Diff, keys!("G"), C::GoBottom, false),
+            b(X::Diff, keys!("n"), C::NextHunk, true),
+            b(X::Diff, keys!("p"), C::PrevHunk, true),
+            b(X::Diff, keys!("] f"), C::NextFile, true),
+            b(X::Diff, keys!("[ f"), C::PrevFile, false),
+            b(X::Diff, keys!("] c"), C::NextComment, false),
+            b(X::Diff, keys!("[ c"), C::PrevComment, false),
+            b(X::Diff, keys!("c"), C::Comment, true),
+            b(X::Diff, keys!("v"), C::ToggleViewed, true),
+            b(X::Diff, keys!("enter"), C::Open, false),
+            // Thread
+            b(X::Thread, keys!("j"), C::MoveDown, true),
+            b(X::Thread, keys!("k"), C::MoveUp, true),
+            b(X::Thread, keys!("down"), C::MoveDown, false),
+            b(X::Thread, keys!("up"), C::MoveUp, false),
+            b(X::Thread, keys!("g g"), C::GoTop, false),
+            b(X::Thread, keys!("G"), C::GoBottom, false),
+            b(X::Thread, keys!("enter"), C::Open, true),
+            b(X::Thread, keys!("r"), C::Reply, true),
+            b(X::Thread, keys!("x"), C::ToggleResolved, true),
+            b(X::Thread, keys!("d"), C::Delete, false),
+            // Composer: everything else is text; the host submits.
+            b(X::Composer, keys!("esc"), C::Back, true),
+            // Commit stepper
+            b(X::CommitStepper, keys!("j"), C::MoveDown, true),
+            b(X::CommitStepper, keys!("k"), C::MoveUp, true),
+            b(X::CommitStepper, keys!("down"), C::MoveDown, false),
+            b(X::CommitStepper, keys!("up"), C::MoveUp, false),
+            b(X::CommitStepper, keys!("enter"), C::Open, true),
+            b(X::CommitStepper, keys!("g g"), C::GoTop, false),
+            b(X::CommitStepper, keys!("G"), C::GoBottom, false),
+            // Help
+            b(X::Help, keys!("j"), C::MoveDown, false),
+            b(X::Help, keys!("k"), C::MoveUp, false),
+            b(X::Help, keys!("?"), C::ToggleHelp, true),
+            b(X::Help, keys!("esc"), C::Back, true),
+        ];
+        Self {
+            bindings,
+            overridden: Vec::new(),
+        }
+    }
+
+    /// The default table with `overrides` applied.
+    #[must_use]
+    pub fn with_overrides(overrides: &Overrides) -> Self {
+        let mut map = Self::default_table();
+        for o in &overrides.bindings {
+            map.bindings
+                .retain(|b| !(b.context == o.context && b.command == o.command));
+            if let Some(keys) = &o.keys {
+                map.bindings.push(Binding {
+                    context: o.context,
+                    keys: keys.clone(),
+                    command: o.command,
+                    primary: o.primary,
+                });
+            }
+            map.overridden.push((o.context, o.command));
+        }
+        map
+    }
+
+    #[must_use]
+    pub fn bindings(&self) -> &[Binding] {
+        &self.bindings
+    }
+
+    #[must_use]
+    pub fn is_overridden(&self, context: Context, command: Command) -> bool {
+        self.overridden.contains(&(context, command))
+    }
+
+    /// Bindings that apply in `context`: its own, then Global's.
+    pub fn applicable(&self, context: Context) -> impl Iterator<Item = &Binding> {
+        self.bindings.iter().filter(move |b| {
+            b.context == context || (b.context == Context::Global && context != Context::Global)
+        })
+    }
+
+    /// Match `pressed` against the bindings for `context`. A binding of the
+    /// context itself shadows a Global one with the same keys.
+    #[must_use]
+    pub fn lookup(&self, context: Context, pressed: &[KeyChord]) -> Lookup {
+        let exact = |ctx: Context| {
+            self.bindings
+                .iter()
+                .find(|b| b.context == ctx && b.keys.chords() == pressed)
+                .map(|b| b.command)
+        };
+        if let Some(c) = exact(context) {
+            return Lookup::Command(c);
+        }
+        if context != Context::Global
+            && let Some(c) = exact(Context::Global)
+        {
+            return Lookup::Command(c);
+        }
+        let prefix = self
+            .applicable(context)
+            .any(|b| b.keys.chords().len() > pressed.len() && b.keys.starts_with(pressed));
+        if prefix { Lookup::Prefix } else { Lookup::None }
+    }
+
+    /// Bindings that cannot both fire: same keys in one context, or one
+    /// sequence a prefix of another (the shorter would always win).
+    #[must_use]
+    pub fn conflicts(&self) -> Vec<Conflict> {
+        let mut out: Vec<Conflict> = Vec::new();
+        for ctx in Context::iter() {
+            let rows: Vec<&Binding> = self.bindings.iter().filter(|b| b.context == ctx).collect();
+            for (i, a) in rows.iter().enumerate() {
+                for b in rows.iter().skip(i + 1) {
+                    let clash = a.keys == b.keys
+                        || a.keys.starts_with(b.keys.chords())
+                        || b.keys.starts_with(a.keys.chords());
+                    if !clash || a.command == b.command {
+                        continue;
+                    }
+                    let keys = if a.keys.chords().len() <= b.keys.chords().len() {
+                        a.keys.clone()
+                    } else {
+                        b.keys.clone()
+                    };
+                    match out.iter_mut().find(|c| c.context == ctx && c.keys == keys) {
+                        Some(c) => {
+                            for cmd in [a.command, b.command] {
+                                if !c.commands.contains(&cmd) {
+                                    c.commands.push(cmd);
+                                }
+                            }
+                        }
+                        None => out.push(Conflict {
+                            context: ctx,
+                            keys,
+                            commands: vec![a.command, b.command],
+                        }),
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// The hint bar for `context`: primary bindings of the context, then
+    /// Global's.
+    #[must_use]
+    pub fn hints(&self, context: Context) -> Vec<Hint> {
+        let mut out: Vec<Hint> = self
+            .applicable(context)
+            .filter(|b| b.primary)
+            .map(|b| Hint {
+                keys: b.keys.to_string(),
+                command: b.command,
+                label: label(b.command).to_owned(),
+            })
+            .collect();
+        out.sort_by_key(|h| h.command == Command::ToggleHelp); // `?` last
+        out
+    }
+
+    /// The help overlay for `context`: all its bindings grouped by
+    /// context (its own first, then Global), plus conflicts.
+    #[must_use]
+    pub fn help(&self, context: Context) -> HelpView {
+        let group = |ctx: Context| HelpGroup {
+            context: ctx,
+            entries: self
+                .bindings
+                .iter()
+                .filter(|b| b.context == ctx)
+                .map(|b| HelpEntry {
+                    keys: b.keys.to_string(),
+                    command: b.command,
+                    label: label(b.command).to_owned(),
+                    primary: b.primary,
+                    overridden: self.is_overridden(ctx, b.command),
+                })
+                .collect(),
+        };
+        let mut groups = vec![group(context)];
+        if context != Context::Global {
+            groups.push(group(Context::Global));
+        }
+        HelpView {
+            groups,
+            conflicts: self.conflicts(),
+        }
+    }
+}
+
+/// Human label for a command, shown in hints and help.
+#[must_use]
+pub fn label(command: Command) -> &'static str {
+    match command {
+        Command::MoveDown => "down",
+        Command::MoveUp => "up",
+        Command::PageDown => "page down",
+        Command::PageUp => "page up",
+        Command::GoTop => "top",
+        Command::GoBottom => "bottom",
+        Command::NextHunk => "next hunk",
+        Command::PrevHunk => "previous hunk",
+        Command::NextFile => "next file",
+        Command::PrevFile => "previous file",
+        Command::NextComment => "next comment",
+        Command::PrevComment => "previous comment",
+        Command::Open => "open",
+        Command::Back => "back",
+        Command::NextPanel => "next panel",
+        Command::ToggleViewed => "mark viewed",
+        Command::Comment => "comment",
+        Command::Reply => "reply",
+        Command::Delete => "delete",
+        Command::ToggleResolved => "resolve",
+        Command::FileSearch => "find file",
+        Command::ToggleLayout => "split/unified",
+        Command::ToggleWhitespace => "whitespace",
+        Command::ToggleHelp => "help",
+        Command::Connect => "connect",
+        Command::Disconnect => "disconnect",
+        Command::Commits => "commits",
+    }
+}
+
+/// One hint-bar entry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Hint {
+    pub keys: String,
+    pub command: Command,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HelpEntry {
+    pub keys: String,
+    pub command: Command,
+    pub label: String,
+    pub primary: bool,
+    pub overridden: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HelpGroup {
+    pub context: Context,
+    pub entries: Vec<HelpEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HelpView {
+    pub groups: Vec<HelpGroup>,
+    pub conflicts: Vec<Conflict>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chords_and_sequences_round_trip_through_text() {
+        for text in [
+            "ctrl+p",
+            "g g",
+            "] c",
+            "shift+enter",
+            "?",
+            "space",
+            "meta+p",
+            "ctrl++",
+        ] {
+            let seq: KeySeq = text.parse().unwrap();
+            assert_eq!(seq.to_string(), text, "{text}");
+        }
+        assert_eq!("".parse::<KeySeq>(), Err(KeyParseError::Empty));
+        assert!(matches!(
+            "hyper+x".parse::<KeySeq>(),
+            Err(KeyParseError::UnknownModifier(_))
+        ));
+        assert!(matches!(
+            "banana".parse::<KeySeq>(),
+            Err(KeyParseError::UnknownKey(_))
+        ));
+        let json = serde_json::to_string(&"] f".parse::<KeySeq>().unwrap()).unwrap();
+        assert_eq!(json, "\"] f\"");
+    }
+
+    #[test]
+    fn default_table_parses_and_has_no_conflicts() {
+        let map = Keymap::default_table();
+        for b in map.bindings() {
+            assert_ne!(
+                b.keys.chords()[0],
+                KeyChord::char('\0'),
+                "unparsable literal for {:?}",
+                b.command
+            );
+        }
+        assert_eq!(map.conflicts(), Vec::new());
+    }
+
+    #[test]
+    fn lookup_shadows_global_and_reports_prefixes() {
+        let map = Keymap::default_table();
+        let g = KeyChord::char('g');
+        assert_eq!(map.lookup(Context::Diff, &[g]), Lookup::Prefix);
+        assert_eq!(
+            map.lookup(Context::Diff, &[g, g]),
+            Lookup::Command(Command::GoTop)
+        );
+        assert_eq!(
+            map.lookup(Context::Diff, &[KeyChord::char('?')]),
+            Lookup::Command(Command::ToggleHelp)
+        );
+        assert_eq!(
+            map.lookup(Context::Diff, &[KeyChord::char('z')]),
+            Lookup::None
+        );
+        // `c` is Comment in Diff but Commits in Tree.
+        assert_eq!(
+            map.lookup(Context::Diff, &[KeyChord::char('c')]),
+            Lookup::Command(Command::Comment)
+        );
+        assert_eq!(
+            map.lookup(Context::Tree, &[KeyChord::char('c')]),
+            Lookup::Command(Command::Commits)
+        );
+    }
+
+    #[test]
+    fn overrides_replace_unbind_and_surface_conflicts() {
+        let overrides: Overrides = serde_json::from_str(
+            r#"{"bindings":[
+                {"context":"Diff","command":"Comment","keys":"x","primary":true},
+                {"context":"Diff","command":"NextHunk","keys":null},
+                {"context":"Diff","command":"PrevHunk","keys":"j"}
+            ]}"#,
+        )
+        .unwrap();
+        let map = Keymap::with_overrides(&overrides);
+        assert_eq!(
+            map.lookup(Context::Diff, &[KeyChord::char('x')]),
+            Lookup::Command(Command::Comment)
+        );
+        assert_eq!(
+            map.lookup(Context::Diff, &[KeyChord::char('c')]),
+            Lookup::None
+        );
+        assert_eq!(
+            map.lookup(Context::Diff, &[KeyChord::char('n')]),
+            Lookup::None
+        );
+        assert!(map.is_overridden(Context::Diff, Command::Comment));
+        let conflicts = map.conflicts();
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].keys.to_string(), "j");
+        assert_eq!(
+            conflicts[0].commands,
+            vec![Command::MoveDown, Command::PrevHunk]
+        );
+        // Round trip of the override file.
+        let text = serde_json::to_string(&overrides).unwrap();
+        assert_eq!(serde_json::from_str::<Overrides>(&text).unwrap(), overrides);
+    }
+
+    #[test]
+    fn help_is_non_empty_in_every_context_and_hints_are_primary_only() {
+        let map = Keymap::default_table();
+        for ctx in Context::iter() {
+            let help = map.help(ctx);
+            assert!(!help.groups[0].entries.is_empty(), "{ctx}");
+            let hints = map.hints(ctx);
+            assert!(!hints.is_empty(), "{ctx}");
+            assert!(hints.iter().all(|h| !h.label.is_empty()));
+            assert_eq!(hints.last().unwrap().command, Command::ToggleHelp);
+        }
+    }
+}
