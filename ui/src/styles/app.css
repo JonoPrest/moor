@@ -135,6 +135,27 @@
   .btn {
     @apply rounded border border-border px-2 py-0.5 text-xs;
   }
+  .btn-primary {
+    @apply border-accent text-accent;
+  }
+  .btn-ghost {
+    @apply border-transparent text-muted;
+  }
+  .badge {
+    @apply ml-2 rounded bg-panel px-1 text-xs text-muted;
+  }
+  .badge-add {
+    color: var(--color-diff-add-fg);
+  }
+  .badge-remove {
+    color: var(--color-diff-remove-fg);
+  }
+  .badge-accent {
+    color: var(--color-accent);
+  }
+  .text-input {
+    @apply w-full rounded border border-border bg-bg px-2 py-1 text-sm;
+  }
   .empty {
     @apply px-3 py-2 text-xs text-muted;
   }

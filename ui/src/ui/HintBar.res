@@ -19,7 +19,7 @@ let make = (~hints: array<View.Hint.t>, ~connection: View.ConnectionView.t, ~pro
     {hints
     ->Array.map(h =>
       <span key={h.keys ++ h.label} className="hint">
-        <kbd> {React.string(h.keys)} </kbd> {React.string(" " ++ h.label)}
+        <UI.Kbd keys=h.keys /> {React.string(" " ++ h.label)}
       </span>
     )
     ->React.array}

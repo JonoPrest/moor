@@ -8,8 +8,7 @@ let make = (~stepper: CommitStepper.t, ~focus: Focus.t, ~dispatch: Action.t => u
   | CommitStepper({index}) => Some(index)
   | _ => None
   }
-  <section className="stepper panel">
-    <header className="panel-header"> {React.string("Commits")} </header>
+  <UI.Panel title="Commits">
     <ol role="list">
       {stepper.commits
       ->Array.mapWithIndex((c, i) => {
@@ -29,5 +28,5 @@ let make = (~stepper: CommitStepper.t, ~focus: Focus.t, ~dispatch: Action.t => u
       })
       ->React.array}
     </ol>
-  </section>
+  </UI.Panel>
 }

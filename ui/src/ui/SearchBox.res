@@ -5,8 +5,8 @@ open View
 
 @react.component
 let make = (~search: SearchView.t, ~dispatch: Action.t => unit) => {
-  let onKeyDown = (ev: ReactEvent.Keyboard.t) => {
-    switch ReactEvent.Keyboard.key(ev) {
+  let onKey = key =>
+    switch key {
     | "Escape" => dispatch(FileSearch({query: None}))
     | "Enter" =>
       switch search.hits[0] {
@@ -15,16 +15,13 @@ let make = (~search: SearchView.t, ~dispatch: Action.t => unit) => {
       }
     | _ => ()
     }
-    ReactEvent.Keyboard.stopPropagation(ev)
-  }
   <div className="search-box panel" role="search">
-    <input
-      className="search-input"
+    <UI.TextInput
       autoFocus=true
       placeholder="file…"
       value=search.query
-      onChange={ev => dispatch(FileSearch({query: Some(ReactEvent.Form.target(ev)["value"])}))}
-      onKeyDown
+      onChange={q => dispatch(FileSearch({query: Some(q)}))}
+      onKey
     />
     <ul className="search-hits">
       {search.hits

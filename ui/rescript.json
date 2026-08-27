@@ -4,6 +4,11 @@
     {
       "dir": "src",
       "subdirs": true
+    },
+    {
+      "dir": "__tests__",
+      "subdirs": true,
+      "type": "dev"
     }
   ],
   "package-specs": [
@@ -29,5 +34,6 @@
   "warnings": {
     "number": "+A-4-9-102-3",
     "error": "+A-4-9-102-3"
-  }
+  },
+  "dev-dependencies": []
 }

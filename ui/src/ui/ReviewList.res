@@ -8,10 +8,9 @@ let make = (~reviews: array<Domain.Review.t>, ~focus: Focus.t, ~dispatch: Action
   | ReviewList({index}) => Some(index)
   | _ => None
   }
-  <section className="review-list panel">
-    <header className="panel-header"> {React.string("Reviews")} </header>
+  <UI.Panel title="Reviews">
     {Array.length(reviews) == 0
-      ? <p className="empty"> {React.string("No reviews yet.")} </p>
+      ? <UI.Empty text="No reviews yet." />
       : <ul role="list">
           {reviews
           ->Array.mapWithIndex((r, i) => {
@@ -26,12 +25,12 @@ let make = (~reviews: array<Domain.Review.t>, ~focus: Focus.t, ~dispatch: Action
                 onClick={_ => dispatch(SetFocus({focus: Focus.ReviewList({index: i})}))}
                 onDoubleClick={_ => dispatch(OpenReview({reviewId: r.id}))}>
                 <span className="review-title"> {React.string(r.title)} </span>
-                <span className={"review-status review-" ++ status}> {React.string(status)} </span>
+                <UI.Badge text=status tone={r.status == Open ? Accent : Neutral} />
               </li>,
               focusedIndex == Some(i),
             )
           })
           ->React.array}
         </ul>}
-  </section>
+  </UI.Panel>
 }

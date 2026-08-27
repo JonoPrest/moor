@@ -31,9 +31,7 @@ module Item = {
           <span className="thread-author"> {React.string(authorName(thread.author))} </span>
           <span className="thread-place"> {React.string(placeText(thread.place))} </span>
           {thread.replies > 0
-            ? <span className="thread-replies">
-                {React.string(Int.toString(thread.replies) ++ " replies")}
-              </span>
+            ? <UI.Badge text={Int.toString(thread.replies) ++ " replies"} />
             : React.null}
           {thread.pending ? <span className="thread-pending"> {React.string("…")} </span> : React.null}
         </div>
@@ -56,10 +54,9 @@ let make = (
   | Thread({index}) => Some(index)
   | _ => None
   }
-  <section className="threads panel">
-    <header className="panel-header"> {React.string(title)} </header>
+  <UI.Panel title>
     {Array.length(threads) == 0
-      ? <p className="empty"> {React.string("No threads.")} </p>
+      ? <UI.Empty text="No threads." />
       : <ul role="list">
           {threads
           ->Array.mapWithIndex((t, i) =>
@@ -72,5 +69,5 @@ let make = (
           )
           ->React.array}
         </ul>}
-  </section>
+  </UI.Panel>
 }

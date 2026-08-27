@@ -65,3 +65,28 @@ for the design and `docs/PLAN.md` for the milestones before making changes.
 - Transports (`unix`, `ws`, `mcp`, `moor-cli`) are thin adapters over `Core`; never add a
   capability to a transport that `Core` doesn't have.
 - Run before pushing: `cargo fmt`, `cargo clippy -D warnings`, `cargo nextest run`.
+
+## UI (`ui/`, ReScript + React)
+
+Modelled on the Envio UI (`~/code/ui`), which is the reference for how to work with
+ReScript and React here.
+
+- ReScript 12 with warnings as errors (`+A-4-9-102-3`): no dead variables, no `_foo` to
+  silence them — remove the code instead.
+- **`@schema` on the type**, never a hand-written `S.object` (only for recursion or
+  generics). One `module X = { @schema type t = ... }` per Rust type; `@as("snake_case")`
+  on fields, `@tag("type")` + `@as("Variant") Variant({})` for payload enums (wrap in
+  `@@warning("-27")`), `@s.null option<_>` for serde `Option`. The boundary test over
+  `fixtures/` proves the shape.
+- **Design system in `src/ui/UI.res`**: shared primitives (`Panel`, `Button`, `Kbd`,
+  `Badge`, `Box`, `TextInput`) take configuration props (`~kind`, `~tone`, `~gap`), never a
+  `className` escape hatch. Extend a primitive with a variant rather than adding a parallel
+  one. The render model's semantic classes (`row-*`, `cell-*`, `span-*`) are the exception
+  and live in `src/styles/app.css` (§6.6).
+- **Tests are written in ReScript** (`__tests__/*_test.res`, run by vitest through the
+  bindings in `__tests__/Vitest.res` / `TestingLibrary.res`); the fixture-driven harness
+  tests (`tests/*.test.ts`) stay in TypeScript because they only read files and mock modules.
+- Components never touch Sury or IPC: `Core.res` is the only door (dispatch / key /
+  subscribe / attach).
+- Run before pushing: `pnpm rescript`, `pnpm test`, `pnpm vite build`.
+

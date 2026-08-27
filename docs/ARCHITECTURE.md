@@ -342,7 +342,7 @@ The UI is a renderer over `ViewModel` and a source of `Action`s. It never talks 
 
 ### 6.3 Type bridge
 
-The Rust `ViewModel`/`Action`/`Event` types and their ReScript counterparts are both **hand-written**. The ReScript side uses Sury (`rescript-schema`) schemas, which give static types plus a validator; the adapters parse at the boundary so drift is caught at runtime, not deep in a component. Rust enums use `#[serde(tag = "type")]` so they map to Sury tagged unions.
+The Rust `ViewModel`/`Action`/`Event` types and their ReScript counterparts are both **hand-written types**; on the ReScript side the Sury (`rescript-schema`) schema is derived from the type by the `@schema` ppx (`@as` for field names, `@tag("type")` for enums, `@s.null` for `Option`), which gives static types plus a validator. The adapters parse at the boundary so drift is caught at runtime, not deep in a component. Rust enums use `#[serde(tag = "type")]` so they map to Sury tagged unions — and, because `@tag` also names the runtime tag field, ReScript values have exactly the wire shape.
 
 Drift is prevented by a **boundary test**: Rust emits a JSON fixture for every type/variant (serialize, and check it deserializes back); a ReScript test parses each fixture with the Sury schema and re-serializes it, and the outputs must match byte-for-byte after canonicalisation. Both directions are covered, so a protocol change that isn't mirrored fails CI.
 

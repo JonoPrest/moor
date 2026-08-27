@@ -25,8 +25,10 @@ Written 2026-08-27 at the end of the session that finished Milestone 3 and
 | client fixtures | `crates/moor-client-core-fixtures` → `fixtures/client/` | one example per type/variant; boundary test consumes them |
 | host loop | `crates/moor-client-host` | transport + KV + ticks + patches; tested against a real daemon |
 | two-client simulator | `crates/moor-test-support/src/sim.rs` | `Sim` drives N cores against a daemon model |
-| UI scaffold | `ui/` | ReScript 11 + React 19 + Vite 8 + Tailwind v4; `src/styles/app.css` tokens + semantic classes |
-| UI schemas | `ui/src/protocol/*.res`, `ui/src/view/*.res` | hand-written Sury (rescript-schema 9.3.4) schemas; `Registry` / `ClientRegistry` by Rust type name |
+| UI scaffold | `ui/` | ReScript 12 + React 19 + Vite 8 + Tailwind v4; `src/styles/app.css` tokens + semantic classes; conventions follow the Envio UI (`~/code/ui`), see AGENTS.md |
+| UI schemas | `ui/src/protocol/*.res`, `ui/src/view/*.res` | `@schema`-derived Sury schemas (rescript-schema 9.3.0-rescript12.0 + ppx 9.0.1); `Registry` / `ClientRegistry` by Rust type name |
+| UI components | `ui/src/ui/*.res`, `ui/src/App.res` | design system `UI.res`; Row/DiffView (virtualized)/Tree/Threads/Composer/Stepper/HintBar/HelpOverlay/SearchBox; key capture in `App` |
+| UI tests | `ui/__tests__/*_test.res` (ReScript, vitest+jsdom), `ui/tests/*.test.ts` (fixture harness) | 380 checks |
 | UI adapters | `ui/src/core/{Core,CoreTauri,CoreWasm}.res` | `dispatch` / `key` / `subscribe` / `attach`; patches applied by `Core.Store` |
 
 ## The host ↔ UI contract (4.2/4.3)
@@ -49,10 +51,15 @@ Written 2026-08-27 at the end of the session that finished Milestone 3 and
   socket path from `moor-config`, KV at `app_data_dir()/kv.redb`,
   `IdSeed` from `getrandom`. CI would need the libs installed (the `ui`
   job does not build it).
-- 4.4 screens and 4.5 keyboard UI: not started. `App.res` is a placeholder.
-  Components render from `View.viewModel`; `Keys.ofBrowser` normalises
-  `KeyboardEvent` → chord for `core.key`. Playwright against the Tauri
-  dev build is impossible here for the same reason as above.
+- 4.4 screens: first pass done (review list, tree, virtualized diff with
+  placeholders, composer, threads/conversation, stepper, hint bar, help,
+  search). Not yet: expanders (`Row::Expander` renders but has no action —
+  the protocol has no expand request), suggestions with apply, commit
+  panel body/times, "viewed" collapse of files. Playwright against the
+  Tauri dev build is impossible here (no Tauri libs).
+- 4.5 keyboard UI: key capture, hint bar and help overlay are in;
+  scroll-into-view for focus is done for the diff (virtualizer) but not for
+  tree/thread lists.
 - `CoreWasm` is a stub that refuses actions (PLAN "Later").
 - Edit-comment through the composer (an "edit draft") is not modelled;
   `Action::EditComment` takes the text directly.
@@ -71,6 +78,8 @@ Written 2026-08-27 at the end of the session that finished Milestone 3 and
 - The daemon replays `Since::After` events *before* answering
   `Subscribe`; the core accepts events while `Connecting` once its
   `Subscribe` is out.
-- Sury: rescript-schema 9.5 uses ReScript 12 syntax; 9.3.4 is the last
-  version that compiles on ReScript 11. The package is namespaced:
-  `-open RescriptSchema` in `rescript.json`.
+- Sury: the `-rescript12.0` line of rescript-schema is the one for
+  ReScript 12 (9.5.x also uses 12 syntax but the reference pins 9.3.0);
+  the package is namespaced: `-open RescriptSchema` in `rescript.json`.
+  `pnpm-workspace.yaml` must allow the build scripts of `rescript`,
+  `rescript-schema-ppx` and `@rescript/react` (pnpm 11 `allowBuilds`).

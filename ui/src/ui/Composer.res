@@ -40,10 +40,8 @@ let make = (~draft: View.Draft.t, ~pendingRefresh: bool, ~dispatch: Action.t => 
       onKeyDown
     />
     <div className="composer-actions">
-      <button className="btn" onClick={_ => submit()}> {React.string("Submit ⌘⏎")} </button>
-      <button className="btn" onClick={_ => dispatch(DraftDiscarded({}))}>
-        {React.string("Discard ⎋")}
-      </button>
+      <UI.Button label="Submit ⌘⏎" kind=Primary onClick={submit} />
+      <UI.Button label="Discard ⎋" onClick={() => dispatch(DraftDiscarded({}))} />
     </div>
   </div>
 }

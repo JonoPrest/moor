@@ -13,19 +13,16 @@ let make = (~help: HelpView.t, ~dispatch: Action.t => unit) => {
     <div className="help-panel panel">
       <header className="panel-header">
         {React.string("Keyboard")}
-        <button className="btn" onClick={_ => dispatch(ToggleHelp({}))}> {React.string("close ⎋")} </button>
+        <UI.Button label="close ⎋" kind=Ghost onClick={() => dispatch(ToggleHelp({}))} />
       </header>
-      <input
-        className="help-search"
-        placeholder="filter…"
+      <UI.TextInput
         value=query
-        onChange={ev => setQuery(_ => ReactEvent.Form.target(ev)["value"])}
-        onKeyDown={ev => {
-          if ReactEvent.Keyboard.key(ev) == "Escape" {
+        placeholder="filter…"
+        onChange={q => setQuery(_ => q)}
+        onKey={key =>
+          if key == "Escape" {
             dispatch(ToggleHelp({}))
-          }
-          ReactEvent.Keyboard.stopPropagation(ev)
-        }}
+          }}
       />
       {help.groups
       ->Array.map(g =>
@@ -37,7 +34,7 @@ let make = (~help: HelpView.t, ~dispatch: Action.t => unit) => {
               ->Array.filter(matches)
               ->Array.map(e =>
                 <tr key={e.keys ++ e.label} className={e.overridden ? "help-overridden" : ""}>
-                  <td> <kbd> {React.string(e.keys)} </kbd> </td>
+                  <td> <UI.Kbd keys=e.keys /> </td>
                   <td> {React.string(e.label)} </td>
                   <td> {React.string(e.primary ? "★" : "")} </td>
                 </tr>
@@ -54,7 +51,7 @@ let make = (~help: HelpView.t, ~dispatch: Action.t => unit) => {
             {help.conflicts
             ->Array.map(c =>
               <div key={(c.context :> string) ++ c.keys}>
-                <kbd> {React.string(c.keys)} </kbd>
+                <UI.Kbd keys=c.keys />
                 {React.string(" in " ++ (c.context :> string) ++ ": ")}
                 {React.string(c.commands->Array.map(cmd => (cmd :> string))->Array.join(", "))}
               </div>
