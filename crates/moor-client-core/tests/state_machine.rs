@@ -513,7 +513,12 @@ fn events_update_only_what_they_touch() {
         .unwrap();
     assert_eq!(
         rendered(&effects),
-        vec![ViewSection::Diff, ViewSection::Threads, ViewSection::Draft]
+        vec![
+            ViewSection::Diff,
+            ViewSection::Threads,
+            ViewSection::Draft,
+            ViewSection::Conversation,
+        ]
     );
     assert!(core.view().review.is_none());
     assert_eq!(
