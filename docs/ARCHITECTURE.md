@@ -214,6 +214,8 @@ Two tiers, both LRU with a **byte budget**:
 
 Both budgets are configurable. Because keys are OIDs, on-disk entries never need invalidation; the disk tier is only ever trimmed by LRU or cleared explicitly.
 
+Cache entries are render **chunks**, not whole files (§4.6). Chunks of the open file are pinned while it is open; on close they return to normal LRU.
+
 ### 5.2 Optimistic mutations
 
 1. Client generates the ULID, applies the event locally (marked `pending`), emits `Send`.

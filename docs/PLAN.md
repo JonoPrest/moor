@@ -60,11 +60,11 @@ Goal: headless engine. Given repos on disk, create workspaces/reviews, produce r
 - Tests with `moor-test-support` repos: each `RefSpec` variant resolves; renames detected; working-tree snapshot reflects unstaged edits and untracked files; binary files flagged.
 
 ### 1.5 Diff + render model (`moor_review_core::render`)
-- `render_file(old: Option<&[u8]>, new: Option<&[u8]>, lang, opts) -> FileRender`.
-- Pipeline: `imara-diff` hunks → pair `-`/`+` into `Modified` → intra-line ranges → context collapsing with `Expander` → syntect spans.
-- `render_blob(bytes, lang) -> FileRender` for explorer views (all `Context` rows).
-- Content-keyed disk cache `(old_oid, new_oid, opts_hash) -> FileRender`.
-- Tests: `insta` snapshots for a corpus (add/delete/modify/rename/whitespace-only/binary/huge/no-trailing-newline/CRLF); invariants via `proptest`: every source line appears exactly once on its side, line numbers monotonic, spans within cell bounds, `Expander.hidden` sums to the omitted count; unified and split derive from the same rows.
+- `render_file(old: Option<&[u8]>, new: Option<&[u8]>, lang, opts) -> (FileRenderHeader, impl Iterator<RenderChunk>)`.
+- Pipeline: `imara-diff` hunks → pair `-`/`+` into `Modified` → intra-line ranges → context collapsing with `Expander` → syntect spans (whole-file pass, size-capped) → split into ~500-row chunks.
+- `render_blob(bytes, lang)` for explorer views (all `Context` rows), same chunked shape.
+- Content-keyed disk cache `(old_oid, new_oid, opts_hash, chunk_index)`; header cached separately.
+- Tests: `insta` snapshots for a corpus (add/delete/modify/rename/whitespace-only/binary/huge/no-trailing-newline/CRLF); invariants via `proptest`: every source line appears exactly once on its side, line numbers monotonic, spans within cell bounds, `Expander.hidden` sums to the omitted count, chunks concatenate to `total_rows` with no gaps; unified and split derive from the same rows. Benchmark: 10k-line and 100k-line files, header returned < 50 ms, first chunk < 200 ms; above the cap `highlighted == false`.
 
 ### 1.6 Reviews (`moor_review_core::review`)
 - `create_review(workspace, NonEmpty<ReviewTarget>)`, `resolve_targets(review) -> ResolvedTargets` (emits `ReviewTargetsResolved` only when OIDs change), `files(review) -> merged tree`, `commits(review)` for commit stepping, `file_render(review, repo, path)`.
@@ -95,7 +95,8 @@ Goal: `moord` running, multiple clients connected, events streaming, MCP working
 ### 2.2 Unix socket server
 - tokio; one task per connection; `Core` behind `Arc<RwLock>` or actor (decide during impl; prefer actor with a command channel so `Core` stays single-threaded and simple).
 - `subscribe(scope, since)` → replay from store then live tail via broadcast.
-- Tests: two clients, one writes, other receives with correct `Seq`; reconnect with `since` receives exactly the gap; slow subscriber doesn't block others.
+- Render work leaves the actor: `file_render` resolves blobs on the actor, then runs the pure render on `spawn_blocking`; header sent as soon as the diff is done, chunks streamed as `ServerMsg::RenderChunk` with the requested index first.
+- Tests: two clients, one writes, other receives with correct `Seq`; reconnect with `since` receives exactly the gap; slow subscriber doesn't block others; a 100k-line render in flight does not delay an `add_comment` from another client (latency assertion).
 
 ### 2.3 File watcher
 - `notify` per repo; debounce; triggers `resolve_targets` for working-tree reviews.
@@ -130,11 +131,12 @@ Goal: sans-I/O client that models everything the UI needs; proven under races.
 - Tests: every `Input` in every state either transitions or is rejected with a typed error; no panics (`proptest` over random input sequences).
 
 ### 3.2 Cache (§5.1)
-- `ContentCache` keyed by OID / `(base_oid, head_oid, opts)`; two tiers, each LRU with a byte budget.
-- Memory tier in `client-core`; open-review entries pinned. Disk tier via `Persist`/`Load` effects to the host KV; memory eviction writes through; memory miss → `Load` from disk → only then `Send` to daemon.
+- `ContentCache` keyed by OID / `(base_oid, head_oid, opts, chunk_index)`; entries are headers and chunks, never whole files; two tiers, each LRU with a byte budget.
+- Memory tier in `client-core`; open-review headers and open-file chunks pinned. Disk tier via `Persist`/`Load` effects to the host KV; memory eviction writes through; memory miss → `Load` from disk → only then `Send` to daemon.
 - Host KV implementations: Tauri = redb file under the app data dir; browser = IndexedDB; TUI = redb file.
-- Prefetch policy: on review open request all `FileRender`s; on file open request sibling entries.
-- Tests: memory hit → no effects; memory miss + disk hit → exactly one `Load`, no `Send`; full miss → `Load` then `Send`, concurrent misses deduped; eviction respects both budgets and writes through; pinned entries survive pressure; restart simulation (new `ClientCore` over same KV) serves previous review without `Send`.
+- Prefetch policy: on review open request all headers and the first chunk of each file; on file open request viewport chunk then ±2; on tree navigation request sibling entries.
+- Viewport tracking: `Action::Viewport { file, first_row, last_row }` drives chunk requests; requests for chunks no longer near the viewport are cancelled (not sent if still queued).
+- Tests: memory hit → no effects; memory miss + disk hit → exactly one `Load`, no `Send`; full miss → `Load` then `Send`, concurrent misses deduped; eviction respects both budgets and writes through; pinned entries survive pressure; restart simulation (new `ClientCore` over same KV) serves previous review without `Send`; scrolling a 100k-line file requests only viewport ±2 chunks and never more than N in flight.
 
 ### 3.3 Optimistic mutations
 - `PendingEvent` list; local apply; on own `CommittedEvent` → drop pending; on foreign → rebase.
@@ -173,12 +175,12 @@ Goal: usable desktop app.
 ### 4.4 Screens
 - Review list / create (any base vs any head, multi-repo).
 - Merged file tree with progress.
-- Diff view: virtualized rows, unified/split, expanders, inline comment composer, threads, outdated collapse.
+- Diff view: virtualized rows over `total_rows` (`@tanstack/react-virtual`), chunk fetch by index with placeholder rows, unified/split, expanders, inline comment composer, threads, outdated collapse.
 - File explorer over any ref with file-level comments.
 - Review conversation panel (review-level comments, agent request cards).
 - Commit stepper.
 - Suggestions with apply.
-- Tests: ReScript component tests for row rendering (each `Row` variant), composer state; Playwright smoke against the Tauri dev build for the core flow.
+- Tests: ReScript component tests for row rendering (each `Row` variant), placeholder → chunk swap, composer state; Playwright smoke against the Tauri dev build for the core flow, including opening a 10k-line file and scrolling end-to-end without a long task > 100 ms.
 
 ### 4.5 Polish
 - Keyboard nav, "changes pending" indicator, remote connection UX (ssh target picker).
