@@ -1685,6 +1685,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "moor-client-core"
+version = "0.1.0"
+dependencies = [
+ "moor-protocol",
+ "proptest",
+ "serde",
+ "serde_json",
+ "strum",
+ "thiserror",
+]
+
+[[package]]
 name = "moor-config"
 version = "0.1.0"
 dependencies = [
