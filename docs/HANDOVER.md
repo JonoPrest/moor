@@ -42,6 +42,21 @@ Written 2026-08-27 at the end of the session that finished Milestone 3 and
   (`View.empty` + `ViewPatch.apply`). Every patch stayed under 64 KB in
   the host test (100k-line file scrolled end to end) and the adapter test.
 
+## What landed after 4.3
+
+- ReScript 12 + `@schema` ppx migration of every schema; `UI.res` design
+  system; tests in ReScript (see AGENTS.md "UI").
+- Screens: review list with create form (any base vs head, multi-repo,
+  `RefSpecText` parser), tree with viewed checkboxes and repo display
+  names, virtualized diff with placeholders and viewed-collapse, composer,
+  threads with suggestion apply, conversation, commit stepper with commit
+  panel, hint bar, help overlay, fuzzy search, key capture, focus
+  scroll-into-view.
+- Core: workspaces listed on subscribe (reviews = union of all
+  workspaces), `Action::{ListWorkspaces, CreateReview, ApplySuggestion}`,
+  `Command::{Refresh, ApplySuggestion}`, `StepperCommit` details,
+  `DiffView.viewed`, `ThreadView.suggestion`.
+
 ## Not done / blocked
 
 - **Tauri wrapper crate** (`moor-client-tauri`): needs `webkit2gtk-4.1`
@@ -51,15 +66,14 @@ Written 2026-08-27 at the end of the session that finished Milestone 3 and
   socket path from `moor-config`, KV at `app_data_dir()/kv.redb`,
   `IdSeed` from `getrandom`. CI would need the libs installed (the `ui`
   job does not build it).
-- 4.4 screens: first pass done (review list, tree, virtualized diff with
-  placeholders, composer, threads/conversation, stepper, hint bar, help,
-  search). Not yet: expanders (`Row::Expander` renders but has no action —
-  the protocol has no expand request), suggestions with apply, commit
-  panel body/times, "viewed" collapse of files. Playwright against the
-  Tauri dev build is impossible here (no Tauri libs).
-- 4.5 keyboard UI: key capture, hint bar and help overlay are in;
-  scroll-into-view for focus is done for the diff (virtualizer) but not for
-  tree/thread lists.
+- 4.4: expanders — `Row::Expander` renders but has no action; the
+  protocol has no "expand hidden lines" request (a render with more
+  context, or `BlobRender` rows spliced in, would be needed). Playwright
+  against the Tauri dev build is impossible here (no Tauri libs), so the
+  smoke/keyboard-only flows exist only as component tests.
+- 4.6: remote connection UX (ssh target picker) is a host concern —
+  `moor-client-host` takes a socket path; the picker belongs in the Tauri
+  wrapper with `moor-config` contexts.
 - `CoreWasm` is a stub that refuses actions (PLAN "Later").
 - Edit-comment through the composer (an "edit draft") is not modelled;
   `Action::EditComment` takes the text directly.
