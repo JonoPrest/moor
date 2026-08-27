@@ -1257,6 +1257,12 @@ enum_fixture!(
         Request::GetReview {
             review_id: review_id()
         },
+        Request::ReviewSnapshot {
+            review_id: review_id()
+        },
+        Request::ListFiles {
+            review_id: review_id()
+        },
         Request::OpenReview {
             review_id: review_id(),
             opts: RenderOpts::default()
@@ -1327,6 +1333,16 @@ enum_fixture!(
             reviews: vec![review()?]
         },
         Response::Review { review: review()? },
+        Response::ReviewSnapshot {
+            snapshot: review_snapshot()?
+        },
+        Response::Files {
+            files: vec![FileChange {
+                repo_id: repo_id(),
+                path: path("src/lib.rs")?,
+                kind: modified()
+            }]
+        },
         Response::Resolved {
             targets: resolved_targets()?,
             changed: true

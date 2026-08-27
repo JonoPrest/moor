@@ -50,6 +50,14 @@ pub async fn single(
             let commits = daemon.read(move |c| c.commits(review_id, repo_id)).await?;
             Ok(Response::Commits { commits })
         }
+        Request::ReviewSnapshot { review_id } => {
+            let snapshot = daemon.read(move |c| c.review_snapshot(review_id)).await?;
+            Ok(Response::ReviewSnapshot { snapshot })
+        }
+        Request::ListFiles { review_id } => {
+            let files = daemon.read(move |c| c.files(review_id)).await?;
+            Ok(Response::Files { files })
+        }
         Request::TreeSnapshot { repo_id, ref_spec } => {
             let snapshot = daemon
                 .read(move |c| c.tree_snapshot(repo_id, &ref_spec))

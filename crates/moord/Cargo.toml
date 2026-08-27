@@ -29,6 +29,7 @@ gethostname.workspace = true
 notify.workspace = true
 tokio-tungstenite = "0.30.0"
 futures-util = "0.3.34"
+fastrand = "2.5.0"
 
 [dev-dependencies]
 moor-test-support.workspace = true

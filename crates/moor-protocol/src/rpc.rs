@@ -9,8 +9,9 @@ use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter};
 
 use crate::domain::{
-    Anchor, Author, Comment, CommentKind, CommitInfo, RefSpec, RenderOpts, ResolvedTarget, Review,
-    ReviewStatus, ReviewTarget, Thread, TreeDelta, TreeSnapshot, ViewedMark, Workspace,
+    Anchor, Author, Comment, CommentKind, CommitInfo, FileChange, RefSpec, RenderOpts,
+    ResolvedTarget, Review, ReviewStatus, ReviewTarget, Thread, TreeDelta, TreeSnapshot,
+    ViewedMark, Workspace,
 };
 use crate::events::Event;
 use crate::ids::{
@@ -223,6 +224,15 @@ pub enum Request {
     GetReview {
         review_id: ReviewId,
     },
+    /// Review, resolved targets, threads, comments and viewed marks, without
+    /// rendering anything. What `OpenReview` streams first.
+    ReviewSnapshot {
+        review_id: ReviewId,
+    },
+    /// Changed files across the review's targets, with rename detection.
+    ListFiles {
+        review_id: ReviewId,
+    },
     /// Streamed: `ReviewSnapshot` → `TreeSnapshot` per target ref →
     /// `FileRenderHeader` per changed file → first `RenderChunk` per file.
     OpenReview {
@@ -289,6 +299,8 @@ impl Request {
             Request::ListWorkspaces
             | Request::ListReviews { .. }
             | Request::GetReview { .. }
+            | Request::ReviewSnapshot { .. }
+            | Request::ListFiles { .. }
             | Request::ResolveTargets { .. }
             | Request::ListCommits { .. }
             | Request::TreeSnapshot { .. }
@@ -325,6 +337,12 @@ pub enum Response {
     },
     Review {
         review: Review,
+    },
+    ReviewSnapshot {
+        snapshot: ReviewSnapshot,
+    },
+    Files {
+        files: Vec<FileChange>,
     },
     /// The targets after resolution (whether or not they changed).
     Resolved {

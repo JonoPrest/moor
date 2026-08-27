@@ -1624,6 +1624,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "moor-mcp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "gethostname",
+ "moor-protocol",
+ "moor-review-core",
+ "moor-test-support",
+ "moord",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "moor-protocol"
 version = "0.1.0"
 dependencies = [
@@ -1679,6 +1700,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "fastrand",
  "futures-util",
  "gethostname",
  "moor-protocol",

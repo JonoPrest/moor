@@ -107,7 +107,13 @@ impl Daemon {
         }))
     }
 
+    /// Direct access to the core, for tests and diagnostics. Mutations must
+    /// still go through [`Self::write`].
     #[must_use]
+    pub fn core(&self) -> &Core {
+        &self.core
+    }
+
     pub fn schema(&self) -> SchemaVersion {
         SchemaVersion::CURRENT
     }

@@ -1,0 +1,34 @@
+[package]
+name = "moor-mcp"
+version = "0.1.0"
+edition = "2024"
+description = "MCP (Model Context Protocol) stdio server that proxies to a moord daemon"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "moor-mcp"
+path = "src/main.rs"
+
+[dependencies]
+moor-protocol = { workspace = true }
+moord = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+clap = { workspace = true }
+gethostname = { workspace = true }
+
+[dev-dependencies]
+moor-review-core = { workspace = true }
+moor-test-support = { workspace = true }
+tempfile = { workspace = true }
+tokio-util.workspace = true
+
+[lints]
+workspace = true

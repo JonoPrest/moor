@@ -18,6 +18,7 @@ pub mod connection;
 pub mod daemon;
 pub mod dispatch;
 pub mod handshake;
+pub mod ids;
 pub mod server;
 pub mod transport;
 pub mod watcher;
