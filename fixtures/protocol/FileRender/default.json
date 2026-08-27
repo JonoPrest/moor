@@ -1,0 +1,133 @@
+{
+  "chunks": [
+    {
+      "index": 0,
+      "rows": [
+        {
+          "text": "@@ -8,4 +8,5 @@ fn main()",
+          "type": "HunkHeader"
+        },
+        {
+          "left": {
+            "changed": [],
+            "line_no": 8,
+            "spans": [
+              {
+                "class": "Keyword",
+                "range": {
+                  "end": 3,
+                  "start": 0
+                }
+              }
+            ],
+            "text": "fn main() {"
+          },
+          "right": {
+            "changed": [],
+            "line_no": 8,
+            "spans": [
+              {
+                "class": "Keyword",
+                "range": {
+                  "end": 3,
+                  "start": 0
+                }
+              }
+            ],
+            "text": "fn main() {"
+          },
+          "type": "Context"
+        },
+        {
+          "left": {
+            "changed": [
+              {
+                "end": 9,
+                "start": 8
+              }
+            ],
+            "line_no": 9,
+            "spans": [
+              {
+                "class": "Keyword",
+                "range": {
+                  "end": 3,
+                  "start": 0
+                }
+              }
+            ],
+            "text": "    let x = 1;"
+          },
+          "right": {
+            "changed": [
+              {
+                "end": 14,
+                "start": 8
+              }
+            ],
+            "line_no": 9,
+            "spans": [
+              {
+                "class": "Keyword",
+                "range": {
+                  "end": 3,
+                  "start": 0
+                }
+              }
+            ],
+            "text": "    let x: u32 = 1;"
+          },
+          "type": "Modified"
+        },
+        {
+          "right": {
+            "changed": [],
+            "line_no": 10,
+            "spans": [
+              {
+                "class": "Keyword",
+                "range": {
+                  "end": 3,
+                  "start": 0
+                }
+              }
+            ],
+            "text": "    let y = 2;"
+          },
+          "type": "Added"
+        },
+        {
+          "dir": "Down",
+          "hidden": 40,
+          "type": "Expander"
+        }
+      ]
+    }
+  ],
+  "header": {
+    "content": {
+      "additions": 12,
+      "chunk_count": 3,
+      "chunk_rows": 500,
+      "deletions": 4,
+      "highlighted": true,
+      "total_rows": 1203,
+      "type": "Text"
+    },
+    "lang": "Rust",
+    "opts": {
+      "context_lines": 3,
+      "ignore_whitespace": false
+    },
+    "path": "src/lib.rs",
+    "repo_id": "01HF7YAT000000000000000002",
+    "target": {
+      "change": {
+        "new": "a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5",
+        "old": "838485868788898a8b8c8d8e8f90919293949596",
+        "type": "Modified"
+      },
+      "type": "Diff"
+    }
+  }
+}

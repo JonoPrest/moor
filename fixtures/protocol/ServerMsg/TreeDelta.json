@@ -1,0 +1,21 @@
+{
+  "delta": {
+    "added": [],
+    "changed": [
+      {
+        "kind": {
+          "executable": false,
+          "oid": "1e1f202122232425262728292a2b2c2d2e2f3031",
+          "size": 4100,
+          "type": "File"
+        },
+        "path": "src/lib.rs"
+      }
+    ],
+    "from_root": "aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbd",
+    "removed": [],
+    "repo_id": "01HF7YAT000000000000000002",
+    "to_root": "0708090a0b0c0d0e0f101112131415161718191a"
+  },
+  "type": "TreeDelta"
+}

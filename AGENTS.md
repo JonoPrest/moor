@@ -30,11 +30,28 @@ for the design and `docs/PLAN.md` for the milestones before making changes.
   ReScript Sury schemas; the boundary round-trip test enforces both directions.
 - `moor-client-core` behaviour under races is tested with the two-client simulator.
 
+## Style (from review)
+
+- **Lift shared fields out of enums.** If every variant carries the same field, it belongs on
+  an outer struct; the enum holds only what differs (`ResolvedRef { tree, source }`, not
+  `Commit { tree, .. } | WorkingTree { tree, .. }` plus a `tree()` accessor).
+- **Unit-only enums are bare strings on the wire** (`"Open"`), not `{"type":"Open"}`. Only
+  payload-carrying enums get `tag = "type"`.
+- **No panics outside tests.** Library code (including fixture builders and xtask helpers)
+  returns `Result`; `expect`/`unwrap` are allowed only in `#[cfg(test)]` modules and `tests/`,
+  which other files cannot reach. An `&str` argument is untrusted until a type has validated it.
+- **Document macros.** Every `macro_rules!` has a doc comment saying what it expands to and
+  why it exists; readers should not have to expand it mentally.
+- **Placeholder data is neutral.** Fixtures and tests use invented names (`ada@example.com`),
+  never real people or paths from a contributor's machine.
+- **Say what the underlying system stores.** When a field's precision or shape is dictated by
+  git/redb/etc., the doc comment says so (e.g. git offsets are whole minutes).
+
 ## Conventions
 
 - `moor-protocol` and `moor-client-core` must stay wasm-safe: no tokio, std I/O, threads,
   `Instant`, or non-`js` `rand`. CI checks `--target wasm32-unknown-unknown`.
-- All serde enums are `#[serde(tag = "type")]` with `deny_unknown_fields`.
+- Serde enums with payloads are `#[serde(tag = "type")]` with `deny_unknown_fields`; unit-only enums serialise as bare PascalCase strings.
 - Transports (`unix`, `ws`, `mcp`, `moor-cli`) are thin adapters over `Core`; never add a
   capability to a transport that `Core` doesn't have.
 - Run before pushing: `cargo fmt`, `cargo clippy -D warnings`, `cargo nextest run`.

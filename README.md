@@ -10,7 +10,7 @@ A daemon-backed code review tool. Comments are *moored* to content (blobs), not 
 
 ## Status
 
-Design phase. No code yet beyond a Cargo stub.
+Milestone 1.1–1.2 done: Cargo workspace, CI, `moor-protocol` (all wire types + JSON fixtures), `moor-test-support` (real-git `RepoBuilder`). Next: 1.3 event store.
 
 ## Read
 

@@ -223,6 +223,40 @@ TreeDelta    { from_root, to_root, added: [TreeEntry], removed: [path], changed:
 
 Encoding is an isolated layer; the Rust↔Rust hop may move to capnproto/flatbuffers later if measured to matter. JSON is the fixed contract between `moor-client-core` and the UI.
 
+### 4.9 Versioning and evolution
+
+Two independent versions, both typed in `moor-protocol::version`.
+
+**Wire protocol — `ProtocolVersion` (semver string, e.g. `"0.1.0"`).**
+
+- Every frame is an `Envelope { v: ProtocolVersion, msg }`, so the version is on each message,
+  not only at handshake. One socket/port serves all versions; the version selects how the
+  daemon *serialises*, not where the client connects.
+- Handshake: the client's first frame is `Hello { client_id, protocol, client: BuildInfo }`.
+  The daemon answers `Welcome { protocol, daemon, schema, upgrade }` — `protocol` is the
+  version all following frames use — or `Rejected { UnsupportedProtocol { requested, supported } }`
+  and closes.
+- Compatibility rule: same `major`, daemon `minor >= client minor`. Minor bumps are additive
+  (new variants/fields); the daemon serialises responses at the client's requested minor so a
+  strict (`deny_unknown_fields`) older client never sees fields it doesn't know. Major bumps
+  are never bridged silently.
+- Deprecation path: a daemon may keep serving an old minor for a time and attach
+  `Welcome.upgrade: UpgradeNotice { latest, message }`; clients surface it. Once dropped, the
+  handshake is rejected with the supported list, so the error is specific and actionable.
+- A frame whose `v` differs from the negotiated version is answered with `VersionMismatch`.
+- Bumping: any change to a fixture under `fixtures/protocol/` requires bumping
+  `ProtocolVersion::CURRENT` (minor if additive, major otherwise); CI diffs fixtures.
+
+**Store schema — `SchemaVersion` (monotonic integer).**
+
+- Stamped in the redb `meta` table on creation. `SchemaVersion::CURRENT` is what this build
+  writes.
+- On open: equal → proceed; older → run migrations forward in one transaction per step and
+  restamp; newer → refuse to open with a clear error (a newer `moord` wrote this; upgrade).
+- Events are stored as JSON with a per-event `schema` tag, so the event log itself migrates by
+  re-serialisation, and materialised views can always be rebuilt from the migrated log.
+- The daemon reports `schema` in `Welcome` for diagnostics only; clients never depend on it.
+
 ## 5. Client core (sans-I/O)
 
 `moor-client-core` is a pure state machine. It performs no I/O; the host injects everything.
@@ -374,6 +408,7 @@ Suspected bottlenecks with a ready solution, deliberately **not** built until a 
 | 11 | MCP transport | stdio shim proxying to daemon first; direct ws later |
 | 12 | Multi-repo review UI | merged tree with repo roots (§5.6) |
 | 14 | Highlighter | syntect |
+| 15 | Evolution | semver `ProtocolVersion` negotiated in `Hello`/`Welcome`, on every `Envelope`; integer `SchemaVersion` in redb `meta` with forward-only migrations (§4.9) |
 
 ### Deferred
 

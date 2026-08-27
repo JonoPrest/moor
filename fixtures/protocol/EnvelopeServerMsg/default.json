@@ -1,0 +1,13 @@
+{
+  "msg": {
+    "daemon": {
+      "name": "moord",
+      "version": "0.1.0"
+    },
+    "protocol": "0.1.0",
+    "schema": 1,
+    "type": "Welcome",
+    "upgrade": null
+  },
+  "v": "0.1.0"
+}

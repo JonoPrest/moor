@@ -1,0 +1,11 @@
+{
+  "invoked_by": {
+    "machine": "laptop",
+    "name": "ada"
+  },
+  "model": "claude-fable-5",
+  "name": "claude-code",
+  "session_id": "sess_01",
+  "type": "Agent",
+  "via": "Mcp"
+}

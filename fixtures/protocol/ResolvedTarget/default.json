@@ -1,0 +1,19 @@
+{
+  "base": {
+    "source": {
+      "oid": "1f202122232425262728292a2b2c2d2e2f303132",
+      "type": "Commit"
+    },
+    "tree": "8b8c8d8e8f909192939495969798999a9b9c9d9e"
+  },
+  "head": {
+    "source": {
+      "dirty": [
+        "src/lib.rs"
+      ],
+      "type": "WorkingTree"
+    },
+    "tree": "aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbd"
+  },
+  "repo_id": "01HF7YAT000000000000000002"
+}

@@ -1,0 +1,12 @@
+{
+  "id": 1,
+  "request": {
+    "opts": {
+      "context_lines": 3,
+      "ignore_whitespace": false
+    },
+    "review_id": "01HF7YATZ80000000000000004",
+    "type": "OpenReview"
+  },
+  "type": "Request"
+}

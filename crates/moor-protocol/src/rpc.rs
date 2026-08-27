@@ -1,0 +1,439 @@
+//! Client ⇄ daemon messages. See `docs/ARCHITECTURE.md` §4.8.
+//!
+//! One `ClientMsg::Request` gets either a single `ServerMsg::Response`, or a
+//! sequence of `ServerMsg::StreamItem` terminated by `ServerMsg::StreamEnd`,
+//! or a `ServerMsg::Error`. Which one is determined by [`Request::shape`].
+//! Events arrive unsolicited on subscribed connections.
+
+use serde::{Deserialize, Serialize};
+use strum::{EnumDiscriminants, EnumIter};
+
+use crate::domain::Comment;
+use crate::domain::{
+    Anchor, CommentKind, CommitInfo, RefSpec, RenderOpts, ResolvedTarget, Review, ReviewStatus,
+    ReviewTarget, Thread, TreeDelta, TreeSnapshot, ViewedMark, Workspace,
+};
+use crate::events::Event;
+use crate::ids::{
+    BlobOid, ClientId, ClientSeq, CommentId, RepoId, RequestId, ReviewId, Seq, ThreadId,
+    WorkspaceId,
+};
+use crate::invariants::{NonEmpty, RepoPath};
+use crate::render::{ChunkIndex, FileRenderHeader, RenderChunk};
+use crate::version::{BuildInfo, ProtocolVersion, SchemaVersion, UpgradeNotice};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumDiscriminants)]
+#[strum_discriminants(name(ClientMsgKind), derive(EnumIter, Hash))]
+#[serde(tag = "type", deny_unknown_fields)]
+pub enum ClientMsg {
+    /// First message on a connection. States the protocol version the client
+    /// speaks; the daemon answers `Welcome` or `Rejected`.
+    Hello {
+        client_id: ClientId,
+        protocol: ProtocolVersion,
+        client: BuildInfo,
+    },
+    Request {
+        id: RequestId,
+        request: Request,
+    },
+    /// Stop a streaming request early. Best effort; a `StreamEnd` still follows.
+    Cancel {
+        id: RequestId,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumDiscriminants)]
+#[strum_discriminants(name(ServerMsgKind), derive(EnumIter, Hash))]
+#[serde(tag = "type", deny_unknown_fields)]
+pub enum ServerMsg {
+    /// Handshake accepted. `protocol` is the version all following frames
+    /// use; `upgrade` is set when the client is behind but still served.
+    Welcome {
+        protocol: ProtocolVersion,
+        daemon: BuildInfo,
+        schema: SchemaVersion,
+        upgrade: Option<UpgradeNotice>,
+    },
+    /// Handshake refused; the daemon closes the connection after this.
+    Rejected {
+        error: RpcError,
+    },
+    Response {
+        id: RequestId,
+        response: Response,
+    },
+    StreamItem {
+        id: RequestId,
+        item: StreamItem,
+    },
+    StreamEnd {
+        id: RequestId,
+    },
+    Error {
+        id: RequestId,
+        error: RpcError,
+    },
+    /// Broadcast to every subscriber whose scope matches.
+    Event {
+        event: Event,
+    },
+    /// Working-tree change for a subscribed ref.
+    TreeDelta {
+        delta: TreeDelta,
+    },
+}
+
+/// Whether a request answers with one `Response` or a stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ResponseShape {
+    Single,
+    Stream,
+}
+
+/// Where a subscription starts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumDiscriminants)]
+#[strum_discriminants(name(SinceKind), derive(EnumIter, Hash))]
+#[serde(tag = "type", deny_unknown_fields)]
+pub enum Since {
+    /// Fresh client: no replay; the response carries the current `Seq`.
+    Now,
+    /// Reconnect: replay everything after this `Seq`, then tail.
+    After { seq: Seq },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, EnumDiscriminants)]
+#[strum_discriminants(name(SubscribeScopeKind), derive(EnumIter, Hash))]
+#[serde(tag = "type", deny_unknown_fields)]
+pub enum SubscribeScope {
+    All,
+    Workspace {
+        workspace_id: WorkspaceId,
+    },
+    Review {
+        review_id: ReviewId,
+    },
+    /// Only `ReviewRequested` events addressed to this agent name.
+    AwaitingAgent {
+        agent: String,
+    },
+}
+
+/// A mutation submitted by a client. Author is taken from the connection,
+/// `client_seq` lets the client match its optimistic copy.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumDiscriminants)]
+#[strum_discriminants(name(MutationKind), derive(EnumIter, Hash))]
+#[serde(tag = "type", deny_unknown_fields)]
+pub enum Mutation {
+    CreateWorkspace {
+        workspace_id: WorkspaceId,
+        name: String,
+    },
+    RenameWorkspace {
+        workspace_id: WorkspaceId,
+        name: String,
+    },
+    AttachRepo {
+        workspace_id: WorkspaceId,
+        repo_id: RepoId,
+        path: String,
+        display_name: String,
+    },
+    DetachRepo {
+        workspace_id: WorkspaceId,
+        repo_id: RepoId,
+    },
+    CreateReview {
+        review_id: ReviewId,
+        workspace_id: WorkspaceId,
+        title: String,
+        targets: NonEmpty<ReviewTarget>,
+    },
+    UpdateReview {
+        review_id: ReviewId,
+        title: String,
+        status: ReviewStatus,
+    },
+    DeleteReview {
+        review_id: ReviewId,
+    },
+    /// Starts a new thread. `comment_id` doubles as the thread id.
+    AddComment {
+        review_id: ReviewId,
+        comment_id: CommentId,
+        kind: CommentKind,
+        anchor: Anchor,
+        body: String,
+    },
+    Reply {
+        review_id: ReviewId,
+        thread_id: ThreadId,
+        comment_id: CommentId,
+        kind: CommentKind,
+        body: String,
+    },
+    EditComment {
+        review_id: ReviewId,
+        comment_id: CommentId,
+        body: String,
+    },
+    DeleteComment {
+        review_id: ReviewId,
+        comment_id: CommentId,
+    },
+    ResolveThread {
+        review_id: ReviewId,
+        thread_id: ThreadId,
+    },
+    UnresolveThread {
+        review_id: ReviewId,
+        thread_id: ThreadId,
+    },
+    /// Human-only; rejected with `RpcError::Forbidden` for agents.
+    MarkViewed {
+        review_id: ReviewId,
+        repo_id: RepoId,
+        path: RepoPath,
+    },
+    UnmarkViewed {
+        review_id: ReviewId,
+        repo_id: RepoId,
+        path: RepoPath,
+    },
+    RequestReview {
+        review_id: ReviewId,
+        agent: String,
+        note: String,
+    },
+    ApplySuggestion {
+        review_id: ReviewId,
+        comment_id: CommentId,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumDiscriminants)]
+#[strum_discriminants(name(RequestKind), derive(EnumIter, Hash))]
+#[serde(tag = "type", deny_unknown_fields)]
+pub enum Request {
+    ListWorkspaces,
+    ListReviews {
+        workspace_id: WorkspaceId,
+    },
+    GetReview {
+        review_id: ReviewId,
+    },
+    /// Streamed: `ReviewSnapshot` → `TreeSnapshot` per target ref →
+    /// `FileRenderHeader` per changed file → first `RenderChunk` per file.
+    OpenReview {
+        review_id: ReviewId,
+        opts: RenderOpts,
+    },
+    /// Re-resolve targets now (e.g. after a commit). Emits
+    /// `ReviewTargetsResolved` only if something changed.
+    ResolveTargets {
+        review_id: ReviewId,
+    },
+    ListCommits {
+        review_id: ReviewId,
+        repo_id: RepoId,
+    },
+    TreeSnapshot {
+        repo_id: RepoId,
+        #[serde(rename = "ref")]
+        ref_spec: RefSpec,
+    },
+    /// Streamed: header, then chunks starting at `first_chunk`.
+    FileRender {
+        review_id: ReviewId,
+        repo_id: RepoId,
+        path: RepoPath,
+        opts: RenderOpts,
+        first_chunk: ChunkIndex,
+    },
+    /// Streamed: header, then chunks starting at `first_chunk`.
+    BlobRender {
+        repo_id: RepoId,
+        path: RepoPath,
+        blob_oid: BlobOid,
+        first_chunk: ChunkIndex,
+    },
+    /// A single chunk of a render already known from a header.
+    RenderChunk {
+        repo_id: RepoId,
+        path: RepoPath,
+        target: crate::render::RenderTarget,
+        opts: RenderOpts,
+        index: ChunkIndex,
+    },
+    Subscribe {
+        scope: SubscribeScope,
+        since: Since,
+    },
+    Unsubscribe {
+        scope: SubscribeScope,
+    },
+    Mutate {
+        client_seq: ClientSeq,
+        mutation: Mutation,
+    },
+}
+
+impl Request {
+    #[must_use]
+    pub fn shape(&self) -> ResponseShape {
+        match self {
+            Request::OpenReview { .. }
+            | Request::FileRender { .. }
+            | Request::BlobRender { .. } => ResponseShape::Stream,
+            Request::ListWorkspaces
+            | Request::ListReviews { .. }
+            | Request::GetReview { .. }
+            | Request::ResolveTargets { .. }
+            | Request::ListCommits { .. }
+            | Request::TreeSnapshot { .. }
+            | Request::RenderChunk { .. }
+            | Request::Subscribe { .. }
+            | Request::Unsubscribe { .. }
+            | Request::Mutate { .. } => ResponseShape::Single,
+        }
+    }
+}
+
+/// Materialised state of a review for a fresh client. Never a log replay.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReviewSnapshot {
+    pub review: Review,
+    pub resolved: Option<NonEmpty<ResolvedTarget>>,
+    pub threads: Vec<Thread>,
+    pub comments: Vec<Comment>,
+    pub viewed: Vec<ViewedMark>,
+    /// The log position this snapshot reflects; subscribe `After` it.
+    pub seq: Seq,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumDiscriminants)]
+#[strum_discriminants(name(ResponseKind), derive(EnumIter, Hash))]
+#[serde(tag = "type", deny_unknown_fields)]
+pub enum Response {
+    Workspaces {
+        workspaces: Vec<Workspace>,
+    },
+    Reviews {
+        reviews: Vec<Review>,
+    },
+    Review {
+        review: Review,
+    },
+    /// The targets after resolution (whether or not they changed).
+    Resolved {
+        targets: NonEmpty<ResolvedTarget>,
+        changed: bool,
+    },
+    Commits {
+        commits: Vec<CommitInfo>,
+    },
+    TreeSnapshot {
+        snapshot: TreeSnapshot,
+    },
+    RenderChunk {
+        chunk: RenderChunk,
+    },
+    /// Position from which live events will flow.
+    Subscribed {
+        seq: Seq,
+    },
+    Unsubscribed,
+    /// The committed form of a mutation. The same event is also broadcast.
+    Committed {
+        event: Event,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumDiscriminants)]
+#[strum_discriminants(name(StreamItemKind), derive(EnumIter, Hash))]
+#[serde(tag = "type", deny_unknown_fields)]
+pub enum StreamItem {
+    ReviewSnapshot {
+        snapshot: ReviewSnapshot,
+    },
+    TreeSnapshot {
+        snapshot: TreeSnapshot,
+    },
+    Header {
+        header: FileRenderHeader,
+    },
+    Chunk {
+        repo_id: RepoId,
+        path: RepoPath,
+        chunk: RenderChunk,
+    },
+}
+
+/// What kind of entity was not found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter)]
+pub enum EntityKind {
+    Workspace,
+    Repo,
+    Review,
+    Comment,
+    Thread,
+    Ref,
+    Path,
+    Blob,
+    Chunk,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumDiscriminants)]
+#[strum_discriminants(name(RpcErrorKind), derive(EnumIter, Hash))]
+#[serde(tag = "type", deny_unknown_fields)]
+pub enum RpcError {
+    NotFound {
+        kind: EntityKind,
+        id: String,
+    },
+    Invalid {
+        reason: String,
+    },
+    /// The author is not allowed to do this (e.g. an agent marking viewed).
+    Forbidden {
+        reason: String,
+    },
+    /// A `Since::After` older than the retained log.
+    SeqTooOld {
+        oldest: Seq,
+    },
+    Cancelled,
+    /// The client's `Hello.protocol` cannot be served by this daemon.
+    UnsupportedProtocol {
+        requested: ProtocolVersion,
+        supported: Vec<ProtocolVersion>,
+    },
+    /// A frame arrived with a different `v` than was negotiated.
+    VersionMismatch {
+        negotiated: ProtocolVersion,
+        received: ProtocolVersion,
+    },
+    Internal {
+        message: String,
+    },
+}
+
+/// Sections of the client `ViewModel` that a render delta may touch. The
+/// payload lives in `moor-client-core`; the section names are protocol so the
+/// UI's schema and the core agree on them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter)]
+pub enum ViewSection {
+    Connection,
+    ReviewList,
+    Tree,
+    Diff,
+    Threads,
+    Conversation,
+    CommitStepper,
+    Progress,
+    Focus,
+    Hints,
+    Help,
+    Draft,
+}

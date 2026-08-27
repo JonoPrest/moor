@@ -1,0 +1,31 @@
+{
+  "entries": [
+    {
+      "kind": {
+        "executable": false,
+        "oid": "c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4",
+        "size": 1267,
+        "type": "File"
+      },
+      "path": "README.md"
+    },
+    {
+      "kind": {
+        "oid": "d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaeb",
+        "type": "Dir"
+      },
+      "path": "src"
+    },
+    {
+      "kind": {
+        "executable": false,
+        "oid": "a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5",
+        "size": 4096,
+        "type": "File"
+      },
+      "path": "src/lib.rs"
+    }
+  ],
+  "repo_id": "01HF7YAT000000000000000002",
+  "root_oid": "aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbd"
+}

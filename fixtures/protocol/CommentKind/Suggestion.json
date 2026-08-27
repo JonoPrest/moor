@@ -1,0 +1,4 @@
+{
+  "patch": "@@ -1 +1 @@\n-a\n+b\n",
+  "type": "Suggestion"
+}

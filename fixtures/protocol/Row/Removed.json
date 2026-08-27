@@ -1,0 +1,17 @@
+{
+  "left": {
+    "changed": [],
+    "line_no": 9,
+    "spans": [
+      {
+        "class": "Keyword",
+        "range": {
+          "end": 3,
+          "start": 0
+        }
+      }
+    ],
+    "text": "    let x = 1;"
+  },
+  "type": "Removed"
+}

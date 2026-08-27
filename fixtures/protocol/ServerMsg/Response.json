@@ -1,0 +1,8 @@
+{
+  "id": 1,
+  "response": {
+    "seq": 42,
+    "type": "Subscribed"
+  },
+  "type": "Response"
+}

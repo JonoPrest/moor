@@ -43,6 +43,7 @@ Goal: headless engine. Given repos on disk, create workspaces/reviews, produce r
 - Render model: `Row`, `Cell`, `Span`, `FileRender`, `DiffSummary`.
 - RPC: `ClientMsg`, `ServerMsg`, `Request`/`Response` per method, `SubscribeScope`, `OpenReviewItem` stream items, `ReviewSnapshot`, `ViewDelta` sections.
 - All `#[serde(tag = "type")]`, `deny_unknown_fields`.
+- Versioning (§4.9): `ProtocolVersion`, `SchemaVersion`, `Envelope<T>`, `Hello`/`Welcome`/`Rejected`, `UnsupportedProtocol`/`VersionMismatch` errors, `UpgradeNotice`.
 - **Fixtures**: `cargo xtask fixtures` writes `fixtures/protocol/<Type>/<variant>.json` for every variant (a `Fixtures` trait implemented per type; a test asserts every enum variant has a fixture via exhaustive match).
 - Tests: serde round-trip per fixture; `insta` snapshot of every fixture so wire changes are visible in review; `proptest` round-trip for IDs/ranges.
 
@@ -51,7 +52,8 @@ Goal: headless engine. Given repos on disk, create workspaces/reviews, produce r
 - `Store::append(NewEvent) -> CommittedEvent` assigns `Seq` atomically and updates views in the same txn.
 - `Store::replay_from(Seq) -> impl Iterator<CommittedEvent>`.
 - `Store::rebuild_views()` from log; startup verifies `meta.view_seq == last_seq` or rebuilds.
-- Tests: append/read; views match a fold over the log (`proptest`: random event sequences, compare `rebuild_views` vs incremental); reopen after drop preserves everything; tombstoned review excluded from listings; concurrent appenders get strictly increasing `Seq`.
+- `meta.schema_version` stamped on create; `Store::open` runs `migrations: [fn(&WriteTxn)]` forward from the stored version, refuses newer with `StoreError::SchemaTooNew { found, supported }`. Each stored event carries its `SchemaVersion`.
+- Tests: open a store stamped `CURRENT + 1` → `SchemaTooNew`; a store stamped `0` with a fixture log migrates to `CURRENT` and replays identically; append/read; views match a fold over the log (`proptest`: random event sequences, compare `rebuild_views` vs incremental); reopen after drop preserves everything; tombstoned review excluded from listings; concurrent appenders get strictly increasing `Seq`.
 
 ### 1.4 Git engine (`moor_review_core::git`)
 - `Repo::open(path)`, `resolve(RefSpec) -> ResolvedRef`, `tree(CommitOid)`, `blob(BlobOid)`, `commits_between(base, head) -> [CommitInfo]` (full message body, author/committer signatures with times).
@@ -91,8 +93,9 @@ Exit criteria: all above green; `cargo check --target wasm32-unknown-unknown -p 
 Goal: `moord` running, multiple clients connected, events streaming, MCP working.
 
 ### 2.1 Transport framing
-- `codec` module: length-prefixed JSON frames over `AsyncRead/Write`; `ClientMsg`/`ServerMsg` mux with request ids.
-- Tests: framing round-trip, partial reads, oversized frame rejected, interleaved requests answered by id.
+- `codec` module: length-prefixed JSON frames over `AsyncRead/Write`, each an `Envelope`; `ClientMsg`/`ServerMsg` mux with request ids.
+- Handshake typestate: `AwaitingHello → Negotiated { protocol }`; `Hello` with an unservable version → `Rejected { UnsupportedProtocol }` + close; served-but-old minor → `Welcome.upgrade`; post-handshake frame with a different `v` → `VersionMismatch`.
+- Tests: framing round-trip, partial reads, oversized frame rejected, interleaved requests answered by id; handshake table (same version, older minor, newer minor, other major); every response `Envelope.v` equals the negotiated version.
 
 ### 2.2 Unix socket server
 - tokio; one task per connection; `Core` behind `Arc<RwLock>` or actor (decide during impl; prefer actor with a command channel so `Core` stays single-threaded and simple).

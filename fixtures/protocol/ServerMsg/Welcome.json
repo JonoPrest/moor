@@ -1,0 +1,13 @@
+{
+  "daemon": {
+    "name": "moord",
+    "version": "0.1.0"
+  },
+  "protocol": "0.1.0",
+  "schema": 1,
+  "type": "Welcome",
+  "upgrade": {
+    "latest": "0.2.0",
+    "message": "moord 0.2 speaks protocol 0.2.0; upgrade your client."
+  }
+}

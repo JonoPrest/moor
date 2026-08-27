@@ -1,0 +1,45 @@
+{
+  "author": {
+    "machine": "laptop",
+    "name": "ada",
+    "type": "Human"
+  },
+  "body": {
+    "comment": {
+      "anchor": {
+        "blob_oid": "a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5",
+        "context_hash": "0123456789abcdef",
+        "lines": {
+          "end": 12,
+          "start": 10
+        },
+        "path": "src/lib.rs",
+        "repo_id": "01HF7YAT000000000000000002",
+        "side": "Head",
+        "type": "Lines"
+      },
+      "author": {
+        "machine": "laptop",
+        "name": "ada",
+        "type": "Human"
+      },
+      "body": "This should be a newtype.",
+      "created": 1700000002000,
+      "edited": null,
+      "id": "01HF7YAVYG0000000000000005",
+      "kind": {
+        "type": "Note"
+      },
+      "review_id": "01HF7YATZ80000000000000004",
+      "state": {
+        "type": "Live"
+      },
+      "thread_id": "01HF7YAVYG0000000000000005"
+    },
+    "type": "CommentCreated"
+  },
+  "client_id": "01HF7YAT000000000000000007",
+  "client_seq": 7,
+  "seq": 42,
+  "ts": 1700000005000
+}

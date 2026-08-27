@@ -1,0 +1,12 @@
+{
+  "msg": {
+    "client": {
+      "name": "moor-client-tauri",
+      "version": "0.1.0"
+    },
+    "client_id": "01HF7YAT000000000000000007",
+    "protocol": "0.1.0",
+    "type": "Hello"
+  },
+  "v": "0.1.0"
+}

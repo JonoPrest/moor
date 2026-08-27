@@ -1,0 +1,11 @@
+{
+  "first_chunk": 2,
+  "opts": {
+    "context_lines": 3,
+    "ignore_whitespace": false
+  },
+  "path": "src/lib.rs",
+  "repo_id": "01HF7YAT000000000000000002",
+  "review_id": "01HF7YATZ80000000000000004",
+  "type": "FileRender"
+}

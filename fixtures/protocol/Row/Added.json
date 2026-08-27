@@ -1,0 +1,17 @@
+{
+  "right": {
+    "changed": [],
+    "line_no": 10,
+    "spans": [
+      {
+        "class": "Keyword",
+        "range": {
+          "end": 3,
+          "start": 0
+        }
+      }
+    ],
+    "text": "    let y = 2;"
+  },
+  "type": "Added"
+}

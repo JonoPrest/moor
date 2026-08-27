@@ -1,0 +1,31 @@
+{
+  "left": {
+    "changed": [],
+    "line_no": 8,
+    "spans": [
+      {
+        "class": "Keyword",
+        "range": {
+          "end": 3,
+          "start": 0
+        }
+      }
+    ],
+    "text": "fn main() {"
+  },
+  "right": {
+    "changed": [],
+    "line_no": 8,
+    "spans": [
+      {
+        "class": "Keyword",
+        "range": {
+          "end": 3,
+          "start": 0
+        }
+      }
+    ],
+    "text": "fn main() {"
+  },
+  "type": "Context"
+}

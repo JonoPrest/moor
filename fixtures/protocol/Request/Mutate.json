@@ -1,0 +1,9 @@
+{
+  "client_seq": 7,
+  "mutation": {
+    "review_id": "01HF7YATZ80000000000000004",
+    "thread_id": "01HF7YAVYG0000000000000005",
+    "type": "ResolveThread"
+  },
+  "type": "Mutate"
+}
