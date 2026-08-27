@@ -7,13 +7,12 @@
 //! `#[serde(tag = "type")]`; enums whose variants are all unit serialise as a
 //! bare `PascalCase` string (`"Open"`, not `{"type":"Open"}`); structs
 //! and enums are `deny_unknown_fields`, ids are newtypes, invariants are
-//! enforced by constructors. `cargo xtask fixtures` writes one JSON fixture per
-//! enum variant under `fixtures/protocol/`; a test in this crate asserts that
-//! every variant has one and that the on-disk files are current.
+//! enforced by constructors. Example values live in `moor-protocol-fixtures`
+//! (dev tooling only); `cargo xtask fixtures` writes them under
+//! `fixtures/protocol/` and that crate's tests assert every variant has one.
 
 pub mod domain;
 pub mod events;
-pub mod fixtures;
 pub mod ids;
 pub mod invariants;
 pub mod render;

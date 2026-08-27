@@ -1,24 +1,28 @@
-//! One JSON fixture per type/variant, written to `fixtures/protocol/` by
-//! `cargo xtask fixtures` and consumed by the `ReScript` boundary test.
+//! Example values for every `moor-protocol` type: one per enum variant,
+//! written to `fixtures/protocol/` by `cargo xtask fixtures` and consumed by
+//! the `ReScript` boundary test.
+//!
+//! This is a separate crate so `moor-protocol` ships only wire types; sample
+//! data never reaches a daemon, client, or wasm build.
 //!
 //! Every enum gets a fixture per variant; coverage is enforced by comparing
 //! against the strum-generated discriminant list, so adding a variant without
 //! a fixture fails `fixtures_cover_every_variant`.
 
-#![allow(clippy::wildcard_imports)] // this module is a registry over every type
+#![allow(clippy::wildcard_imports)] // this crate is a registry over every type
 
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use strum::IntoEnumIterator;
 
-use crate::domain::*;
-use crate::events::*;
-use crate::ids::*;
-use crate::invariants::*;
-use crate::render::*;
-use crate::rpc::*;
-use crate::version::*;
+use moor_protocol::domain::*;
+use moor_protocol::events::*;
+use moor_protocol::ids::*;
+use moor_protocol::invariants::*;
+use moor_protocol::render::*;
+use moor_protocol::rpc::*;
+use moor_protocol::version::*;
 
 /// Why a fixture could not be built or serialised.
 #[derive(Debug, thiserror::Error)]

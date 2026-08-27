@@ -44,6 +44,7 @@ for the design and `docs/PLAN.md` for the milestones before making changes.
   why it exists; readers should not have to expand it mentally.
 - **Placeholder data is neutral.** Fixtures and tests use invented names (`ada@example.com`),
   never real people or paths from a contributor's machine.
+- **Sample data lives in dev-only crates.** `moor-protocol` ships wire types and nothing else; example values are in `moor-protocol-fixtures` (`publish = false`, used by `xtask` and its own tests).
 - **Say what the underlying system stores.** When a field's precision or shape is dictated by
   git/redb/etc., the doc comment says so (e.g. git offsets are whole minutes).
 

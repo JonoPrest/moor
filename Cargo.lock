@@ -170,6 +170,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "moor-protocol-fixtures"
+version = "0.1.0"
+dependencies = [
+ "moor-protocol",
+ "serde",
+ "serde_json",
+ "strum",
+ "thiserror",
+]
+
+[[package]]
 name = "moor-review-core"
 version = "0.1.0"
 dependencies = [
@@ -591,7 +602,7 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "moor-protocol",
+ "moor-protocol-fixtures",
  "serde_json",
 ]
 

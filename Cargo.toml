@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/moor-protocol",
+    "crates/moor-protocol-fixtures",
     "crates/moor-review-core",
     "crates/moor-test-support",
     "xtask",
@@ -15,6 +16,7 @@ rust-version = "1.91"
 
 [workspace.dependencies]
 moor-protocol = { path = "crates/moor-protocol" }
+moor-protocol-fixtures = { path = "crates/moor-protocol-fixtures" }
 moor-review-core = { path = "crates/moor-review-core" }
 moor-test-support = { path = "crates/moor-test-support" }
 

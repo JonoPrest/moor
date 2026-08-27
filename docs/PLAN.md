@@ -32,7 +32,7 @@ CI: `cargo nextest run`, `cargo clippy -D warnings`, `cargo check -p moor-protoc
 Goal: headless engine. Given repos on disk, create workspaces/reviews, produce render models, store and re-anchor comments across restarts.
 
 ### 1.1 Workspace scaffold
-- Cargo workspace; crates `moor-protocol`, `moor-review-core`, `moor-test-support`, `xtask`.
+- Cargo workspace; crates `moor-protocol`, `moor-protocol-fixtures` (dev-only example values), `moor-review-core`, `moor-test-support`, `xtask`.
 - Lints: `#![deny(missing_debug_implementations)]`, clippy pedantic subset, `wildcard_enum_match_arm` in `moor-review-core`/`moor-client-core`.
 - CI as above.
 

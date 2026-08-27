@@ -1,0 +1,17 @@
+[package]
+name = "moor-protocol-fixtures"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Example values for every moor-protocol type, used to generate fixtures/protocol/ and to test coverage. Dev tooling only; never a runtime dependency."
+publish = false
+
+[dependencies]
+moor-protocol = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+strum = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

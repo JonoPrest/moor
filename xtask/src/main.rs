@@ -29,7 +29,7 @@ fn fixtures() -> anyhow::Result<()> {
 
     let mut wanted = BTreeSet::new();
     let mut written = 0usize;
-    for f in moor_protocol::fixtures::all()? {
+    for f in moor_protocol_fixtures::all()? {
         let path = dir.join(f.rel_path());
         wanted.insert(path.clone());
         let parent = path
