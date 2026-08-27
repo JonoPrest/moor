@@ -1,0 +1,216 @@
+/*
+ * moor UI stylesheet (ARCHITECTURE §6.6).
+ *
+ * Tailwind v4 utilities style the chrome. The daemon's render model is
+ * styled through one small semantic class set so a virtualized diff of
+ * 10k rows carries short class names, not repeated utility strings.
+ *
+ * Naming rule (checked by tests/classes.test.ts against the protocol
+ * fixtures, so a new variant fails CI until it has a class):
+ *   Row kind  `Row::HunkHeader` → `.row-hunk-header`
+ *   Cell side left / right      → `.cell-left` / `.cell-right`
+ *   SpanClass `Keyword`         → `.span-keyword`
+ *
+ * Focus is core state (§6.4): focused rows/panels carry `data-focused`
+ * and are styled with `data-[focused]:` variants, never `:focus`.
+ */
+
+@import "tailwindcss";
+
+/* ReScript sources are not among Tailwind's default extensions. */
+@source "../**/*.res";
+@source "../**/*.res.mjs";
+
+@theme {
+  /* Chrome */
+  --color-bg: oklch(99% 0 0);
+  --color-fg: oklch(20% 0 0);
+  --color-muted: oklch(55% 0 0);
+  --color-border: oklch(90% 0 0);
+  --color-panel: oklch(97% 0 0);
+  --color-accent: oklch(55% 0.18 260);
+  --color-focus: oklch(65% 0.2 260);
+
+  /* Diff rows */
+  --color-diff-add-bg: oklch(96% 0.05 150);
+  --color-diff-add-fg: oklch(35% 0.12 150);
+  --color-diff-remove-bg: oklch(96% 0.05 25);
+  --color-diff-remove-fg: oklch(40% 0.15 25);
+  --color-diff-context-bg: transparent;
+  --color-diff-hunk-bg: oklch(95% 0.03 260);
+  --color-diff-hunk-fg: oklch(45% 0.08 260);
+  --color-diff-changed-bg: oklch(90% 0.12 90);
+
+  /* Syntax palette */
+  --color-syn-keyword: oklch(45% 0.2 300);
+  --color-syn-string: oklch(50% 0.15 150);
+  --color-syn-number: oklch(50% 0.15 60);
+  --color-syn-comment: oklch(60% 0.02 0);
+  --color-syn-type: oklch(45% 0.15 200);
+  --color-syn-function: oklch(45% 0.15 260);
+  --color-syn-variable: oklch(30% 0.03 0);
+  --color-syn-constant: oklch(50% 0.15 30);
+  --color-syn-operator: oklch(40% 0.05 0);
+  --color-syn-punctuation: oklch(50% 0.02 0);
+  --color-syn-attribute: oklch(50% 0.12 330);
+  --color-syn-tag: oklch(45% 0.15 20);
+  --color-syn-other: inherit;
+
+  --font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: oklch(18% 0 0);
+    --color-fg: oklch(92% 0 0);
+    --color-muted: oklch(65% 0 0);
+    --color-border: oklch(30% 0 0);
+    --color-panel: oklch(22% 0 0);
+    --color-accent: oklch(75% 0.16 260);
+    --color-focus: oklch(78% 0.18 260);
+    --color-diff-add-bg: oklch(28% 0.06 150);
+    --color-diff-add-fg: oklch(85% 0.12 150);
+    --color-diff-remove-bg: oklch(28% 0.06 25);
+    --color-diff-remove-fg: oklch(85% 0.12 25);
+    --color-diff-hunk-bg: oklch(26% 0.03 260);
+    --color-diff-hunk-fg: oklch(75% 0.08 260);
+    --color-diff-changed-bg: oklch(40% 0.12 90);
+    --color-syn-keyword: oklch(75% 0.18 300);
+    --color-syn-string: oklch(78% 0.14 150);
+    --color-syn-number: oklch(78% 0.14 60);
+    --color-syn-comment: oklch(60% 0.02 0);
+    --color-syn-type: oklch(75% 0.13 200);
+    --color-syn-function: oklch(75% 0.13 260);
+    --color-syn-variable: oklch(88% 0.02 0);
+    --color-syn-constant: oklch(78% 0.14 30);
+    --color-syn-operator: oklch(80% 0.04 0);
+    --color-syn-punctuation: oklch(70% 0.02 0);
+    --color-syn-attribute: oklch(78% 0.12 330);
+    --color-syn-tag: oklch(78% 0.14 20);
+  }
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    background: var(--color-bg);
+    color: var(--color-fg);
+  }
+}
+
+@layer components {
+  /* Chrome */
+  .app-shell {
+    @apply flex h-full flex-col;
+  }
+  .panel-header {
+    @apply border-b border-border bg-panel px-3 py-1 text-sm font-semibold;
+  }
+  .hint-bar {
+    @apply border-t border-border bg-panel px-3 py-1 font-mono text-xs text-muted;
+  }
+  .panel[data-focused] {
+    outline: 2px solid var(--color-focus);
+    outline-offset: -2px;
+  }
+
+  /* Rows — one class per `Row` kind */
+  .row {
+    @apply grid font-mono text-xs leading-5 whitespace-pre;
+  }
+  .row[data-focused] {
+    outline: 1px solid var(--color-focus);
+    outline-offset: -1px;
+  }
+  .row-hunk-header {
+    background: var(--color-diff-hunk-bg);
+    color: var(--color-diff-hunk-fg);
+  }
+  .row-context {
+    background: var(--color-diff-context-bg);
+  }
+  .row-removed {
+    background: var(--color-diff-remove-bg);
+    color: var(--color-diff-remove-fg);
+  }
+  .row-added {
+    background: var(--color-diff-add-bg);
+    color: var(--color-diff-add-fg);
+  }
+  .row-modified .cell-left {
+    background: var(--color-diff-remove-bg);
+  }
+  .row-modified .cell-right {
+    background: var(--color-diff-add-bg);
+  }
+  .row-expander {
+    @apply cursor-pointer text-center text-muted select-none;
+  }
+  .row-whitespace-only {
+    @apply italic text-muted;
+  }
+
+  /* Cells — one class per side */
+  .cell-left,
+  .cell-right {
+    @apply min-w-0 overflow-hidden px-2;
+  }
+  .cell-left {
+    border-right: 1px solid var(--color-border);
+  }
+  .cell-right {
+    border-left: 1px solid transparent;
+  }
+  .cell-line-no {
+    @apply w-12 shrink-0 pr-2 text-right text-muted select-none;
+  }
+  .cell-changed {
+    background: var(--color-diff-changed-bg);
+  }
+
+  /* Spans — one class per `SpanClass` */
+  .span-keyword {
+    color: var(--color-syn-keyword);
+  }
+  .span-string {
+    color: var(--color-syn-string);
+  }
+  .span-number {
+    color: var(--color-syn-number);
+  }
+  .span-comment {
+    color: var(--color-syn-comment);
+    font-style: italic;
+  }
+  .span-type {
+    color: var(--color-syn-type);
+  }
+  .span-function {
+    color: var(--color-syn-function);
+  }
+  .span-variable {
+    color: var(--color-syn-variable);
+  }
+  .span-constant {
+    color: var(--color-syn-constant);
+  }
+  .span-operator {
+    color: var(--color-syn-operator);
+  }
+  .span-punctuation {
+    color: var(--color-syn-punctuation);
+  }
+  .span-attribute {
+    color: var(--color-syn-attribute);
+  }
+  .span-tag {
+    color: var(--color-syn-tag);
+  }
+  .span-other {
+    color: var(--color-syn-other);
+  }
+}

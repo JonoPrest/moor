@@ -1,0 +1,11 @@
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
+
+// ReScript compiles `.res` → `.res.mjs` in place; Vite only ever sees JS.
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+  test: {
+    include: ["tests/**/*.test.ts"],
+  },
+});
