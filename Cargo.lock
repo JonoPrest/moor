@@ -1695,6 +1695,7 @@ name = "moor-client-core"
 version = "0.1.0"
 dependencies = [
  "moor-protocol",
+ "moor-test-support",
  "proptest",
  "serde",
  "serde_json",
@@ -1784,7 +1785,10 @@ name = "moor-test-support"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "moor-client-core",
+ "moor-protocol",
  "tempfile",
+ "thiserror",
 ]
 
 [[package]]

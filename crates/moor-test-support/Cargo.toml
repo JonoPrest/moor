@@ -9,6 +9,9 @@ publish = false
 [dependencies]
 tempfile = { workspace = true }
 anyhow = { workspace = true }
+moor-protocol = { workspace = true }
+moor-client-core = { workspace = true }
+thiserror = { workspace = true }
 
 [lints]
 workspace = true

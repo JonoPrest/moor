@@ -322,6 +322,11 @@ impl ClientCore {
         }
     }
 
+    #[must_use]
+    pub fn client_id(&self) -> ClientId {
+        self.config.client_id
+    }
+
     /// Mutations awaiting the daemon, oldest first.
     #[must_use]
     pub fn pending_count(&self) -> usize {
@@ -796,6 +801,26 @@ impl ClientCore {
                 Connection::Subscribed { .. } => {
                     self.connection = Connection::Subscribed {
                         last_seq: event.seq,
+                    };
+                    Ok(self.apply_event(event))
+                }
+                // The daemon replays the gap after `Since::After` *before*
+                // answering the subscribe, so events are valid once the
+                // `Subscribe` request is out.
+                Connection::Connecting {
+                    hello_sent: true,
+                    last_seq: Some(last_seq),
+                } if event.seq <= last_seq => Err(CoreError::StaleEvent {
+                    seq: event.seq,
+                    last_seq,
+                }),
+                Connection::Connecting {
+                    hello_sent: true,
+                    last_seq,
+                } if last_seq.is_some() => {
+                    self.connection = Connection::Connecting {
+                        hello_sent: true,
+                        last_seq: Some(event.seq),
                     };
                     Ok(self.apply_event(event))
                 }

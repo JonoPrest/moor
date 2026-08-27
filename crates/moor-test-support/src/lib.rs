@@ -3,6 +3,10 @@
 //! No mocked git — everything runs the `git` binary so the engine is tested
 //! against the same objects it will read in production.
 
+pub mod sim;
+
+pub use sim::{Divergence, Peer, Sim};
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
