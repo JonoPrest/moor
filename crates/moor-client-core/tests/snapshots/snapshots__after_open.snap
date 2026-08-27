@@ -1,0 +1,358 @@
+---
+source: crates/moor-client-core/tests/snapshots.rs
+expression: core.view()
+---
+{
+  "prefs": {
+    "layout": "Unified",
+    "ignore_whitespace": false,
+    "context_lines": 3
+  },
+  "tree": {
+    "roots": [
+      {
+        "type": "Dir",
+        "name": "00000000020000000000000002",
+        "repo_id": "00000000020000000000000002",
+        "path": null,
+        "expanded": false,
+        "changed_below": 2,
+        "children": [
+          {
+            "type": "Dir",
+            "name": "src",
+            "repo_id": "00000000020000000000000002",
+            "path": "src",
+            "expanded": false,
+            "changed_below": 2,
+            "children": [
+              {
+                "type": "File",
+                "name": "lib.rs",
+                "repo_id": "00000000020000000000000002",
+                "path": "src/lib.rs",
+                "change": "Modified",
+                "viewed": "Unviewed",
+                "open": false
+              },
+              {
+                "type": "File",
+                "name": "parser.rs",
+                "repo_id": "00000000020000000000000002",
+                "path": "src/parser.rs",
+                "change": "Added",
+                "viewed": "Unviewed",
+                "open": false
+              }
+            ]
+          },
+          {
+            "type": "File",
+            "name": "README.md",
+            "repo_id": "00000000020000000000000002",
+            "path": "README.md",
+            "change": null,
+            "viewed": "Unviewed",
+            "open": false
+          }
+        ]
+      }
+    ],
+    "breadcrumbs": [],
+    "search": null
+  },
+  "progress": {
+    "viewed": 0,
+    "changed_since_viewed": 0,
+    "total": 2
+  },
+  "diff": null,
+  "threads": [
+    {
+      "id": "00000001YH0000000000000001",
+      "root": "00000001YH0000000000000001",
+      "author": {
+        "type": "Human",
+        "name": "ada",
+        "machine": "workstation"
+      },
+      "created": 2001,
+      "summary": "Is `new` the right name?",
+      "replies": 0,
+      "resolved": false,
+      "place": {
+        "type": "Lines",
+        "file": {
+          "repo_id": "00000000020000000000000002",
+          "path": "src/lib.rs"
+        },
+        "side": "Head",
+        "start": 2,
+        "end": 2
+      },
+      "outdated": false,
+      "pending": false
+    },
+    {
+      "id": "00000001YJ0000000000000002",
+      "root": "00000001YJ0000000000000002",
+      "author": {
+        "type": "Human",
+        "name": "ada",
+        "machine": "workstation"
+      },
+      "created": 2002,
+      "summary": "Looks good overall.",
+      "replies": 0,
+      "resolved": false,
+      "place": {
+        "type": "Review"
+      },
+      "outdated": false,
+      "pending": false
+    }
+  ],
+  "conversation": [
+    {
+      "id": "00000001YJ0000000000000002",
+      "root": "00000001YJ0000000000000002",
+      "author": {
+        "type": "Human",
+        "name": "ada",
+        "machine": "workstation"
+      },
+      "created": 2002,
+      "summary": "Looks good overall.",
+      "replies": 0,
+      "resolved": false,
+      "place": {
+        "type": "Review"
+      },
+      "outdated": false,
+      "pending": false
+    }
+  ],
+  "stepper": null,
+  "focus": {
+    "type": "Tree",
+    "index": 0
+  },
+  "hints": [
+    {
+      "keys": "j",
+      "command": "MoveDown",
+      "label": "down"
+    },
+    {
+      "keys": "k",
+      "command": "MoveUp",
+      "label": "up"
+    },
+    {
+      "keys": "enter",
+      "command": "Open",
+      "label": "open"
+    },
+    {
+      "keys": "v",
+      "command": "ToggleViewed",
+      "label": "mark viewed"
+    },
+    {
+      "keys": "ctrl+p",
+      "command": "FileSearch",
+      "label": "find file"
+    },
+    {
+      "keys": "?",
+      "command": "ToggleHelp",
+      "label": "help"
+    }
+  ],
+  "help": null,
+  "connection": {
+    "type": "Subscribed"
+  },
+  "last_error": null,
+  "reviews": [
+    {
+      "id": "00000000040000000000000001",
+      "workspace_id": "00000000030000000000000003",
+      "title": "Add the parser",
+      "targets": [
+        {
+          "repo_id": "00000000020000000000000002",
+          "base": {
+            "type": "Branch",
+            "name": "main"
+          },
+          "head": {
+            "type": "WorkingTree"
+          }
+        }
+      ],
+      "created": 1000,
+      "status": "Open"
+    }
+  ],
+  "review": {
+    "snapshot": {
+      "review": {
+        "id": "00000000040000000000000001",
+        "workspace_id": "00000000030000000000000003",
+        "title": "Add the parser",
+        "targets": [
+          {
+            "repo_id": "00000000020000000000000002",
+            "base": {
+              "type": "Branch",
+              "name": "main"
+            },
+            "head": {
+              "type": "WorkingTree"
+            }
+          }
+        ],
+        "created": 1000,
+        "status": "Open"
+      },
+      "resolved": [
+        {
+          "repo_id": "00000000020000000000000002",
+          "base": {
+            "tree": "0101010101010101010101010101010101010101",
+            "source": {
+              "type": "Commit",
+              "oid": "0101010101010101010101010101010101010101"
+            }
+          },
+          "head": {
+            "tree": "0202020202020202020202020202020202020202",
+            "source": {
+              "type": "WorkingTree",
+              "dirty": []
+            }
+          }
+        }
+      ],
+      "threads": [
+        {
+          "id": "00000001YH0000000000000001",
+          "review_id": "00000000040000000000000001",
+          "root": "00000001YH0000000000000001",
+          "replies": [],
+          "resolution": {
+            "type": "Open"
+          }
+        },
+        {
+          "id": "00000001YJ0000000000000002",
+          "review_id": "00000000040000000000000001",
+          "root": "00000001YJ0000000000000002",
+          "replies": [],
+          "resolution": {
+            "type": "Open"
+          }
+        }
+      ],
+      "comments": [
+        {
+          "id": "00000001YH0000000000000001",
+          "review_id": "00000000040000000000000001",
+          "thread_id": "00000001YH0000000000000001",
+          "author": {
+            "type": "Human",
+            "name": "ada",
+            "machine": "workstation"
+          },
+          "kind": {
+            "type": "Note"
+          },
+          "anchor": {
+            "type": "Lines",
+            "repo_id": "00000000020000000000000002",
+            "path": "src/lib.rs",
+            "side": "Head",
+            "blob_oid": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+            "lines": {
+              "start": 2,
+              "end": 2
+            },
+            "context_hash": "0000000000000001"
+          },
+          "body": "Is `new` the right name?",
+          "created": 2001,
+          "edited": null,
+          "state": {
+            "type": "Live"
+          }
+        },
+        {
+          "id": "00000001YJ0000000000000002",
+          "review_id": "00000000040000000000000001",
+          "thread_id": "00000001YJ0000000000000002",
+          "author": {
+            "type": "Human",
+            "name": "ada",
+            "machine": "workstation"
+          },
+          "kind": {
+            "type": "Note"
+          },
+          "anchor": {
+            "type": "Review"
+          },
+          "body": "Looks good overall.",
+          "created": 2002,
+          "edited": null,
+          "state": {
+            "type": "Live"
+          }
+        }
+      ],
+      "viewed": [],
+      "seq": 1
+    },
+    "pending": [],
+    "trees": [
+      "0101010101010101010101010101010101010101",
+      "0202020202020202020202020202020202020202"
+    ],
+    "files": [
+      {
+        "repo_id": "00000000020000000000000002",
+        "path": "src/lib.rs",
+        "target": {
+          "type": "Diff",
+          "change": {
+            "type": "Modified",
+            "old": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+            "new": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b"
+          }
+        },
+        "opts": {
+          "ignore_whitespace": false,
+          "context_lines": 3
+        }
+      },
+      {
+        "repo_id": "00000000020000000000000002",
+        "path": "src/parser.rs",
+        "target": {
+          "type": "Diff",
+          "change": {
+            "type": "Added",
+            "new": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c"
+          }
+        },
+        "opts": {
+          "ignore_whitespace": false,
+          "context_lines": 3
+        }
+      }
+    ],
+    "open_file": null
+  },
+  "draft": null,
+  "pending_refresh": false
+}

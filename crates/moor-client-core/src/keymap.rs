@@ -552,20 +552,23 @@ impl Keymap {
     }
 
     /// The hint bar for `context`: primary bindings of the context, then
-    /// Global's.
+    /// Global's, `?` last.
     #[must_use]
     pub fn hints(&self, context: Context) -> Vec<Hint> {
-        let mut out: Vec<Hint> = self
-            .applicable(context)
-            .filter(|b| b.primary)
+        let mut rows: Vec<&Binding> = self.applicable(context).filter(|b| b.primary).collect();
+        rows.sort_by_key(|b| {
+            (
+                b.command == Command::ToggleHelp,
+                b.context == Context::Global,
+            )
+        });
+        rows.into_iter()
             .map(|b| Hint {
                 keys: b.keys.to_string(),
                 command: b.command,
                 label: label(b.command).to_owned(),
             })
-            .collect();
-        out.sort_by_key(|h| h.command == Command::ToggleHelp); // `?` last
-        out
+            .collect()
     }
 
     /// The help overlay for `context`: all its bindings grouped by

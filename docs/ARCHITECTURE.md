@@ -312,7 +312,9 @@ Cache entries are `TreeSnapshot`s (§4.7), render headers and render **chunks** 
 
 ### 5.3 Client-local state
 
-Ephemeral UI state (hover, focus) lives in the UI. Navigational state (open file, expanded dirs, scroll, drafts) lives in `ViewModel` so all hosts behave identically; drafts are `Persist`ed via the injected KV.
+Ephemeral UI state (hover) lives in the UI. Navigational state (focus, open file, expanded dirs, scroll, drafts) lives in `ViewModel` so all hosts behave identically; drafts are `Persist`ed via the injected KV.
+
+**Derived view.** The explorer, diff rows with overlays, thread list, conversation, stepper, focus (clamped to the current lists), hints and help are recomputed from core state after *every* accepted input and compared with what the view held; `handle` then emits at most one `Effect::Render` per input naming the union of sections that changed, after every other effect. Hosts never see a stale panel or an interleaved render.
 
 ### 5.4 Deferred refresh
 
@@ -354,7 +356,10 @@ Context = Global | ReviewList | Tree | Diff | Thread | Composer | CommitStepper 
 ```
 
 - `client-core` owns the keymap (default table + user overrides from the host KV) and resolves
-  `Input::Key { context, chord }` → `Action`. The UI captures keys, sends chords, and renders
+  `Input::Key(chord)` → `Action`. The table maps `(Context, KeySeq)` to a unit-only `Command`
+  ("next file"); `resolve` then turns the command into the one `Action` it means against the
+  current focus and view, or a typed `NoTarget`. Commands whose payload is text (a comment
+  body) open a draft; the host submits the text. The UI captures keys, sends chords, and renders
   the results — it contains no key → behaviour logic, so bindings are identical across hosts
   (Tauri, browser, TUI) and testable without a DOM.
 - Chords support sequences (`g g`, `] c`) with a short timeout; vim-style movement

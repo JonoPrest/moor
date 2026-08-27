@@ -14,6 +14,7 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
+insta = { workspace = true }
 moor-test-support = { workspace = true }
 
 [lints]

@@ -1694,6 +1694,7 @@ dependencies = [
 name = "moor-client-core"
 version = "0.1.0"
 dependencies = [
+ "insta",
  "moor-protocol",
  "moor-test-support",
  "proptest",
