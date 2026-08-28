@@ -141,6 +141,7 @@ registry!(
     ChangeKindKind,
     DiffView,
     DiffRow,
+    CommentView,
     ThreadView,
     ThreadPlace,
     CommitStepper,
@@ -439,8 +440,19 @@ struct_fixture!(
         outdated: false,
         pending: true,
         suggestion: true,
+        comments: vec![local::<CommentView>()?],
     }
 );
+struct_fixture!(CommentView, "CommentView", {
+    let c = proto::<Comment>()?;
+    CommentView {
+        id: c.id,
+        author: c.author,
+        created: c.created,
+        body: c.body,
+        pending: false,
+    }
+});
 struct_fixture!(StepperCommit, "StepperCommit", {
     let c = proto::<CommitInfo>()?;
     StepperCommit {

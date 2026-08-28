@@ -49,8 +49,8 @@ pub use cache::{Bytes, CacheKey, CacheValue, ContentCache, Evicted, RenderKey};
 pub use connection::{Connection, ConnectionKind};
 pub use content::{CacheConfig, DiskTier, DiskTierKind, FileRef, PREFETCH_RADIUS};
 pub use diff::{
-    CommitStepper, DiffRow, DiffView, PendingIds, StepperCommit, ThreadPlace, ThreadPlaceKind,
-    ThreadView, conversation, threads,
+    CommentView, CommitStepper, DiffRow, DiffView, PendingIds, StepperCommit, ThreadPlace,
+    ThreadPlaceKind, ThreadView, conversation, threads,
 };
 pub use events::{
     EventMeta, MutationError, MutationErrorKind, apply_body, local_event, thread_id_of,

@@ -245,7 +245,20 @@ expression: core.view()
       },
       "outdated": false,
       "pending": false,
-      "suggestion": false
+      "suggestion": false,
+      "comments": [
+        {
+          "id": "00000001YH0000000000000001",
+          "author": {
+            "type": "Human",
+            "name": "ada",
+            "machine": "workstation"
+          },
+          "created": 2001,
+          "body": "Is `new` the right name?",
+          "pending": false
+        }
+      ]
     },
     {
       "id": "00000001YJ0000000000000002",
@@ -264,7 +277,20 @@ expression: core.view()
       },
       "outdated": false,
       "pending": false,
-      "suggestion": false
+      "suggestion": false,
+      "comments": [
+        {
+          "id": "00000001YJ0000000000000002",
+          "author": {
+            "type": "Human",
+            "name": "ada",
+            "machine": "workstation"
+          },
+          "created": 2002,
+          "body": "Looks good overall.",
+          "pending": false
+        }
+      ]
     }
   ],
   "conversation": [
@@ -285,7 +311,20 @@ expression: core.view()
       },
       "outdated": false,
       "pending": false,
-      "suggestion": false
+      "suggestion": false,
+      "comments": [
+        {
+          "id": "00000001YJ0000000000000002",
+          "author": {
+            "type": "Human",
+            "name": "ada",
+            "machine": "workstation"
+          },
+          "created": 2002,
+          "body": "Looks good overall.",
+          "pending": false
+        }
+      ]
     }
   ],
   "stepper": null,

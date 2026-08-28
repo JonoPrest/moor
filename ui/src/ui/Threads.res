@@ -40,7 +40,24 @@ module Item = {
             : React.null}
           {thread.pending ? <span className="thread-pending"> {React.string("…")} </span> : React.null}
         </div>
-        <div className="thread-summary"> {React.string(thread.summary)} </div>
+        {focused
+          ? <ul className="thread-comments">
+              {thread.comments
+              ->Array.map(c =>
+                <li key=c.id className={"thread-comment" ++ (c.pending ? " pending" : "")}>
+                  <div className="thread-meta">
+                    <span className="thread-author"> {React.string(authorName(c.author))} </span>
+                    <span title={Stepper.absolute(c.created)}>
+                      {React.string(Stepper.relative(c.created))}
+                    </span>
+                    {c.pending ? <span className="thread-pending"> {React.string("…")} </span> : React.null}
+                  </div>
+                  <div className="thread-body"> {React.string(c.body)} </div>
+                </li>
+              )
+              ->React.array}
+            </ul>
+          : <div className="thread-summary"> {React.string(thread.summary)} </div>}
         {thread.suggestion
           ? <UI.Button label="Apply suggestion (a)" kind=Primary onClick=onApply />
           : React.null}
@@ -72,7 +89,21 @@ let make = (
               key=t.id
               thread=t
               focused={focusedIndex == Some(indexOffset + i)}
-              onSelect={() => dispatch(SetFocus({focus: Focus.Thread({index: indexOffset + i})}))}
+              onSelect={() => {
+                dispatch(SetFocus({focus: Focus.Thread({index: indexOffset + i})}))
+                switch t.place {
+                | Lines({file, start}) =>
+                  dispatch(
+                    Viewport({
+                      file,
+                      firstRow: Int.toFloat(start - 30)->Math.max(0.)->Float.toInt,
+                      lastRow: start + 30,
+                    }),
+                  )
+                | File({file}) => dispatch(Viewport({file, firstRow: 0, lastRow: 59}))
+                | Review(_) => ()
+                }
+              }}
               onApply={() => dispatch(ApplySuggestion({commentId: t.root}))}
             />
           )

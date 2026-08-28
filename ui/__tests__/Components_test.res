@@ -162,6 +162,29 @@ describe("Threads", () => {
     )
     expect(Element.querySelector(container, "button"))->toBeNull
   })
+
+  test("a focused thread shows every comment body and a click opens its file", () => {
+    let dispatch = fn()
+    let thread = Fixtures.parse(View.ThreadView.schema, "client", "ThreadView", "default")
+    let {container} = render(
+      <Threads title="Threads" threads=[thread] focus={Thread({index: 0})} indexOffset=0 dispatch />,
+    )
+    let bodies = Element.querySelectorAll(container, ".thread-body")
+    expect(Array.length(bodies))->toBe(Array.length(thread.comments))
+    FireEvent.click(Element.querySelector(container, ".thread-item")->Nullable.getExn)
+    let opened = mock(dispatch).calls->Array.some(args =>
+      switch args->Array.getUnsafe(0) {
+      | Action.Viewport(_) => true
+      | _ => false
+      }
+    )
+    expect(opened)->toBe(true)
+    cleanup()
+    let _ = render(
+      <Threads title="Threads" threads=[thread] focus={Tree({index: 0})} indexOffset=0 dispatch />,
+    )
+    expect(Array.length(Screen.queryAllByText(thread.summary)))->toBe(1)
+  })
 })
 
 describe("DiffView (viewed)", () => {

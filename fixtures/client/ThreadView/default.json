@@ -4,6 +4,19 @@
     "name": "ada",
     "type": "Human"
   },
+  "comments": [
+    {
+      "author": {
+        "machine": "laptop",
+        "name": "ada",
+        "type": "Human"
+      },
+      "body": "This should be a newtype.",
+      "created": 1700000002000,
+      "id": "01HF7YAVYG0000000000000005",
+      "pending": false
+    }
+  ],
   "created": 1700000002000,
   "id": "01HF7YAVYG0000000000000005",
   "outdated": false,

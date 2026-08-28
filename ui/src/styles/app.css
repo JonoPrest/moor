@@ -287,6 +287,18 @@
   .thread-meta {
     @apply flex gap-2 text-xs text-muted;
   }
+  .thread-comments {
+    @apply mt-1 flex flex-col gap-2;
+  }
+  .thread-comment {
+    @apply border-l-2 border-border pl-2;
+  }
+  .thread-comment.pending {
+    @apply opacity-60;
+  }
+  .thread-body {
+    @apply whitespace-pre-wrap text-sm;
+  }
   .thread-item.resolved .thread-summary {
     @apply line-through text-muted;
   }

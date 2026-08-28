@@ -59,6 +59,20 @@ pub struct ThreadView {
     pub pending: bool,
     /// The root is a `CommentKind::Suggestion` (a patch that can be applied).
     pub suggestion: bool,
+    /// Root then replies, oldest first; deleted comments are omitted.
+    pub comments: Vec<CommentView>,
+}
+
+/// One comment as the thread panel shows it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CommentView {
+    pub id: CommentId,
+    pub author: Author,
+    pub created: Timestamp,
+    pub body: String,
+    /// Still awaiting the daemon (optimistic).
+    pub pending: bool,
 }
 
 /// A row of the open file with the threads placed on it.
@@ -174,6 +188,18 @@ fn thread_view(snapshot: &ReviewSnapshot, t: &Thread, pending: &PendingIds) -> O
         outdated,
         pending: pending.comments.iter().any(in_thread) || pending.threads.contains(&t.id),
         suggestion: matches!(root.kind, CommentKind::Suggestion { .. }),
+        comments: std::iter::once(&t.root)
+            .chain(t.replies.iter())
+            .filter_map(|id| snapshot.comments.iter().find(|c| c.id == *id))
+            .filter(|c| !matches!(c.state, CommentState::Deleted))
+            .map(|c| CommentView {
+                id: c.id,
+                author: c.author.clone(),
+                created: c.created,
+                body: c.body.clone(),
+                pending: pending.comments.contains(&c.id),
+            })
+            .collect(),
     })
 }
 

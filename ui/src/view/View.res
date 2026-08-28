@@ -181,6 +181,17 @@ module ThreadPlace = {
   @@warning("+27")
 }
 
+module CommentView = {
+  @schema
+  type t = {
+    id: commentId,
+    author: Domain.Author.t,
+    created: timestamp,
+    body: string,
+    pending: bool,
+  }
+}
+
 module ThreadView = {
   @schema
   type t = {
@@ -195,6 +206,7 @@ module ThreadView = {
     outdated: bool,
     pending: bool,
     suggestion: bool,
+    comments: array<CommentView.t>,
   }
 }
 
