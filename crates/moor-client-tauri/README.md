@@ -10,3 +10,7 @@ Desktop wrapper (`moor-desktop`) around `moor-client-host`.
   recompile.
 - `moor-desktop [context]` picks a `moor-config` context; only `Local`
   contexts work so far.
+- `capabilities/default.json` grants the main window `core:default` (events).
+  Without it Tauri 2 silently denies `listen`/`invoke` and the UI stays
+  "disconnected"; webview errors are forwarded to the Rust log via the
+  `client_error` command (`RUST_LOG=moor_client_tauri=debug`).

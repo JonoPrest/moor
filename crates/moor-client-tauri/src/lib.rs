@@ -66,6 +66,12 @@ fn key(host: State<'_, Host>, chord: KeyChord) -> Result<(), HostGone> {
     host.handle.key(chord).then_some(()).ok_or(HostGone)
 }
 
+/// The webview reports adapter failures here so they reach the Rust log.
+#[tauri::command]
+fn client_error(message: String) {
+    tracing::warn!(%message, "webview");
+}
+
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 fn attach(host: State<'_, Host>) -> Result<(), HostGone> {
@@ -172,7 +178,7 @@ pub fn run(context: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
             app.manage(host);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![dispatch, key, attach])
+        .invoke_handler(tauri::generate_handler![dispatch, key, attach, client_error])
         .run(tauri::generate_context!())?;
     Ok(())
 }
