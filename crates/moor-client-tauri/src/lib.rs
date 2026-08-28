@@ -33,6 +33,8 @@ pub enum SetupError {
         "the `{0}` context is not a local daemon; the desktop app only speaks unix sockets yet"
     )]
     NotLocal(String),
+    #[error("host task exited during setup")]
+    HostGone,
 }
 
 /// Shared with every command: the host handle.
@@ -151,6 +153,11 @@ pub fn start_host(app: &AppHandle, config: HostConfig) -> Result<Host, SetupErro
         }
         shutdown.cancel();
     });
+    // The core only dials when asked (`Action::Connect`); the desktop
+    // always wants to be connected.
+    if !handle.dispatch(Action::Connect) {
+        return Err(SetupError::HostGone);
+    }
     Ok(Host { handle })
 }
 
