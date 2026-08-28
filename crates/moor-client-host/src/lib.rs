@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use moor_client_core::{
     Action, CacheConfig, ClientCore, Config, Effect, IdSeed, Input, KeyChord, TransportEvent,
@@ -206,7 +206,6 @@ pub fn spawn(
         }),
         socket,
         kv,
-        started: Instant::now(),
         tick,
         writer: None,
         patches: patches_tx,
@@ -224,7 +223,6 @@ struct Host {
     core: ClientCore,
     socket: PathBuf,
     kv: Kv,
-    started: Instant,
     tick: Duration,
     /// Outbound frames while connected.
     writer: Option<mpsc::UnboundedSender<ClientMsg>>,
@@ -232,8 +230,11 @@ struct Host {
 }
 
 impl Host {
-    fn now_ms(&self) -> u64 {
-        u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX)
+    /// Unix time in ms: the core stamps ids and pending events with it.
+    fn now_ms() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
     }
 
     async fn run(
@@ -269,7 +270,7 @@ impl Host {
                     }
                 },
                 _ = ticker.tick() => {
-                    let now = self.now_ms();
+                    let now = Self::now_ms();
                     self.feed(Input::Tick(now), &incoming_tx);
                 }
             }

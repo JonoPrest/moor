@@ -74,7 +74,9 @@ pub use view::{
 
 pub use moor_protocol as protocol;
 
-/// Milliseconds on the host's monotonic clock, delivered via `Input::Tick`.
+/// Unix time in milliseconds, delivered via `Input::Tick`. It stamps ids
+/// and pending events, so it must be wall-clock; the core never lets it go
+/// backwards.
 pub type Millis = u64;
 
 /// Key in the host's key-value store (`Effect::Persist` / `Effect::Load`).
