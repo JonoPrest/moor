@@ -85,6 +85,18 @@ describe("CoreTauri", () => {
     expect(invoke).toHaveBeenCalledWith("attach", {});
   });
 
+  it("attaches only after the view listener is registered", async () => {
+    let resolveListen: (v: () => void) => void = () => {};
+    listen.mockImplementationOnce(() => new Promise<() => void>((r) => (resolveListen = r)));
+    const core = CoreTauri.make();
+    core.attach();
+    await tick();
+    expect(invoke).not.toHaveBeenCalledWith("attach", {});
+    resolveListen(() => {});
+    await tick();
+    expect(invoke).toHaveBeenCalledWith("attach", {});
+  });
+
   it("sends key chords as invoke(key, {chord}) in the fixture shape", async () => {
     const core = CoreTauri.make();
     await tick();

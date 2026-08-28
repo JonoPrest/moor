@@ -18,7 +18,10 @@ let attachCommand = "attach"
 
 let make = (~onError: string => unit=e => Console.error(e)): Core.t => {
   let store = Core.Store.make()
-  let _ = listen(viewEvent, ev =>
+  // `listen` registers asynchronously; anything the host emits before it
+  // resolves is lost, so `attach` (which makes the host emit every
+  // section) waits for it.
+  let listening = listen(viewEvent, ev =>
     switch Core.patchesOfJson(ev.payload) {
     | Ok(patches) => Core.Store.apply(store, patches)
     | Error(e) => onError("view event: " ++ e)
@@ -47,7 +50,8 @@ let make = (~onError: string => unit=e => Console.error(e)): Core.t => {
     },
     subscribe: listener => Core.Store.subscribe(store, listener),
     attach: () => {
-      invoke(attachCommand, JSON.Encode.object(Dict.make()))
+      listening
+      ->Promise.then(_ => invoke(attachCommand, JSON.Encode.object(Dict.make())))
       ->Promise.then(_ => Promise.resolve())
       ->Promise.catch(_ => {
         onError("attach failed")
