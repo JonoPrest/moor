@@ -9,8 +9,7 @@ let firstRepo = (ws: Workspace.t): option<target> =>
   ws.repos[0]->Option.map(r => {repoId: r.id, base: "main", head: "worktree"})
 
 @react.component
-let make = (~workspaces: array<Workspace.t>, ~dispatch: Action.t => unit) => {
-  let (open_, setOpen) = React.useState(() => false)
+let make = (~workspaces: array<Workspace.t>, ~onClose: unit => unit, ~dispatch: Action.t => unit) => {
   let (title, setTitle) = React.useState(() => "")
   // Workspaces arrive after mount (listed on subscribe), so the selection is
   // resolved from props on every render; state only holds an explicit pick.
@@ -47,16 +46,12 @@ let make = (~workspaces: array<Workspace.t>, ~dispatch: Action.t => unit) => {
           targets: parsed->Array.filterMap(t => t),
         }),
       )
-      setOpen(_ => false)
       setTitle(_ => "")
+      onClose()
     }
   let update = (i, f: target => target) =>
     setTargets(ts => ts->Array.mapWithIndex((t, j) => i == j ? f(t) : t))
-  if !open_ {
-    <div className="new-review">
-      <UI.Button label="New review" kind=Primary onClick={() => setOpen(_ => true)} />
-    </div>
-  } else {
+  {
     <form
       className="new-review panel"
       ariaLabel="new review"
@@ -71,7 +66,7 @@ let make = (~workspaces: array<Workspace.t>, ~dispatch: Action.t => unit) => {
         onChange={t => setTitle(_ => t)}
         onKey={key =>
           if key == "Escape" {
-            setOpen(_ => false)
+            onClose()
           }}
       />
       {Array.length(workspaces) > 1
@@ -117,7 +112,7 @@ let make = (~workspaces: array<Workspace.t>, ~dispatch: Action.t => unit) => {
         | Some(_) => <UI.Button label="Create" kind=Primary onClick=submit />
         | None => React.null
         }}
-        <UI.Button label="Cancel" kind=Ghost onClick={() => setOpen(_ => false)} />
+        <UI.Button label="Cancel" kind=Ghost onClick=onClose />
       </UI.Box>
       {switch workspace->Option.flatMap(firstRepo) {
       | Some(_) => React.null

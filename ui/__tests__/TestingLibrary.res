@@ -14,6 +14,8 @@ module Screen = {
   @module("@testing-library/react") @scope("screen")
   external queryAllByText: string => array<element> = "queryAllByText"
   @module("@testing-library/react") @scope("screen")
+  external getByLabelText: string => element = "getByLabelText"
+  @module("@testing-library/react") @scope("screen")
   external getByTextRe: RegExp.t => element = "getByText"
 }
 

@@ -168,6 +168,30 @@
   .diff-empty {
     @apply flex flex-1 items-center justify-center text-muted;
   }
+  .workspace-group {
+    @apply mb-2;
+  }
+  .workspace-header {
+    @apply flex items-center gap-1 px-2 py-1 text-sm;
+  }
+  .workspace-glyph {
+    @apply w-4 text-muted;
+  }
+  .workspace-name {
+    @apply flex-1 truncate font-medium;
+  }
+  .workspace-group .review-item {
+    @apply pl-7;
+  }
+  .conn-dot {
+    @apply inline-block h-2 w-2 rounded-full bg-muted;
+  }
+  .conn-dot.conn-connected {
+    background: var(--color-diff-add-fg);
+  }
+  .conn-dot.conn-rejected {
+    background: var(--color-diff-remove-fg);
+  }
   .new-review {
     @apply p-2;
   }
