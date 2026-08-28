@@ -67,6 +67,7 @@ fn key(host: State<'_, Host>, chord: KeyChord) -> Result<(), HostGone> {
 }
 
 /// The webview reports adapter failures here so they reach the Rust log.
+#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 fn client_error(message: String) {
     tracing::warn!(%message, "webview");
