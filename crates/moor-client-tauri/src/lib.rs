@@ -147,6 +147,7 @@ pub fn start_host(app: &AppHandle, config: HostConfig) -> Result<Host, SetupErro
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         while let Some(batch) = patches.recv().await {
+            tracing::debug!(patches = ?batch, "view");
             if let Err(e) = app.emit(VIEW_EVENT, &batch) {
                 tracing::warn!(error = %e, "emit view patches");
             }
