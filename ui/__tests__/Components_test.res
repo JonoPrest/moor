@@ -118,7 +118,15 @@ describe("Tree", () => {
     )
     expect(opened)->toBe(true)
     FireEvent.click(items->Array.getUnsafe(1))
-    expect(dispatch)->toHaveBeenLastCalledWith(Action.SetFocus({focus: Tree({index: 1})}))
+    let calls = mock(dispatch).calls
+    let focused = calls->Array.some(args =>
+      args->Array.getUnsafe(0) == Action.SetFocus({focus: Tree({index: 1})})
+    )
+    expect(focused)->toBe(true)
+    switch calls->Array.getUnsafe(Array.length(calls) - 1)->Array.getUnsafe(0) {
+    | Action.ToggleDir(_) => ()
+    | _ => expect(false)->toBe(true)
+    }
   })
 })
 
