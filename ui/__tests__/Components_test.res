@@ -236,6 +236,26 @@ describe("NewReview (no repos)", () => {
   })
 })
 
+describe("NewReview (late workspaces)", () => {
+  test("offers Create once workspaces arrive after mount", () => {
+    let dispatch = fn()
+    let ws = Fixtures.parse(Domain.Workspace.schema, "protocol", "Workspace", "default")
+    let {rerender} = render(<NewReview workspaces=[] dispatch />)
+    FireEvent.click(Screen.getByText("New review"))
+    expect(Array.length(Screen.queryAllByText("Create")))->toBe(0)
+    rerender(<NewReview workspaces=[ws] dispatch />)
+    FireEvent.change(Screen.getByPlaceholderText("Title"), {"target": {"value": "Late"}})
+    FireEvent.click(Screen.getByText("Create"))
+    switch mock(dispatch).calls->Array.getUnsafe(0)->Array.getUnsafe(0) {
+    | Action.CreateReview({workspaceId, targets}) => {
+        expect(workspaceId)->toBe(ws.id)
+        expect(Array.length(targets))->toBe(1)
+      }
+    | _ => expect(false)->toBe(true)
+    }
+  })
+})
+
 describe("Tree (viewed)", () => {
   test("the per-file checkbox marks and unmarks viewed without moving focus", () => {
     let dispatch = fn()
