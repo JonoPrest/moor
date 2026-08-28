@@ -54,8 +54,10 @@ let make = (~tree: TreeView.t, ~focus: Focus.t, ~dispatch: Action.t => unit) => 
             className="tree-dir"
             role="treeitem"
             style
-            onClick=onSelect
-            onDoubleClick={_ => dispatch(ToggleDir({repoId, path}))}>
+            onClick={ev => {
+              onSelect(ev)
+              dispatch(ToggleDir({repoId, path}))
+            }}>
             <span className="tree-glyph"> {React.string(expanded ? "▾" : "▸")} </span>
             <span className="tree-name"> {React.string(name)} </span>
             {changedBelow > 0
