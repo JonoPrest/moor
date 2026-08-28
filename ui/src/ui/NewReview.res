@@ -12,13 +12,25 @@ let firstRepo = (ws: Workspace.t): option<target> =>
 let make = (~workspaces: array<Workspace.t>, ~dispatch: Action.t => unit) => {
   let (open_, setOpen) = React.useState(() => false)
   let (title, setTitle) = React.useState(() => "")
-  let (workspaceId, setWorkspace) = React.useState(() =>
-    workspaces[0]->Option.map(w => w.id)->Option.getOr("")
-  )
-  let workspace = workspaces->Array.find(w => w.id == workspaceId)
-  let (targets, setTargets) = React.useState(() =>
-    workspace->Option.flatMap(firstRepo)->Option.map(t => [t])->Option.getOr([])
-  )
+  // Workspaces arrive after mount (listed on subscribe), so the selection is
+  // resolved from props on every render; state only holds an explicit pick.
+  let (picked, setWorkspace) = React.useState(() => None)
+  let workspace = switch picked->Option.flatMap(id => workspaces->Array.find(w => w.id == id)) {
+  | Some(w) => Some(w)
+  | None => workspaces[0]
+  }
+  let workspaceId = workspace->Option.map(w => w.id)->Option.getOr("")
+  let (targets, setTargets) = React.useState(() => [])
+  // The first repo becomes the default target once one is known.
+  React.useEffect1(() => {
+    if Array.length(targets) == 0 {
+      switch workspace->Option.flatMap(firstRepo) {
+      | Some(t) => setTargets(_ => [t])
+      | None => ()
+      }
+    }
+    None
+  }, [workspaceId])
   let parsed: array<option<ReviewTarget.t>> = targets->Array.map(t =>
     switch (RefSpecText.parse(t.base), RefSpecText.parse(t.head)) {
     | (Some(base), Some(head)) => Some({ReviewTarget.repoId: t.repoId, base, head})
@@ -67,7 +79,7 @@ let make = (~workspaces: array<Workspace.t>, ~dispatch: Action.t => unit) => {
             ariaLabel="workspace"
             value=workspaceId
             options={workspaces->Array.map(w => (w.id, w.name))}
-            onChange={id => setWorkspace(_ => id)}
+            onChange={id => setWorkspace(_ => Some(id))}
           />
         : React.null}
       {targets
