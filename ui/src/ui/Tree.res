@@ -68,9 +68,10 @@ let make = (~tree: TreeView.t, ~focus: Focus.t, ~dispatch: Action.t => unit) => 
             className={"tree-file" ++ (open_ ? " tree-open" : "")}
             role="treeitem"
             style
-            onClick=onSelect
-            onDoubleClick={_ =>
-              dispatch(Viewport({file: {repoId, path}, firstRow: 0, lastRow: 59}))}>
+            onClick={ev => {
+              onSelect(ev)
+              dispatch(Viewport({file: {repoId, path}, firstRow: 0, lastRow: 59}))
+            }}>
             <input
               type_="checkbox"
               className="tree-viewed"

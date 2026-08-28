@@ -108,7 +108,7 @@ describe("Tree", () => {
     // root, src (expanded), lib.rs, README.md
     expect(Array.length(items))->toBe(4)
     expect(Element.hasAttribute(items->Array.getUnsafe(2), "data-focused"))->toBe(true)
-    FireEvent.doubleClick(items->Array.getUnsafe(2))
+    FireEvent.click(items->Array.getUnsafe(2))
     let calls = mock(dispatch).calls
     let opened = calls->Array.some(args =>
       switch args->Array.getUnsafe(0) {

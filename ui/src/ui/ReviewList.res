@@ -33,8 +33,10 @@ let make = (
       <li
         key=r.id
         className="review-item"
-        onClick={_ => dispatch(SetFocus({focus: Focus.ReviewList({index: i})}))}
-        onDoubleClick={_ => dispatch(OpenReview({reviewId: r.id}))}>
+        onClick={_ => {
+          dispatch(SetFocus({focus: Focus.ReviewList({index: i})}))
+          dispatch(OpenReview({reviewId: r.id}))
+        }}>
         <span className="review-title"> {React.string(r.title)} </span>
         {r.status == Open ? React.null : <UI.Badge text=status />}
       </li>,
