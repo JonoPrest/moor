@@ -178,7 +178,12 @@ pub fn run(context: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
             app.manage(host);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![dispatch, key, attach, client_error])
+        .invoke_handler(tauri::generate_handler![
+            dispatch,
+            key,
+            attach,
+            client_error
+        ])
         .run(tauri::generate_context!())?;
     Ok(())
 }
