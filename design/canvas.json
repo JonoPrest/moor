@@ -1,0 +1,93 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1600,
+      "h": 1040,
+      "title": "Diff viewer \u2014 all changes"
+    },
+    {
+      "file": "ByCommit.dc.html",
+      "x": 0,
+      "y": 1180,
+      "w": 1600,
+      "h": 720,
+      "title": "By commit \u2014 step against parent"
+    },
+    {
+      "file": "Browse.dc.html",
+      "x": 0,
+      "y": 2020,
+      "w": 1600,
+      "h": 860,
+      "title": "Browse \u2014 any file, no diff"
+    },
+    {
+      "file": "Conversation.dc.html",
+      "x": 1720,
+      "y": 700,
+      "w": 1100,
+      "h": 980,
+      "title": "Conversation tab \u2014 every thread"
+    },
+    {
+      "file": "JumpToContext.dc.html",
+      "x": 1720,
+      "y": 0,
+      "w": 1200,
+      "h": 560,
+      "title": "Jump to a comment's original diff"
+    },
+    {
+      "file": "SplitDiff.dc.html",
+      "x": 1720,
+      "y": 1800,
+      "w": 1600,
+      "h": 460,
+      "title": "Split (side-by-side) layout"
+    },
+    {
+      "file": "Search.dc.html",
+      "x": 3460,
+      "y": 1300,
+      "w": 1100,
+      "h": 760,
+      "title": "Search \u2014 content across files"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "note-questions",
+      "x": 2960,
+      "y": 0,
+      "w": 320,
+      "text": "Open questions:\n\u00b7 commit panel: show parent links as navigation?"
+    },
+    {
+      "id": "note-scope",
+      "x": 2960,
+      "y": 220,
+      "w": 320,
+      "text": "Diff scope model:\n\u00b7 All changes: main \u2192 branch tip, with a '+ working tree' toggle to fold uncommitted changes in (off = committed only).\n\u00b7 By commit: each commit vs its parent; working tree is the last step. Comments carry the pair they were made on."
+    },
+    {
+      "id": "note-threads",
+      "x": 2960,
+      "y": 520,
+      "w": 320,
+      "text": "Threads model (settled):\n\u00b7 inline threads in the diff are primary\n\u00b7 Conversation tab aggregates every thread chronologically \u2014 review-level, file-anchored (with quoted lines + jump link), resolved (collapsed), outdated (jump opens the original diff).\n\u00b7 Browse comments anchor to a file@ref, no diff pair.\n\u00b7 Browse's 'viewing' picker offers any ref \u2014 branch, tag, commit, worktree (the daemon's tree snapshots already take an arbitrary RefSpec)."
+    },
+    {
+      "id": "note-keys",
+      "x": 2960,
+      "y": 900,
+      "w": 320,
+      "text": "Keyboard (settled):\n\u00b7 canonical bindings are TERMINAL-SAFE (the same core keymap will drive the TUI): single keys + ctrl only \u2014 ctrl+k palette, ctrl+p files, / find-in-file; \u2318K/\u2318P/\u2318\u21e7F are GUI-only aliases shown in mac tooltips\n\u00b7 minimal modality: no vim modes; only text inputs capture keys (Esc leaves); everything else is focus-context single keys \u2014 j/k rows (arrows too, unadvertised) \u00b7 n/p hunks \u00b7 ]f [f files \u00b7 c comment \u00b7 r reply \u00b7 v viewed \u00b7 s split \u00b7 w whitespace \u00b7 x expand \u00b7 1/2/3 tabs \u00b7 Esc back\n\u00b7 user-configurable: ~/.config/moor/keys.toml overrides per-context bindings; commands are an enum so bad entries fail loudly at load; hints, ? help and button tooltips all re-derive from the loaded keymap (one source of truth)\n\u00b7 every control is a mouse alias for a chord; hover shows the shortcut; pane focus tab/shift-tab; resizing (if built) \u2325\u2190/\u2192, \u23250 reset"
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}

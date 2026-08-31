@@ -1,0 +1,258 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: oklch(18% 0 0); color: oklch(92% 0 0); }
+    a { color: oklch(75% 0.16 260); } a:hover { color: oklch(78% 0.18 260); }
+    .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  </style>
+</helmet>
+<div style="width: 1600px; height: 1040px; display: flex; flex-direction: column; background: oklch(18% 0 0); color: oklch(92% 0 0); font-size: 13px; overflow: hidden">
+
+  <!-- ======== review header: what is being diffed ======== -->
+  <header style="display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: oklch(22% 0 0); border-bottom: 1px solid oklch(30% 0 0)">
+    <span style="font-weight: 600; font-size: 14px">Moor code review</span>
+    <!-- diff scope: all changes vs stepping one commit at a time -->
+    <span style="display: flex; border: 1px solid oklch(30% 0 0); border-radius: 5px; overflow: hidden; font-size: 12px">
+      <span style="padding: 3px 10px; background: oklch(75% 0.16 260); color: oklch(18% 0 0); font-weight: 600">All changes</span>
+      <span style="padding: 3px 10px; color: oklch(65% 0 0)">By commit</span>
+    </span>
+    <span style="display: flex; align-items: center; gap: 6px">
+      <span class="mono" style="font-size: 12px; padding: 2px 8px; border: 1px solid oklch(30% 0 0); border-radius: 4px; background: oklch(18% 0 0)">main</span>
+      <span style="color: oklch(65% 0 0)">→</span>
+      <span class="mono" style="font-size: 12px; padding: 2px 8px; border: 1px solid oklch(30% 0 0); border-radius: 4px; background: oklch(18% 0 0)">jp/comment-context</span>
+    </span>
+    <!-- include uncommitted changes in the all-files view: a toggle, off by default when undesired -->
+    <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: oklch(92% 0 0); border: 1px solid oklch(30% 0 0); border-radius: 5px; padding: 3px 10px; background: oklch(18% 0 0)">
+      <input type="checkbox" checked> <span class="mono" style="font-size: 11.5px">+ working tree</span>
+    </label>
+    <span style="flex-grow: 1"></span>
+    <!-- diff layout, persisted (s to toggle) -->
+    <span style="position: relative; display: flex; border: 1px solid oklch(30% 0 0); border-radius: 5px; overflow: visible; font-size: 11.5px">
+      <span style="padding: 3px 9px; background: oklch(30% 0 0); font-weight: 600; border-radius: 4px 0 0 4px">Unified</span>
+      <span style="padding: 3px 9px; color: oklch(65% 0 0)">Split</span>
+      <!-- hover tooltip: every control shows its shortcut, derived from the keymap -->
+      <span style="position: absolute; top: 26px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 3px 8px; border: 1px solid oklch(30% 0 0); border-radius: 4px; background: oklch(14% 0 0); white-space: nowrap; font-size: 11px; z-index: 5">
+        Toggle layout <span class="mono" style="padding: 0 4px; border: 1px solid oklch(30% 0 0); border-radius: 3px; background: oklch(22% 0 0)">s</span>
+      </span>
+    </span>
+    <label style="display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: oklch(65% 0 0); border: 1px solid oklch(30% 0 0); border-radius: 5px; padding: 3px 9px" title="w toggles">
+      <input type="checkbox"> hide whitespace
+    </label>
+    <span style="color: oklch(65% 0 0); font-size: 12px">3 files · <span style="color: oklch(85% 0.12 150)">+64</span> <span style="color: oklch(85% 0.12 25)">−12</span></span>
+    <span style="display: inline-flex; width: 8px; height: 8px; border-radius: 99px; background: oklch(85% 0.12 150)" title="connected"></span>
+  </header>
+
+  <!-- view tabs: the diff and a GitHub-style conversation aggregating every thread -->
+  <div style="display: flex; align-items: center; gap: 2px; padding: 0 16px; background: oklch(22% 0 0); border-bottom: 1px solid oklch(30% 0 0); font-size: 12.5px">
+    <span style="padding: 7px 12px; border-bottom: 2px solid oklch(75% 0.16 260); font-weight: 600">Files changed <span style="color: oklch(65% 0 0); font-weight: 400">3</span></span>
+    <span style="padding: 7px 12px; border-bottom: 2px solid transparent; color: oklch(65% 0 0)">Conversation <span style="display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; border-radius: 99px; background: oklch(30% 0 0); font-size: 10.5px; padding: 0 4px">4</span></span>
+    <span style="padding: 7px 12px; border-bottom: 2px solid transparent; color: oklch(65% 0 0)">Browse</span>
+  </div>
+
+  <div style="display: flex; flex-grow: 1; min-height: 0">
+
+    <!-- ======== left sidebar: tree with stats, commits below ======== -->
+    <aside style="width: 280px; display: flex; flex-direction: column; border-right: 1px solid oklch(30% 0 0); background: oklch(22% 0 0)">
+      <div style="flex-grow: 1; overflow: hidden; padding: 8px 0">
+        <div style="padding: 4px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: oklch(65% 0 0)">Files</div>
+        <div style="display: flex; flex-direction: column">
+          <div style="display: flex; align-items: center; gap: 6px; padding: 3px 12px; color: oklch(92% 0 0)">
+            <span style="color: oklch(65% 0 0)">▾</span><span>crates</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px; padding: 3px 12px 3px 28px">
+            <span style="color: oklch(65% 0 0)">▾</span><span>moor-protocol</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px; padding: 3px 12px 3px 44px; background: color-mix(in oklch, oklch(78% 0.18 260) 18%, transparent); outline: 1px solid oklch(78% 0.18 260); outline-offset: -1px">
+            <span class="mono" style="font-size: 12px">domain.rs</span>
+            <span style="flex-grow: 1"></span>
+            <span class="mono" style="font-size: 11px; color: oklch(85% 0.12 150)">+9</span>
+            <span class="mono" style="font-size: 11px; color: oklch(85% 0.12 25)">−1</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px; padding: 3px 12px 3px 44px">
+            <span class="mono" style="font-size: 12px">rpc.rs</span>
+            <span style="flex-grow: 1"></span>
+            <span style="display: inline-flex; align-items: center; justify-content: center; min-width: 14px; height: 14px; border-radius: 99px; background: oklch(75% 0.16 260); color: oklch(18% 0 0); font-size: 10px; font-weight: 700">2</span>
+            <span class="mono" style="font-size: 11px; color: oklch(85% 0.12 150)">+3</span>
+            <span class="mono" style="font-size: 11px; color: oklch(85% 0.12 25)">−0</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px; padding: 3px 12px 3px 28px">
+            <span style="color: oklch(65% 0 0)">▸</span><span>moor-review-core</span>
+            <span style="flex-grow: 1"></span>
+            <span class="mono" style="font-size: 11px; color: oklch(85% 0.12 150)">+52</span>
+            <span class="mono" style="font-size: 11px; color: oklch(85% 0.12 25)">−11</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px; padding: 3px 12px; color: oklch(65% 0 0); font-size: 12px">
+            <span style="width: 12px"></span><span>… 9 unchanged dirs</span>
+          </div>
+        </div>
+      </div>
+      <div style="border-top: 1px solid oklch(30% 0 0); padding: 8px 0; max-height: 320px; overflow: hidden">
+        <div style="padding: 4px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: oklch(65% 0 0)">Commits</div>
+        <div style="display: flex; flex-direction: column">
+          <div style="display: flex; flex-direction: column; gap: 1px; padding: 6px 12px; border-left: 2px solid oklch(75% 0.16 260)">
+            <span style="font-size: 12px">working tree</span>
+            <span style="font-size: 11px; color: oklch(65% 0 0)">uncommitted · 3 files</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 1px; padding: 6px 12px; border-left: 2px solid transparent">
+            <span style="font-size: 12px">protocol: comments record their diff</span>
+            <span class="mono" style="font-size: 11px; color: oklch(65% 0 0)">668ca9d · Jono · 2h</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 1px; padding: 6px 12px; border-left: 2px solid transparent">
+            <span style="font-size: 12px">ui: review header shows the branches</span>
+            <span class="mono" style="font-size: 11px; color: oklch(65% 0 0)">68c091f · Jono · 3h</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ======== center: stacked file diffs, continuous scroll ======== -->
+    <main style="flex-grow: 1; overflow: hidden; display: flex; flex-direction: column">
+      <div style="flex-grow: 1; overflow: hidden; padding: 0 0 16px 0">
+
+        <!-- file 1 header (sticky) -->
+        <div style="position: sticky; top: 0; display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: oklch(20% 0 0); border-bottom: 1px solid oklch(30% 0 0)">
+          <span style="color: oklch(65% 0 0)">▾</span>
+          <span class="mono" style="font-size: 12.5px; font-weight: 600">crates/moor-protocol/src/domain.rs</span>
+          <span class="mono" style="font-size: 11px; color: oklch(85% 0.12 150)">+9</span>
+          <span class="mono" style="font-size: 11px; color: oklch(85% 0.12 25)">−1</span>
+          <span style="flex-grow: 1"></span>
+          <label style="display: flex; align-items: center; gap: 5px; font-size: 11px; color: oklch(65% 0 0)"><input type="checkbox"> viewed</label>
+        </div>
+
+        <!-- collapsed unmodified band: GitHub-style expanders -->
+        <div style="display: flex; align-items: center; background: oklch(26% 0.03 260); color: oklch(75% 0.08 260); font-size: 11.5px">
+          <span style="display: flex; flex-direction: column; border-right: 1px solid oklch(30% 0 0)">
+            <span style="padding: 1px 10px; cursor: pointer" title="expand 20 lines up">↥</span>
+            <span style="padding: 1px 10px; cursor: pointer" title="expand 20 lines down">↧</span>
+          </span>
+          <span style="padding: 4px 12px; cursor: pointer" title="expand all">⇕ 318 unmodified lines</span>
+          <span style="flex-grow: 1"></span>
+          <a style="padding: 4px 12px; font-size: 11px">expand full file</a>
+        </div>
+
+        <!-- diff rows -->
+        <div class="mono" style="font-size: 12px; line-height: 1.55">
+          <div style="display: flex; background: oklch(26% 0.03 260); color: oklch(75% 0.08 260)">
+            <span style="width: 90px"></span><span style="padding: 0 12px">@@ -320,6 +320,13 @@</span>
+          </div>
+          <div style="display: flex">
+            <span style="width: 45px; text-align: right; padding-right: 8px; color: oklch(65% 0 0)">327</span><span style="width: 45px; text-align: right; padding-right: 8px; color: oklch(65% 0 0)">327</span>
+            <span style="padding-left: 12px; white-space: pre">    <span style="color: oklch(75% 0.18 300)">pub</span> body: <span style="color: oklch(75% 0.13 200)">String</span>,</span>
+          </div>
+          <div style="display: flex">
+            <span style="width: 45px; text-align: right; padding-right: 8px; color: oklch(65% 0 0)">328</span><span style="width: 45px; text-align: right; padding-right: 8px; color: oklch(65% 0 0)">328</span>
+            <span style="padding-left: 12px; white-space: pre">    <span style="color: oklch(75% 0.18 300)">pub</span> state: <span style="color: oklch(75% 0.13 200)">CommentState</span>,</span>
+          </div>
+          <div style="display: flex; background: oklch(28% 0.06 150); color: oklch(85% 0.12 150)">
+            <span style="width: 45px; text-align: right; padding-right: 8px; opacity: 0.6"></span><span style="width: 45px; text-align: right; padding-right: 8px; opacity: 0.6">329</span>
+            <span style="padding-left: 12px; white-space: pre">+   <span style="color: oklch(60% 0.02 0)">/// The file diff on screen when the comment was made.</span></span>
+          </div>
+          <div style="display: flex; background: oklch(28% 0.06 150); color: oklch(85% 0.12 150); position: relative">
+            <span style="width: 45px; text-align: right; padding-right: 8px; opacity: 0.6"></span><span style="width: 45px; text-align: right; padding-right: 8px; opacity: 0.6">330</span>
+            <span style="padding-left: 12px; white-space: pre">+   <span style="color: oklch(75% 0.18 300)">pub</span> context: <span style="background: oklch(40% 0.12 90); color: oklch(75% 0.13 200)">Option&lt;ChangeKind&gt;</span>,</span>
+            <span style="position: absolute; right: 12px; top: 1px; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 99px; background: oklch(75% 0.16 260); color: oklch(18% 0 0); font-size: 11px">💬</span>
+          </div>
+
+          <!-- inline thread under the anchored line -->
+          <div style="margin: 6px 16px 10px 90px; max-width: 760px; border: 1px solid oklch(30% 0 0); border-radius: 6px; background: oklch(22% 0 0); font-family: system-ui, sans-serif">
+            <div style="display: flex; flex-direction: column; gap: 10px; padding: 12px 14px">
+              <div style="display: flex; flex-direction: column; gap: 3px">
+                <div style="display: flex; align-items: center; gap: 8px; font-size: 12px">
+                  <span style="font-weight: 600">Jonathan</span>
+                  <span style="color: oklch(65% 0 0)">2h ago</span>
+                  <span class="mono" style="font-size: 10.5px; padding: 1px 6px; border-radius: 4px; background: oklch(26% 0.03 260); color: oklch(75% 0.08 260)" title="the diff this comment was made on">main → worktree @668ca9d</span>
+                </div>
+                <div style="font-size: 13px">Should this be a struct so we can add the resolved trees later?</div>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 3px; border-left: 2px solid oklch(30% 0 0); padding-left: 10px">
+                <div style="display: flex; align-items: center; gap: 8px; font-size: 12px">
+                  <span style="font-weight: 600">claude-code <span style="color: oklch(65% 0 0); font-weight: 400">(agent)</span></span>
+                  <span style="color: oklch(65% 0 0)">1h ago</span>
+                </div>
+                <div style="font-size: 13px">A bare ChangeKind keeps the wire small; the blob pair is enough to re-render this exact diff. We can wrap it later without breaking readers.</div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px">
+                <input placeholder="Reply… (r)" style="flex-grow: 1; padding: 7px 10px; border: 1px solid oklch(30% 0 0); border-radius: 5px; background: oklch(18% 0 0); color: oklch(92% 0 0); font-size: 12.5px">
+                <button style="padding: 6px 12px; border: 1px solid oklch(30% 0 0); border-radius: 5px; background: oklch(75% 0.16 260); color: oklch(18% 0 0); font-size: 12px; font-weight: 600">Reply</button>
+                <button style="padding: 6px 12px; border: 1px solid oklch(30% 0 0); border-radius: 5px; background: transparent; color: oklch(65% 0 0); font-size: 12px">Resolve</button>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex">
+            <span style="width: 45px; text-align: right; padding-right: 8px; color: oklch(65% 0 0)">329</span><span style="width: 45px; text-align: right; padding-right: 8px; color: oklch(65% 0 0)">331</span>
+            <span style="padding-left: 12px; white-space: pre">{{ '}' }}</span>
+          </div>
+        </div>
+
+        <div style="display: flex; align-items: center; background: oklch(26% 0.03 260); color: oklch(75% 0.08 260); font-size: 11.5px">
+          <span style="display: flex; flex-direction: column; border-right: 1px solid oklch(30% 0 0)">
+            <span style="padding: 1px 10px; cursor: pointer" title="expand 20 lines up">↥</span>
+            <span style="padding: 1px 10px; cursor: pointer" title="expand 20 lines down">↧</span>
+          </span>
+          <span style="padding: 4px 12px; cursor: pointer" title="expand all">⇕ 41 unmodified lines</span>
+        </div>
+
+        <!-- file 2 header -->
+        <div style="display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: oklch(20% 0 0); border-top: 1px solid oklch(30% 0 0); border-bottom: 1px solid oklch(30% 0 0); margin-top: 8px">
+          <span style="color: oklch(65% 0 0)">▾</span>
+          <span class="mono" style="font-size: 12.5px; font-weight: 600">crates/moor-protocol/src/rpc.rs</span>
+          <span class="mono" style="font-size: 11px; color: oklch(85% 0.12 150)">+3</span>
+          <span class="mono" style="font-size: 11px; color: oklch(85% 0.12 25)">−0</span>
+          <span style="display: inline-flex; align-items: center; justify-content: center; min-width: 14px; height: 14px; border-radius: 99px; background: oklch(75% 0.16 260); color: oklch(18% 0 0); font-size: 10px; font-weight: 700">2</span>
+          <span style="flex-grow: 1"></span>
+          <label style="display: flex; align-items: center; gap: 5px; font-size: 11px; color: oklch(65% 0 0)"><input type="checkbox" checked> viewed</label>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; padding: 6px 16px; color: oklch(65% 0 0); font-size: 12px; font-style: italic">
+          viewed — collapsed <a style="font-style: normal">show anyway</a>
+        </div>
+
+        <!-- file 3: removed line example -->
+        <div style="display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: oklch(20% 0 0); border-top: 1px solid oklch(30% 0 0); border-bottom: 1px solid oklch(30% 0 0)">
+          <span style="color: oklch(65% 0 0)">▾</span>
+          <span class="mono" style="font-size: 12.5px; font-weight: 600">crates/moor-review-core/src/comments.rs</span>
+          <span class="mono" style="font-size: 11px; color: oklch(85% 0.12 150)">+52</span>
+          <span class="mono" style="font-size: 11px; color: oklch(85% 0.12 25)">−11</span>
+          <span style="flex-grow: 1"></span>
+          <label style="display: flex; align-items: center; gap: 5px; font-size: 11px; color: oklch(65% 0 0)"><input type="checkbox"> viewed</label>
+        </div>
+        <div class="mono" style="font-size: 12px; line-height: 1.55">
+          <div style="display: flex; background: oklch(26% 0.03 260); color: oklch(75% 0.08 260)">
+            <span style="width: 90px"></span><span style="padding: 0 12px">@@ -101,7 +101,9 @@</span>
+          </div>
+          <div style="display: flex; background: oklch(28% 0.06 25); color: oklch(85% 0.12 25)">
+            <span style="width: 45px; text-align: right; padding-right: 8px; opacity: 0.6">104</span><span style="width: 45px; text-align: right; padding-right: 8px; opacity: 0.6"></span>
+            <span style="padding-left: 12px; white-space: pre">-       anchor: Anchor,</span>
+          </div>
+          <div style="display: flex; background: oklch(28% 0.06 150); color: oklch(85% 0.12 150)">
+            <span style="width: 45px; text-align: right; padding-right: 8px; opacity: 0.6"></span><span style="width: 45px; text-align: right; padding-right: 8px; opacity: 0.6">104</span>
+            <span style="padding-left: 12px; white-space: pre">+       anchor: Anchor, <span style="background: oklch(40% 0.12 90)">context: Option&lt;ChangeKind&gt;</span>,</span>
+          </div>
+          <div style="display: flex">
+            <span style="width: 45px; text-align: right; padding-right: 8px; color: oklch(65% 0 0)">105</span><span style="width: 45px; text-align: right; padding-right: 8px; color: oklch(65% 0 0)">105</span>
+            <span style="padding-left: 12px; white-space: pre">        body: String,</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- hint bar -->
+      <footer class="mono" style="display: flex; align-items: center; gap: 14px; padding: 5px 16px; background: oklch(22% 0 0); border-top: 1px solid oklch(30% 0 0); font-size: 11px; color: oklch(65% 0 0)">
+        <span style="color: oklch(85% 0.12 150)">connected</span>
+        <span>1/3 viewed</span>
+        <span style="flex-grow: 1"></span>
+        <span>j/k rows · n/p hunks · ]f next file · c comment · v viewed · ? help</span>
+      </footer>
+    </main>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

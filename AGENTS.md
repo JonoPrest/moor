@@ -68,6 +68,11 @@ for the design and `docs/PLAN.md` for the milestones before making changes.
 
 ## UI (`ui/`, ReScript + React)
 
+Product design: `docs/UI-DESIGN.md` (settled on the design canvas; working
+artboards in `design/`). Keyboard-first is a hard rule there: every control
+is a mouse alias for a keymap chord, tooltips derive from the keymap, and
+canonical bindings are terminal-safe for TUI parity.
+
 Modelled on the Envio UI (`~/code/ui`), which is the reference for how to work with
 ReScript and React here.
 

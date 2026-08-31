@@ -1,0 +1,97 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: oklch(18% 0 0); color: oklch(92% 0 0); }
+    a { color: oklch(75% 0.16 260); } a:hover { color: oklch(78% 0.18 260); }
+    .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  </style>
+</helmet>
+<div style="width: 1600px; height: 860px; display: flex; flex-direction: column; background: oklch(18% 0 0); color: oklch(92% 0 0); font-size: 13px; overflow: hidden">
+
+  <header style="display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: oklch(22% 0 0); border-bottom: 1px solid oklch(30% 0 0)">
+    <span style="font-weight: 600; font-size: 14px">Moor code review</span>
+    <!-- browsing a single ref, not a diff pair -->
+    <span style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: oklch(65% 0 0)">
+      viewing
+      <span class="mono" style="font-size: 12px; padding: 2px 8px; border: 1px solid oklch(30% 0 0); border-radius: 4px; background: oklch(18% 0 0); color: oklch(92% 0 0)">worktree ▾</span>
+    </span>
+    <span style="flex-grow: 1"></span>
+    <span class="mono" style="font-size: 12px; color: oklch(65% 0 0)">ctrl+p find file</span>
+  </header>
+  <div style="display: flex; align-items: center; gap: 2px; padding: 0 16px; background: oklch(22% 0 0); border-bottom: 1px solid oklch(30% 0 0); font-size: 12.5px">
+    <span style="padding: 7px 12px; border-bottom: 2px solid transparent; color: oklch(65% 0 0)">Files changed <span style="font-weight: 400">3</span></span>
+    <span style="padding: 7px 12px; border-bottom: 2px solid transparent; color: oklch(65% 0 0)">Conversation <span style="display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; border-radius: 99px; background: oklch(30% 0 0); font-size: 10.5px; padding: 0 4px">4</span></span>
+    <span style="padding: 7px 12px; border-bottom: 2px solid oklch(75% 0.16 260); font-weight: 600">Browse</span>
+  </div>
+
+  <div style="display: flex; flex-grow: 1; min-height: 0">
+    <!-- full tree: every file, not just changed ones -->
+    <aside style="width: 280px; border-right: 1px solid oklch(30% 0 0); background: oklch(22% 0 0); padding: 8px 0">
+      <div style="display: flex; flex-direction: column; font-size: 12.5px">
+        <div style="display: flex; align-items: center; gap: 6px; padding: 3px 12px"><span style="color: oklch(65% 0 0)">▸</span><span>crates</span></div>
+        <div style="display: flex; align-items: center; gap: 6px; padding: 3px 12px"><span style="color: oklch(65% 0 0)">▸</span><span>docs</span></div>
+        <div style="display: flex; align-items: center; gap: 6px; padding: 3px 12px"><span style="color: oklch(65% 0 0)">▾</span><span>ui</span></div>
+        <div style="display: flex; align-items: center; gap: 6px; padding: 3px 12px 3px 28px"><span style="color: oklch(65% 0 0)">▾</span><span>src</span></div>
+        <div style="display: flex; align-items: center; gap: 6px; padding: 3px 12px 3px 44px; background: color-mix(in oklch, oklch(78% 0.18 260) 18%, transparent); outline: 1px solid oklch(78% 0.18 260); outline-offset: -1px">
+          <span class="mono" style="font-size: 12px">App.res</span>
+          <span style="flex-grow: 1"></span>
+          <span style="display: inline-flex; align-items: center; justify-content: center; min-width: 14px; height: 14px; border-radius: 99px; background: oklch(75% 0.16 260); color: oklch(18% 0 0); font-size: 10px; font-weight: 700">1</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px; padding: 3px 12px 3px 44px"><span class="mono" style="font-size: 12px">Main.res</span></div>
+        <div style="display: flex; align-items: center; gap: 6px; padding: 3px 12px"><span style="color: oklch(65% 0 0)">▸</span><span>xtask</span></div>
+        <div style="display: flex; align-items: center; gap: 6px; padding: 3px 12px"><span style="width: 12px"></span><span class="mono" style="font-size: 12px">README.md</span></div>
+      </div>
+    </aside>
+
+    <!-- plain file view: no diff, syntax colors, comment on any line -->
+    <main style="flex-grow: 1; overflow: hidden">
+      <div style="display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: oklch(20% 0 0); border-bottom: 1px solid oklch(30% 0 0)">
+        <span class="mono" style="font-size: 12.5px; font-weight: 600">ui/src/App.res</span>
+        <span style="font-size: 11px; color: oklch(65% 0 0)">142 lines · ReScript</span>
+      </div>
+      <div class="mono" style="font-size: 12px; line-height: 1.55">
+        <div style="display: flex"><span style="width: 45px; text-align: right; padding-right: 12px; color: oklch(65% 0 0)">5</span><span style="white-space: pre"><span style="color: oklch(60% 0.02 0)">// Keys outside text inputs go to the core as chords.</span></span></div>
+        <div style="display: flex"><span style="width: 45px; text-align: right; padding-right: 12px; color: oklch(65% 0 0)">6</span><span style="white-space: pre"><span style="color: oklch(75% 0.18 300)">let</span> <span style="color: oklch(75% 0.13 260)">chooseCore</span> = () =&gt; ...</span></div>
+        <div style="display: flex; position: relative; background: color-mix(in oklch, oklch(78% 0.18 260) 10%, transparent)">
+          <span style="width: 45px; text-align: right; padding-right: 12px; color: oklch(65% 0 0)">7</span>
+          <span style="white-space: pre"><span style="color: oklch(75% 0.18 300)">let</span> swallowed = [<span style="color: oklch(78% 0.14 150)">"Tab"</span>, <span style="color: oklch(78% 0.14 150)">" "</span>, <span style="color: oklch(78% 0.14 150)">"ArrowUp"</span>, ...]</span>
+          <span style="position: absolute; right: 12px; top: 1px; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 99px; background: oklch(75% 0.16 260); color: oklch(18% 0 0); font-size: 11px">💬</span>
+        </div>
+
+        <!-- a thread anchored to a plain line, no diff involved -->
+        <div style="margin: 6px 16px 10px 45px; max-width: 720px; border: 1px solid oklch(30% 0 0); border-radius: 6px; background: oklch(22% 0 0); font-family: system-ui, sans-serif">
+          <div style="display: flex; flex-direction: column; gap: 4px; padding: 12px 14px">
+            <div style="display: flex; align-items: center; gap: 8px; font-size: 12px">
+              <span style="font-weight: 600">Jonathan</span>
+              <span style="color: oklch(65% 0 0)">just now</span>
+              <span class="mono" style="font-size: 10.5px; padding: 1px 6px; border-radius: 4px; background: oklch(30% 0 0); color: oklch(65% 0 0)" title="not tied to a diff">browse @worktree</span>
+            </div>
+            <div style="font-size: 13px">Why do we swallow space here? It breaks scrolling in some panels.</div>
+            <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px">
+              <input placeholder="Reply…" style="flex-grow: 1; padding: 7px 10px; border: 1px solid oklch(30% 0 0); border-radius: 5px; background: oklch(18% 0 0); color: oklch(92% 0 0); font-size: 12.5px">
+              <button style="padding: 6px 12px; border: 1px solid oklch(30% 0 0); border-radius: 5px; background: transparent; color: oklch(65% 0 0); font-size: 12px">Resolve</button>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex"><span style="width: 45px; text-align: right; padding-right: 12px; color: oklch(65% 0 0)">8</span><span style="white-space: pre"></span></div>
+        <div style="display: flex"><span style="width: 45px; text-align: right; padding-right: 12px; color: oklch(65% 0 0)">9</span><span style="white-space: pre"><span style="color: oklch(75% 0.18 300)">module</span> <span style="color: oklch(75% 0.13 200)">KeyEvent</span> = {</span></div>
+      </div>
+      <footer class="mono" style="position: absolute; bottom: 0; left: 280px; right: 0; display: flex; align-items: center; gap: 14px; padding: 5px 16px; background: oklch(22% 0 0); border-top: 1px solid oklch(30% 0 0); font-size: 11px; color: oklch(65% 0 0)">
+        <span style="color: oklch(85% 0.12 150)">connected</span>
+        <span style="flex-grow: 1"></span>
+        <span>j/k lines · ctrl+p find file · c comment · ? help</span>
+      </footer>
+    </main>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

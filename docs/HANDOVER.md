@@ -1,7 +1,7 @@
 # Handover notes
 
 Written 2026-08-27 at the end of the session that finished Milestone 3 and
-4.0–4.3 of Milestone 4. Read this, then `AGENTS.md`, then `docs/PLAN.md`.
+4.0–4.3 of Milestone 4. Read this, then `AGENTS.md`, then `docs/PLAN.md`. UI work: `docs/UI-DESIGN.md` is the settled product design (canvas-derived) and supersedes PLAN 4.4-4.6 where they differ.
 
 ## State of the tree
 

@@ -421,6 +421,7 @@ fn draft_lifecycle_defers_refresh_and_submits_one_add_comment() {
             ViewSection::Draft,
             ViewSection::Focus, // composer closed
             ViewSection::Diff,
+            ViewSection::ReviewList, // refreshed targets ride the review list
             ViewSection::Conversation, // the comment is review-anchored
             ViewSection::Hints,
         ]

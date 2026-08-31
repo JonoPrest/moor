@@ -1,0 +1,86 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: oklch(18% 0 0); color: oklch(92% 0 0); }
+    a { color: oklch(75% 0.16 260); } a:hover { color: oklch(78% 0.18 260); }
+    .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  </style>
+</helmet>
+<div style="width: 1600px; height: 460px; display: flex; flex-direction: column; background: oklch(18% 0 0); color: oklch(92% 0 0); font-size: 13px; overflow: hidden">
+
+  <div style="display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: oklch(20% 0 0); border-bottom: 1px solid oklch(30% 0 0)">
+    <span class="mono" style="font-size: 12.5px; font-weight: 600">crates/moor-protocol/src/domain.rs</span>
+    <span class="mono" style="font-size: 11px; color: oklch(85% 0.12 150)">+9</span>
+    <span class="mono" style="font-size: 11px; color: oklch(85% 0.12 25)">−1</span>
+    <span style="flex-grow: 1"></span>
+    <span style="display: flex; border: 1px solid oklch(30% 0 0); border-radius: 5px; overflow: hidden; font-size: 11.5px">
+      <span style="padding: 3px 9px; color: oklch(65% 0 0)">Unified</span>
+      <span style="padding: 3px 9px; background: oklch(30% 0 0); font-weight: 600">Split</span>
+    </span>
+  </div>
+
+  <div class="mono" style="font-size: 12px; line-height: 1.55; flex-grow: 1">
+    <div style="display: flex; background: oklch(26% 0.03 260); color: oklch(75% 0.08 260)">
+      <span style="padding: 2px 16px">@@ -101,7 +101,9 @@</span>
+    </div>
+    <!-- each row: left (old) and right (new) halves, gutter between -->
+    <div style="display: flex">
+      <div style="flex: 1; display: flex; border-right: 1px solid oklch(30% 0 0)">
+        <span style="width: 45px; text-align: right; padding-right: 8px; color: oklch(65% 0 0)">102</span>
+        <span style="white-space: pre; padding-left: 8px">        kind: CommentKind,</span>
+      </div>
+      <div style="flex: 1; display: flex">
+        <span style="width: 45px; text-align: right; padding-right: 8px; color: oklch(65% 0 0)">102</span>
+        <span style="white-space: pre; padding-left: 8px">        kind: CommentKind,</span>
+      </div>
+    </div>
+    <div style="display: flex">
+      <div style="flex: 1; display: flex; border-right: 1px solid oklch(30% 0 0); background: oklch(28% 0.06 25); color: oklch(85% 0.12 25)">
+        <span style="width: 45px; text-align: right; padding-right: 8px; opacity: 0.6">103</span>
+        <span style="white-space: pre; padding-left: 8px">        anchor: Anchor,</span>
+      </div>
+      <div style="flex: 1; display: flex; background: oklch(28% 0.06 150); color: oklch(85% 0.12 150)">
+        <span style="width: 45px; text-align: right; padding-right: 8px; opacity: 0.6">103</span>
+        <span style="white-space: pre; padding-left: 8px">        anchor: Anchor, <span style="background: oklch(40% 0.12 90)">context: Option&lt;ChangeKind&gt;</span>,</span>
+      </div>
+    </div>
+    <div style="display: flex">
+      <div style="flex: 1; display: flex; border-right: 1px solid oklch(30% 0 0)">
+        <span style="width: 45px; text-align: right; padding-right: 8px; color: oklch(65% 0 0)"></span>
+        <span style="white-space: pre; padding-left: 8px; background: oklch(22% 0 0); width: 100%"> </span>
+      </div>
+      <div style="flex: 1; display: flex; background: oklch(28% 0.06 150); color: oklch(85% 0.12 150)">
+        <span style="width: 45px; text-align: right; padding-right: 8px; opacity: 0.6">104</span>
+        <span style="white-space: pre; padding-left: 8px">        body: String, <span style="color: oklch(60% 0.02 0)">// added line: left side shows a filler</span></span>
+      </div>
+    </div>
+    <div style="display: flex">
+      <div style="flex: 1; display: flex; border-right: 1px solid oklch(30% 0 0)">
+        <span style="width: 45px; text-align: right; padding-right: 8px; color: oklch(65% 0 0)">104</span>
+        <span style="white-space: pre; padding-left: 8px">    ) -&gt; Result&lt;Comment, CoreError&gt; {</span>
+      </div>
+      <div style="flex: 1; display: flex; position: relative">
+        <span style="width: 45px; text-align: right; padding-right: 8px; color: oklch(65% 0 0)">105</span>
+        <span style="white-space: pre; padding-left: 8px">    ) -&gt; Result&lt;Comment, CoreError&gt; {</span>
+        <span style="position: absolute; right: 12px; top: 1px; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 99px; background: oklch(75% 0.16 260); color: oklch(18% 0 0); font-size: 11px">💬</span>
+      </div>
+    </div>
+    <!-- inline thread spans the full width under its row, whichever side it anchors to -->
+    <div style="margin: 6px 16px 10px 45px; max-width: 760px; border: 1px solid oklch(30% 0 0); border-radius: 6px; background: oklch(22% 0 0); font-family: system-ui, sans-serif">
+      <div style="display: flex; align-items: center; gap: 8px; padding: 10px 14px; font-size: 12px">
+        <span style="font-weight: 600">Jonathan</span>
+        <span style="color: oklch(65% 0 0)">threads span both columns in split view</span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

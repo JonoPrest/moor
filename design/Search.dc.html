@@ -1,0 +1,93 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: oklch(18% 0 0); color: oklch(92% 0 0); }
+    a { color: oklch(75% 0.16 260); } a:hover { color: oklch(78% 0.18 260); }
+    .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  </style>
+</helmet>
+<div style="width: 1100px; height: 760px; display: flex; flex-direction: column; background: oklch(18% 0 0); color: oklch(92% 0 0); font-size: 13px; overflow: hidden">
+
+  <!-- search overlay: ctrl+shift+f (content), ctrl+p stays file-name fuzzy find -->
+  <div style="display: flex; flex-direction: column; gap: 0; margin: 40px auto 0; width: 760px; border: 1px solid oklch(30% 0 0); border-radius: 8px; background: oklch(22% 0 0); box-shadow: 0 12px 40px oklch(0% 0 0 / 0.5)">
+    <!-- one palette, two modes: ctrl+p opens Files, ctrl+shift+f opens Content -->
+    <div style="display: flex; align-items: center; gap: 2px; padding: 6px 14px 0; font-size: 12px">
+      <span style="padding: 4px 10px; border-bottom: 2px solid transparent; color: oklch(65% 0 0)">Files <span class="mono" style="font-size: 10px">⌘P</span></span>
+      <span style="padding: 4px 10px; border-bottom: 2px solid oklch(75% 0.16 260); font-weight: 600">Content <span class="mono" style="font-size: 10px; color: oklch(65% 0 0)">⌘⇧F</span></span>
+      <span style="padding: 4px 10px; border-bottom: 2px solid transparent; color: oklch(65% 0 0)">&gt; Actions</span>
+      <span style="flex-grow: 1"></span>
+      <span class="mono" style="padding: 4px 0; font-size: 10px; color: oklch(65% 0 0)">⌘K opens · tab switches</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid oklch(30% 0 0)">
+      <span style="color: oklch(65% 0 0)">⌕</span>
+      <input value="resolved_targets" style="flex-grow: 1; border: none; outline: none; background: transparent; color: oklch(92% 0 0); font-size: 14px">
+      <span style="display: flex; border: 1px solid oklch(30% 0 0); border-radius: 5px; overflow: hidden; font-size: 11px">
+        <span style="padding: 2px 8px; background: oklch(30% 0 0); font-weight: 600">Changed files</span>
+        <span style="padding: 2px 8px; color: oklch(65% 0 0)">All files @worktree</span>
+      </span>
+      <label class="mono" style="font-size: 11px; color: oklch(65% 0 0)"><input type="checkbox"> .*</label>
+    </div>
+
+    <div style="display: flex; flex-direction: column; overflow: hidden; max-height: 560px">
+      <div style="padding: 6px 14px; font-size: 11px; color: oklch(65% 0 0)">14 matches in 5 files</div>
+
+      <div style="display: flex; align-items: center; gap: 8px; padding: 5px 14px; background: oklch(20% 0 0)">
+        <span class="mono" style="font-size: 12px; font-weight: 600">crates/moor-client-core/src/view.rs</span>
+        <span style="font-size: 11px; color: oklch(65% 0 0)">2</span>
+      </div>
+      <div class="mono" style="font-size: 12px; line-height: 1.6">
+        <div style="display: flex; gap: 10px; padding: 0 14px; background: color-mix(in oklch, oklch(78% 0.18 260) 14%, transparent); outline: 1px solid oklch(78% 0.18 260); outline-offset: -1px">
+          <span style="color: oklch(65% 0 0); min-width: 34px; text-align: right">186</span>
+          <span style="white-space: pre"><span style="color: oklch(75% 0.18 300)">pub</span> <span style="background: oklch(40% 0.12 90)">resolved_targets</span>: <span style="color: oklch(75% 0.13 200)">Vec</span>&lt;ResolvedTarget&gt;,</span>
+        </div>
+        <div style="display: flex; gap: 10px; padding: 0 14px">
+          <span style="color: oklch(65% 0 0); min-width: 34px; text-align: right">312</span>
+          <span style="white-space: pre">        self.<span style="background: oklch(40% 0.12 90)">resolved_targets</span> = committed</span>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 8px; padding: 5px 14px; background: oklch(20% 0 0)">
+        <span class="mono" style="font-size: 12px; font-weight: 600">crates/moor-client-core/src/patch.rs</span>
+        <span style="font-size: 11px; color: oklch(65% 0 0)">3</span>
+      </div>
+      <div class="mono" style="font-size: 12px; line-height: 1.6">
+        <div style="display: flex; gap: 10px; padding: 0 14px">
+          <span style="color: oklch(65% 0 0); min-width: 34px; text-align: right">32</span>
+          <span style="white-space: pre">        <span style="background: oklch(40% 0.12 90)">resolved_targets</span>: <span style="color: oklch(75% 0.13 200)">Vec</span>&lt;ResolvedTarget&gt;,</span>
+        </div>
+        <div style="display: flex; gap: 10px; padding: 0 14px; color: oklch(65% 0 0)">
+          <span style="min-width: 34px; text-align: right">…</span><span>2 more</span>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 8px; padding: 5px 14px; background: oklch(20% 0 0)">
+        <span class="mono" style="font-size: 12px; font-weight: 600">ui/src/view/View.res</span>
+        <span style="font-size: 11px; color: oklch(65% 0 0)">4</span>
+      </div>
+      <div class="mono" style="font-size: 12px; line-height: 1.6">
+        <div style="display: flex; gap: 10px; padding: 0 14px">
+          <span style="color: oklch(65% 0 0); min-width: 34px; text-align: right">349</span>
+          <span style="white-space: pre">    @as(<span style="color: oklch(78% 0.14 150)">"resolved_targets"</span>) resolvedTargets: ...</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="mono" style="display: flex; gap: 14px; padding: 6px 14px; border-top: 1px solid oklch(30% 0 0); font-size: 11px; color: oklch(65% 0 0)">
+      <span>enter open at line</span><span>↑↓ move</span><span>tab scope</span><span>esc close</span>
+    </div>
+  </div>
+
+  <div style="margin: 24px auto 0; width: 760px; font-size: 12px; color: oklch(65% 0 0)">
+    One ⌘K palette, three modes: Files (fuzzy name, exists today) · Content (keyword/regex) · "&gt;" Actions (toggle split, hide whitespace, open review…) · ⌘P/⌘⇧F are VS Code-style aliases into a mode · enter jumps to the file (at the line, in content mode)
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
