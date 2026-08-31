@@ -506,7 +506,7 @@ async fn main() -> anyhow::Result<()> {
 /// review was resolved). Without a path: the workspace menu.
 async fn open_ui(cli: &Cli, ctx: &Context, ops: &mut Ops) -> anyhow::Result<()> {
     let review_id = if let Some(path) = &cli.path {
-        Some(directory_review(cli, ops, path).await?)
+        Some(directory_review(ops, ctx, path).await?)
     } else {
         anyhow::ensure!(
             !cli.headless && cli.ui != Ui::Headless,
@@ -566,38 +566,75 @@ async fn open_ui(cli: &Cli, ctx: &Context, ops: &mut Ops) -> anyhow::Result<()> 
 }
 
 /// The review for `path`'s repo: locate (attaching workspace+repo on
-/// first use), then find or create the working-tree review.
+/// first use), then find or create the working-tree review. On a remote
+/// context nothing local is consulted: the path goes to the daemon
+/// verbatim (it must be the repo root on that machine) and the base
+/// fallback is `main`.
 async fn directory_review(
-    cli: &Cli,
     ops: &mut Ops,
+    ctx: &Context,
     path: &Path,
 ) -> anyhow::Result<moor_protocol::ReviewId> {
-    let _ = cli;
-    let root = repo_root(path)
-        .with_context(|| format!("{} is not inside a git repository", path.display()))?;
+    let local = matches!(ctx, Context::Local { .. });
+    let (root, fallback_base) = if local {
+        let root = repo_root(path)
+            .with_context(|| format!("{} is not inside a git repository", path.display()))?;
+        let base = default_branch(&root);
+        (root, base)
+    } else {
+        (path.to_path_buf(), "main".to_owned())
+    };
     let dir_name = root
         .file_name()
         .map_or_else(|| "repo".into(), |n| n.to_string_lossy().into_owned());
-    let located = match ops.locate(&root).await {
-        Ok(l) => l,
-        Err(moord::ops::OpsError::Invalid(_)) => {
-            // First time here: a workspace named after the directory.
-            let (ws_id, _) = ops.create_workspace(dir_name.clone()).await?;
-            let path = root.to_string_lossy().into_owned();
-            ops.attach_repo(ws_id, path, dir_name.clone()).await?;
-            ops.locate(&root).await?
+    let located = if local {
+        match ops.locate(&root).await {
+            Ok(l) => l,
+            Err(moord::ops::OpsError::Invalid(_)) => {
+                // First time here: a workspace named after the directory.
+                let (ws_id, _) = ops.create_workspace(dir_name.clone()).await?;
+                let path = root.to_string_lossy().into_owned();
+                ops.attach_repo(ws_id, path, dir_name.clone()).await?;
+                ops.locate(&root).await?
+            }
+            Err(e) => return Err(e.into()),
         }
-        Err(e) => return Err(e.into()),
+    } else {
+        // `locate` canonicalises locally, so match the daemon's stored
+        // paths by string; attach if unknown (the daemon canonicalises
+        // and checks it is a git work tree on its machine).
+        let wanted = root.to_string_lossy().into_owned();
+        let find = |workspaces: &[moor_protocol::Workspace]| {
+            workspaces.iter().find_map(|ws| {
+                ws.repos
+                    .iter()
+                    .find(|r| r.path == wanted)
+                    .map(|r| moord::ops::Located {
+                        workspace: ws.clone(),
+                        repo: r.clone(),
+                    })
+            })
+        };
+        if let Some(l) = find(&ops.workspaces().await?) {
+            l
+        } else {
+            let (ws_id, _) = ops.create_workspace(dir_name.clone()).await?;
+            ops.attach_repo(ws_id, wanted.clone(), dir_name.clone())
+                .await?;
+            find(&ops.workspaces().await?).ok_or_else(|| {
+                anyhow::anyhow!("attached {wanted} but the daemon reports it at a different path; pass that path")
+            })?
+        }
     };
-    working_tree_review(ops, &located, &root, &dir_name).await
+    working_tree_review(ops, &located, &fallback_base, &dir_name).await
 }
 
 /// The open review whose head is this repo's working tree, created if
-/// missing (base: upstream, else the default branch).
+/// missing (base: upstream, else `fallback_base`).
 async fn working_tree_review(
     ops: &mut Ops,
     located: &moord::ops::Located,
-    root: &Path,
+    fallback_base: &str,
     dir_name: &str,
 ) -> anyhow::Result<ReviewId> {
     let reviews = ops.reviews(located.workspace.id).await?;
@@ -629,7 +666,7 @@ async fn working_tree_review(
                     let target = moor_protocol::ReviewTarget {
                         repo_id: located.repo.id,
                         base: RefSpec::Branch {
-                            name: default_branch(root),
+                            name: fallback_base.to_owned(),
                         },
                         head: RefSpec::WorkingTree,
                     };
