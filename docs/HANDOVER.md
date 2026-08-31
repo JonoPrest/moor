@@ -1,5 +1,42 @@
 # Handover notes
 
+## 2026-08-31: design settled — next task is BUILDING docs/UI-DESIGN.md
+
+`docs/UI-DESIGN.md` is the settled product design (from the design canvas
+https://claude.ai/code/artifact/f9e63a11-b6cd-4b8e-8ece-8a2d95f8c623;
+artboard sources in `design/`, seeded output gitignored). It supersedes
+PLAN 4.4-4.6 where they differ. Read it first.
+
+Build order agreed with Jono:
+1. **UI-only**: tabs (Files changed / Conversation / Browse), toggles with
+   keymap-derived tooltips, split (side-by-side) layout, syntax spans
+   where the render already provides them, leader-`g` groups + the
+   mode-aware hint footer (footer ALWAYS shows the current mode's keys —
+   pending-leader group, composer, jump-to-context), arrow keys as
+   unadvertised j/k aliases, palette shell (t files exists; F content and
+   `:` actions UI first, daemon Search later).
+2. **Core**: diff-scope switching (All changes ± working-tree toggle /
+   By-commit stepping vs parent, worktree as last step — reuse
+   StepperCommit + commit_step), keys.toml loading in hosts
+   (~/.config/moor/keys.toml; commands are enums, bad entries fail
+   loudly), jump-to-comment-original-diff using Comment::context.
+3. **Protocol/daemon**: context expanders (±20 lines / expand-all /
+   full file), content Search request, Browse tab (tree snapshots already
+   take any RefSpec; browse comments = Anchor::File/Lines off-diff, and
+   Comment::context stays None there).
+
+Already landed for this (all pushed, gates green):
+- `Comment::context: Option<ChangeKind>` end to end (client fills it on
+  DraftSubmitted from the open file's RenderTarget; replies inherit).
+- `ResolvedSource::WorkingTree { branch }` (daemon captures symbolic-ref)
+  and `ViewModel.{open_review, resolved_targets}` on the ReviewList
+  section; ReviewHeader shows `base → branch (worktree)`.
+- Dev loop: `moor [PATH]` serves web UI (vite-style); browser testing via
+  headless Playwright (scratchpad pw/ has scripts); `moor-client-web` is
+  HTTP+WS on one port; the daemon was restarted on the new build.
+- Live daemon has real comments incl. context-bearing ones for testing.
+
+
 Written 2026-08-27 at the end of the session that finished Milestone 3 and
 4.0–4.3 of Milestone 4. Read this, then `AGENTS.md`, then `docs/PLAN.md`. UI work: `docs/UI-DESIGN.md` is the settled product design (canvas-derived) and supersedes PLAN 4.4-4.6 where they differ.
 
