@@ -105,7 +105,10 @@ module Shell = {
         <aside className="app-left"> left </aside>
         <div className="app-center">
           <ReviewHeader
-            reviews=model.reviews workspaces=model.workspaces openReview=model.openReview
+            reviews=model.reviews
+            workspaces=model.workspaces
+            resolvedTargets=model.resolvedTargets
+            openReview=model.openReview
           />
           {switch model.tree.search {
           | Some(search) => <SearchBox search dispatch />

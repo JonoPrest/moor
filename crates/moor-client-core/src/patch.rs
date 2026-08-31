@@ -6,7 +6,7 @@
 //! state) is core-internal and never pushed — everything the UI shows is
 //! derived into the other sections.
 
-use moor_protocol::{Review, ReviewId, RpcError, ViewSection, Workspace};
+use moor_protocol::{ResolvedTarget, Review, ReviewId, RpcError, ViewSection, Workspace};
 use serde::{Deserialize, Serialize};
 use strum::EnumDiscriminants;
 
@@ -29,6 +29,7 @@ pub enum ViewPatch {
         workspaces: Vec<Workspace>,
         reviews: Vec<Review>,
         open_review: Option<ReviewId>,
+        resolved_targets: Vec<ResolvedTarget>,
     },
     Tree {
         tree: TreeView,
@@ -99,6 +100,7 @@ impl ViewModel {
                 workspaces: self.workspaces.clone(),
                 reviews: self.reviews.clone(),
                 open_review: self.open_review,
+                resolved_targets: self.resolved_targets.clone(),
             },
             ViewSection::Tree => ViewPatch::Tree {
                 tree: self.tree.clone(),
@@ -160,10 +162,12 @@ impl ViewModel {
                 workspaces,
                 reviews,
                 open_review,
+                resolved_targets,
             } => {
                 self.workspaces = workspaces;
                 self.reviews = reviews;
                 self.open_review = open_review;
+                self.resolved_targets = resolved_targets;
             }
             ViewPatch::Tree { tree } => self.tree = tree,
             ViewPatch::Diff { diff, prefs } => {

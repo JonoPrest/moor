@@ -407,6 +407,26 @@ expression: core.view()
     }
   ],
   "open_review": "00000000040000000000000001",
+  "resolved_targets": [
+    {
+      "repo_id": "00000000020000000000000002",
+      "base": {
+        "tree": "0101010101010101010101010101010101010101",
+        "source": {
+          "type": "Commit",
+          "oid": "0101010101010101010101010101010101010101"
+        }
+      },
+      "head": {
+        "tree": "0202020202020202020202020202020202020202",
+        "source": {
+          "type": "WorkingTree",
+          "dirty": [],
+          "branch": null
+        }
+      }
+    }
+  ],
   "review": {
     "snapshot": {
       "review": {

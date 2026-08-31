@@ -1259,6 +1259,12 @@ impl ClientCore {
             return Vec::new();
         };
         let mut shown = committed.clone();
+        // The header's resolved refs follow the committed snapshot.
+        self.view.resolved_targets = committed
+            .resolved
+            .as_ref()
+            .map(|r| r.iter().cloned().collect())
+            .unwrap_or_default();
         let mut sections = Vec::new();
         let author = self.config.author.clone();
         for p in &self.pending {
@@ -1295,6 +1301,7 @@ impl ClientCore {
     fn close_review(&mut self, effects: &mut Vec<Effect>) {
         self.view.review = None;
         self.view.open_review = None;
+        self.view.resolved_targets.clear();
         self.view.draft = None;
         self.view.pending_refresh = false;
         self.deferred.clear();
@@ -1988,6 +1995,8 @@ impl ClientCore {
             }
             sections.extend(self.rebase());
             if let EventBody::ReviewTargetsResolved { review_id, .. } = event.body {
+                // The header shows the resolved refs.
+                sections.push(ViewSection::ReviewList);
                 // New heads mean new trees and renders: refetch the trees
                 // and the file list; headers re-key by blob.
                 self.want_review_trees(&mut effects);

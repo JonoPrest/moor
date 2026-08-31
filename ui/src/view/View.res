@@ -348,6 +348,7 @@ module ViewModel = {
     workspaces: array<Domain.Workspace.t>,
     reviews: array<Domain.Review.t>,
     @as("open_review") openReview: @s.null option<reviewId>,
+    @as("resolved_targets") resolvedTargets: array<Domain.ResolvedTarget.t>,
     review: @s.null option<OpenReview.t>,
     draft: @s.null option<Draft.t>,
     @as("pending_refresh") pendingRefresh: bool,
@@ -370,6 +371,7 @@ module ViewModel = {
     workspaces: [],
     reviews: [],
     openReview: None,
+    resolvedTargets: [],
     review: None,
     draft: None,
     pendingRefresh: false,
@@ -388,6 +390,7 @@ module ViewPatch = {
         workspaces: array<Domain.Workspace.t>,
         reviews: array<Domain.Review.t>,
         @as("open_review") openReview: @s.null option<reviewId>,
+        @as("resolved_targets") resolvedTargets: array<Domain.ResolvedTarget.t>,
       })
     | @as("Tree") Tree({tree: TreeView.t})
     | @as("Diff") Diff({diff: @s.null option<DiffView.t>, prefs: ViewPrefs.t})
@@ -404,7 +407,13 @@ module ViewPatch = {
   let apply = (model: ViewModel.t, patch: t): ViewModel.t =>
     switch patch {
     | Connection({connection, lastError}) => {...model, connection, lastError}
-    | ReviewList({workspaces, reviews, openReview}) => {...model, workspaces, reviews, openReview}
+    | ReviewList({workspaces, reviews, openReview, resolvedTargets}) => {
+        ...model,
+        workspaces,
+        reviews,
+        openReview,
+        resolvedTargets,
+      }
     | Tree({tree}) => {...model, tree}
     | Diff({diff, prefs}) => {...model, diff, prefs}
     | Threads({threads}) => {...model, threads}

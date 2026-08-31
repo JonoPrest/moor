@@ -312,13 +312,23 @@ describe("ReviewHeader", () => {
   test("shows base → head for the open review, nothing otherwise", () => {
     let review = Fixtures.parse(Domain.Review.schema, "protocol", "Review", "default")
     let ws = Fixtures.parse(Domain.Workspace.schema, "protocol", "Workspace", "default")
+    let resolved = Fixtures.parse(
+      Domain.ResolvedTarget.schema,
+      "protocol",
+      "ResolvedTarget",
+      "default",
+    )
     let {container} = render(
-      <ReviewHeader reviews=[review] workspaces=[ws] openReview=Some(review.id) />,
+      <ReviewHeader
+        reviews=[review] workspaces=[ws] resolvedTargets=[resolved] openReview=Some(review.id)
+      />,
     )
     let refs = Element.querySelectorAll(container, ".review-header-ref")
     expect(Array.length(refs))->toBe(2 * Array.length(review.targets))
     cleanup()
-    let {container: closed} = render(<ReviewHeader reviews=[review] workspaces=[ws] openReview=None />)
+    let {container: closed} = render(
+      <ReviewHeader reviews=[review] workspaces=[ws] resolvedTargets=[] openReview=None />,
+    )
     expect(Element.querySelector(closed, ".review-header"))->toBeNull
   })
 })
