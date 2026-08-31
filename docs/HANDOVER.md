@@ -1,5 +1,19 @@
 # Handover notes
 
+## 2026-08-31 (latest): phase 1 UI rendering landed — pick up at phase 2
+
+The UI half of phase 1 below is done (commit "wip(ui-design phase 1): UI
+rendering — …"): Tabs.res tab row (counts, SetTab clicks, chrome
+tooltips), center pane switches on `model.tab` (Conversation =
+full-width thread list, Browse placeholder), HintBar pending-leader mode
+from `model.pendingKeys`, split/whitespace toggles in ReviewHeader with
+keymap-derived tooltips (`Chrome.tip`), `.app-left` width from
+`prefs.sidebarWidth`. Verified headlessly (`target/debug/moor .` +
+Playwright, scripts in the session scratchpad `pw/check.mjs`); pnpm
+gates green (417 tests). Still open from phase 1: palette shell
+(`F` content / `:` actions) — deferred to phase 2 since it wants core
+commands first. Next: phase 2 (core) in the section below.
+
 ## 2026-08-31 (later): phase 1 core landed — pick up at the UI rendering
 
 Building docs/UI-DESIGN.md phase 1. The **core half is done and green**
