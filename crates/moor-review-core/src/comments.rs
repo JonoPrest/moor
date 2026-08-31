@@ -98,6 +98,8 @@ impl Core {
     }
 
     /// Start a new thread. `id` doubles as the thread id.
+    // A wire mutation's fields, passed through one by one.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_comment(
         &self,
         ctx: &Ctx,
@@ -106,6 +108,7 @@ impl Core {
         kind: CommentKind,
         anchor: Anchor,
         body: String,
+        context: Option<ChangeKind>,
     ) -> Result<Comment, CoreError> {
         if self.store.comment(review, id)?.is_some() {
             return Err(CoreError::invalid(format!("comment {id} already exists")));
@@ -122,6 +125,7 @@ impl Core {
             created: ctx.now,
             edited: None,
             state: CommentState::Live,
+            context,
         };
         self.append(
             ctx,
@@ -158,6 +162,7 @@ impl Core {
             created: ctx.now,
             edited: None,
             state: root.state,
+            context: root.context,
         };
         self.append(
             ctx,

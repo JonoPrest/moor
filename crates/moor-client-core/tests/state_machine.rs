@@ -69,11 +69,17 @@ fn resolved(fill: u8) -> NonEmpty<ResolvedTarget> {
         repo_id: repo_id(),
         base: ResolvedRef {
             tree,
-            source: ResolvedSource::WorkingTree { dirty: Vec::new() },
+            source: ResolvedSource::WorkingTree {
+                dirty: Vec::new(),
+                branch: None,
+            },
         },
         head: ResolvedRef {
             tree,
-            source: ResolvedSource::WorkingTree { dirty: Vec::new() },
+            source: ResolvedSource::WorkingTree {
+                dirty: Vec::new(),
+                branch: None,
+            },
         },
     })
 }
@@ -108,6 +114,7 @@ fn comment(review_id: ReviewId, n: u128) -> Comment {
         created: Timestamp::from_millis(0),
         edited: None,
         state: CommentState::Live,
+        context: None,
     }
 }
 
@@ -388,6 +395,7 @@ fn draft_lifecycle_defers_refresh_and_submits_one_add_comment() {
                 body,
                 kind,
                 comment_id,
+                context: _,
             },
     } = request
     else {

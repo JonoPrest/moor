@@ -1,4 +1,5 @@
 {
+  "branch": "feature",
   "dirty": [
     "src/lib.rs",
     "new.txt"

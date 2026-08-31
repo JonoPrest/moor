@@ -274,7 +274,8 @@ expression: core.view()
             "tree": "0202020202020202020202020202020202020202",
             "source": {
               "type": "WorkingTree",
-              "dirty": []
+              "dirty": [],
+              "branch": null
             }
           }
         }
@@ -329,7 +330,8 @@ expression: core.view()
           "edited": null,
           "state": {
             "type": "Live"
-          }
+          },
+          "context": null
         },
         {
           "id": "00000001YJ0000000000000002",
@@ -351,7 +353,8 @@ expression: core.view()
           "edited": null,
           "state": {
             "type": "Live"
-          }
+          },
+          "context": null
         }
       ],
       "viewed": [],

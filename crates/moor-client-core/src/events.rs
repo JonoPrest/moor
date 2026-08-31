@@ -84,6 +84,7 @@ pub fn local_event(
             kind,
             anchor,
             body,
+            context,
         } => {
             if comment(*comment_id).is_ok() {
                 return Err(MutationError::DuplicateComment(*comment_id));
@@ -100,6 +101,7 @@ pub fn local_event(
                     created: meta.ts,
                     edited: None,
                     state: CommentState::Live,
+                    context: context.clone(),
                 },
             })
         }
@@ -127,6 +129,7 @@ pub fn local_event(
                     created: meta.ts,
                     edited: None,
                     state: root.state.clone(),
+                    context: root.context.clone(),
                 },
             })
         }

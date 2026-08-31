@@ -89,6 +89,7 @@ fn comment(review: u128, id: u128, thread: u128, blob_n: u8) -> Comment {
         created: Timestamp::from_millis(0),
         edited: None,
         state: CommentState::Live,
+        context: None,
     }
 }
 

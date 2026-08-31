@@ -153,6 +153,7 @@ async fn sigkill_mid_burst_reopens_consistent_and_socket_is_reclaimed() {
                     kind: CommentKind::Note,
                     anchor: Anchor::Review,
                     body: format!("c{n}"),
+                    context: None,
                 },
             })
             .await;
@@ -227,6 +228,7 @@ async fn sigkill_mid_burst_reopens_consistent_and_socket_is_reclaimed() {
                 kind: CommentKind::Note,
                 anchor: Anchor::Review,
                 body: "after".into(),
+                context: None,
             },
         })
         .await

@@ -176,7 +176,7 @@ fn working_tree_snapshot_reflects_unstaged_edits_untracked_and_deletes() {
         .unwrap();
     let repo = Repo::open(t.path()).unwrap();
     let wt = repo.resolve(&RefSpec::WorkingTree).unwrap();
-    let ResolvedSource::WorkingTree { dirty } = &wt.source else {
+    let ResolvedSource::WorkingTree { dirty, branch: _ } = &wt.source else {
         panic!("expected working tree");
     };
     let dirty: Vec<&str> = dirty.iter().map(moor_protocol::RepoPath::as_str).collect();

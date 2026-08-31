@@ -103,6 +103,7 @@ module Mutation = {
         kind: CommentKind.t,
         anchor: Anchor.t,
         body: string,
+        context: @s.null option<Domain.ChangeKind.t>,
       })
     | @as("Reply")
     Reply({

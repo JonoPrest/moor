@@ -455,6 +455,7 @@ fn resolved_targets() -> Result<NonEmpty<ResolvedTarget>, FixtureError> {
                 tree: tree(22),
                 source: ResolvedSource::WorkingTree {
                     dirty: vec![path("src/lib.rs")?],
+                    branch: Some("feature".into()),
                 },
             },
         },
@@ -514,6 +515,10 @@ fn comment() -> Result<Comment, FixtureError> {
         created: ts(2),
         edited: None,
         state: CommentState::Live,
+        context: Some(ChangeKind::Modified {
+            old: blob(30),
+            new: blob(31),
+        }),
     })
 }
 
@@ -531,6 +536,7 @@ fn reply_comment() -> Result<Comment, FixtureError> {
         created: ts(3),
         edited: Some(ts(4)),
         state: CommentState::Live,
+        context: None,
     })
 }
 
@@ -706,7 +712,8 @@ enum_fixture!(
     [
         ResolvedSource::Commit { oid: commit(1) },
         ResolvedSource::WorkingTree {
-            dirty: vec![path("src/lib.rs")?, path("new.txt")?]
+            dirty: vec![path("src/lib.rs")?, path("new.txt")?],
+            branch: Some("feature".into()),
         },
     ]
 );
@@ -1198,6 +1205,7 @@ enum_fixture!(
             comment_id: comment_id(),
             kind: CommentKind::Note,
             anchor: lines_anchor()?,
+            context: None,
             body: "This should be a newtype.".into()
         },
         Mutation::Reply {

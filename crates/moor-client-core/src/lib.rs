@@ -1010,21 +1010,37 @@ impl ClientCore {
                 let anchor = draft.anchor.clone();
                 let reply_to = draft.reply_to;
                 let comment_id = self.ids.comment_id(self.now);
-                let mutation = match reply_to {
-                    Some(thread_id) => Mutation::Reply {
+                let mutation = if let Some(thread_id) = reply_to {
+                    Mutation::Reply {
                         review_id,
                         thread_id,
                         comment_id,
                         kind: CommentKind::Note,
                         body,
-                    },
-                    None => Mutation::AddComment {
+                    }
+                } else {
+                    // Record the exact file diff on screen so readers can
+                    // reopen this rendering later.
+                    let context = match &anchor {
+                        Anchor::Review => None,
+                        Anchor::File { repo_id, path, .. }
+                        | Anchor::Lines { repo_id, path, .. } => review
+                            .files
+                            .iter()
+                            .find(|k| k.repo_id == *repo_id && k.path == *path)
+                            .and_then(|k| match &k.target {
+                                RenderTarget::Diff { change } => Some(change.clone()),
+                                RenderTarget::Blob { .. } => None,
+                            }),
+                    };
+                    Mutation::AddComment {
                         review_id,
                         comment_id,
                         kind: CommentKind::Note,
                         anchor,
                         body,
-                    },
+                        context,
+                    }
                 };
                 let mut effects = self.mutate(mutation)?;
                 self.view.draft = None;

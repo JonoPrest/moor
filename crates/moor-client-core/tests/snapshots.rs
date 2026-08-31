@@ -76,7 +76,13 @@ fn snapshot() -> ReviewSnapshot {
                     oid: moor_protocol::CommitOid::from_bytes([1; 20]),
                 },
             ),
-            head: resolved(2, ResolvedSource::WorkingTree { dirty: Vec::new() }),
+            head: resolved(
+                2,
+                ResolvedSource::WorkingTree {
+                    dirty: Vec::new(),
+                    branch: None,
+                },
+            ),
         })),
         threads: Vec::new(),
         comments: Vec::new(),
@@ -161,6 +167,7 @@ fn comment(n: u128, anchor: Anchor, body: &str) -> Comment {
         created: Timestamp::from_millis(2_000 + i64::try_from(n).unwrap()),
         edited: None,
         state: CommentState::Live,
+        context: None,
     }
 }
 

@@ -1566,6 +1566,7 @@ fn comment_at(
         created: Timestamp::from_millis(i64::try_from(n).unwrap()),
         edited: None,
         state,
+        context: None,
     }
 }
 

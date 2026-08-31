@@ -56,7 +56,8 @@ module ResolvedSource = {
   @schema @tag("type")
   type t =
     | @as("Commit") Commit({oid: commitOid})
-    | @as("WorkingTree") WorkingTree({dirty: array<string>})
+    | @as("WorkingTree")
+    WorkingTree({dirty: array<string>, branch: @s.null option<string>})
 }
 
 module ResolvedRef = {
@@ -151,6 +152,15 @@ module CommentKind = {
   @@warning("+27")
 }
 
+module ChangeKind = {
+  @schema @tag("type")
+  type t =
+    | @as("Added") Added({new: blobOid})
+    | @as("Deleted") Deleted({old: blobOid})
+    | @as("Modified") Modified({old: blobOid, new: blobOid})
+    | @as("Renamed") Renamed({from: string, old: blobOid, new: blobOid})
+}
+
 module CommentState = {
   @@warning("-27")
   @schema @tag("type")
@@ -174,6 +184,7 @@ module Comment = {
     created: timestamp,
     edited: @s.null option<timestamp>,
     state: CommentState.t,
+    context: @s.null option<ChangeKind.t>,
   }
 }
 
@@ -211,15 +222,6 @@ module ViewedMark = {
 module RenderOpts = {
   @schema
   type t = {@as("ignore_whitespace") ignoreWhitespace: bool, @as("context_lines") contextLines: int}
-}
-
-module ChangeKind = {
-  @schema @tag("type")
-  type t =
-    | @as("Added") Added({new: blobOid})
-    | @as("Deleted") Deleted({old: blobOid})
-    | @as("Modified") Modified({old: blobOid, new: blobOid})
-    | @as("Renamed") Renamed({from: string, old: blobOid, new: blobOid})
 }
 
 module FileChange = {

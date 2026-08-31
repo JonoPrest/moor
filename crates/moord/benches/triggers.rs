@@ -78,6 +78,7 @@ async fn main() {
                     CommentKind::Note,
                     Anchor::Review,
                     body,
+                    None,
                 )
             })
             .await

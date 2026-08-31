@@ -162,6 +162,7 @@ fn comment_burst(repo: &TestRepo) -> Line {
                 CommentKind::Note,
                 Anchor::Review,
                 format!("comment {next}"),
+                None,
             )
             .expect("comment");
         }

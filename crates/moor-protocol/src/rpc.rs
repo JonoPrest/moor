@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter};
 
 use crate::domain::{
-    Anchor, Author, Comment, CommentKind, CommitInfo, FileChange, RefSpec, RenderOpts,
+    Anchor, Author, ChangeKind, Comment, CommentKind, CommitInfo, FileChange, RefSpec, RenderOpts,
     ResolvedTarget, Review, ReviewStatus, ReviewTarget, Thread, TreeDelta, TreeSnapshot,
     ViewedMark, Workspace,
 };
@@ -171,6 +171,8 @@ pub enum Mutation {
         kind: CommentKind,
         anchor: Anchor,
         body: String,
+        /// The file diff being viewed (see [`Comment::context`]).
+        context: Option<ChangeKind>,
     },
     Reply {
         review_id: ReviewId,

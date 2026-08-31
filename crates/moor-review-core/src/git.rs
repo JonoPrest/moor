@@ -479,6 +479,13 @@ impl Repo {
             .map_err(|e| GitError::Parse(format!("write-tree output {text:?}: {e}")))?;
         let tree = TreeOid::new(tree);
 
+        let branch = self
+            .git(&["symbolic-ref", "--short", "--quiet", "HEAD"], &[])
+            .ok()
+            .and_then(|out| {
+                let name = String::from_utf8_lossy(&out).trim().to_owned();
+                (!name.is_empty()).then_some(name)
+            });
         let dirty = match self.rev_parse_commit("HEAD") {
             Ok(head) => {
                 let head_tree = self.commit_tree(head)?;
@@ -502,7 +509,7 @@ impl Repo {
         };
         Ok(ResolvedRef {
             tree,
-            source: ResolvedSource::WorkingTree { dirty },
+            source: ResolvedSource::WorkingTree { dirty, branch },
         })
     }
 }

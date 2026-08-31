@@ -20,6 +20,11 @@
           "type": "Human"
         },
         "body": "This should be a newtype.",
+        "context": {
+          "new": "c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4",
+          "old": "a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5",
+          "type": "Modified"
+        },
         "created": 1700000002000,
         "edited": null,
         "id": "01HF7YAVYG0000000000000005",
@@ -57,6 +62,7 @@
           "via": "Mcp"
         },
         "body": "Agreed; suggested change attached.",
+        "context": null,
         "created": 1700000003000,
         "edited": 1700000004000,
         "id": "01HF7YAWXR0000000000000006",
@@ -82,6 +88,7 @@
         },
         "head": {
           "source": {
+            "branch": "feature",
             "dirty": [
               "src/lib.rs"
             ],

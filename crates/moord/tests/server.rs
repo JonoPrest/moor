@@ -247,6 +247,7 @@ fn file_comment(n: u128, body: &str) -> Mutation {
         kind: CommentKind::Note,
         anchor: Anchor::Review,
         body: body.into(),
+        context: None,
     }
 }
 
@@ -574,6 +575,7 @@ async fn reanchoring_many_comments_does_not_block_reads(t: Transport) {
                 kind: CommentKind::Note,
                 anchor,
                 body: "x".into(),
+                context: None,
             },
         )
         .await

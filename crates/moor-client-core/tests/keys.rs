@@ -70,6 +70,7 @@ fn comment(n: u128, anchor: Anchor) -> Comment {
         created: Timestamp::from_millis(i64::try_from(n).unwrap()),
         edited: None,
         state: CommentState::Live,
+        context: None,
     }
 }
 

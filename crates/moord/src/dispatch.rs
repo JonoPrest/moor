@@ -151,8 +151,9 @@ fn apply(core: &Core, ctx: &moor_review_core::Ctx, m: Mutation) -> Result<(), Co
             kind,
             anchor,
             body,
+            context,
         } => {
-            core.add_comment(ctx, review_id, comment_id, kind, anchor, body)?;
+            core.add_comment(ctx, review_id, comment_id, kind, anchor, body, context)?;
         }
         Mutation::Reply {
             review_id,

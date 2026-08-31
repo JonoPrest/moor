@@ -80,9 +80,11 @@ pub enum ResolvedSource {
         oid: CommitOid,
     },
     /// The working tree at the moment of resolution; `dirty` lists paths
-    /// that differ from `HEAD`.
+    /// that differ from `HEAD`, `branch` is the checked-out branch (None
+    /// on a detached HEAD).
     WorkingTree {
         dirty: Vec<RepoPath>,
+        branch: Option<String>,
     },
 }
 
@@ -328,6 +330,11 @@ pub struct Comment {
     pub created: Timestamp,
     pub edited: Option<Timestamp>,
     pub state: CommentState,
+    /// The file diff (blob pair) on screen when the comment was made, so
+    /// a reader can jump back to that exact rendering even after the
+    /// review's head moved. `None` for review-level comments and clients
+    /// that don't track it.
+    pub context: Option<ChangeKind>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumDiscriminants)]

@@ -318,6 +318,7 @@ fn comments_validate_anchors_and_stamp_context_hash() {
             CommentKind::Note,
             anchor,
             "why 80?".into(),
+            None,
         )
         .unwrap();
     let Anchor::Lines { context_hash, .. } = c.anchor else {
@@ -336,6 +337,7 @@ fn comments_validate_anchors_and_stamp_context_hash() {
             CommentKind::Note,
             too_far,
             "x".into(),
+            None,
         )
         .unwrap_err();
     assert!(matches!(err, CoreError::Invalid { .. }), "{err}");
@@ -348,7 +350,8 @@ fn comments_validate_anchors_and_stamp_context_hash() {
             cid(3),
             CommentKind::Note,
             wrong_repo,
-            "x".into()
+            "x".into(),
+            None,
         ),
         Err(CoreError::Invalid { .. })
     ));
@@ -368,6 +371,7 @@ fn threads_replies_permissions_and_resolution() {
             CommentKind::Note,
             Anchor::Review,
             "overall".into(),
+            None,
         )
         .unwrap();
     let th = thread_id_of(cid(1));
@@ -448,6 +452,7 @@ fn comments_reanchor_when_head_moves() {
             CommentKind::Note,
             anchor,
             "g".into(),
+            None,
         )
         .unwrap();
     // File-level comment on README (not in the diff).
@@ -480,6 +485,7 @@ fn comments_reanchor_when_head_moves() {
                 blob_oid: readme_blob,
             },
             "readme".into(),
+            None,
         )
         .unwrap();
 
@@ -609,6 +615,7 @@ fn base_side_anchor_survives_base_move() {
             CommentKind::Note,
             anchor,
             "base side".into(),
+            None,
         )
         .unwrap();
     // Move main forward with an insert above.
@@ -645,6 +652,7 @@ fn suggestion_applies_once_to_the_working_tree() {
             CommentKind::Suggestion { patch },
             anchor,
             "ten".into(),
+            None,
         )
         .unwrap();
     let result = w
@@ -735,6 +743,7 @@ fn file_render_and_snapshot_and_reopen() {
             CommentKind::Note,
             Anchor::Review,
             "hi".into(),
+            None,
         )
         .unwrap();
     w.core

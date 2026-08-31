@@ -8,6 +8,7 @@
   },
   "head": {
     "source": {
+      "branch": "feature",
       "dirty": [
         "src/lib.rs"
       ],
