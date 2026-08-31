@@ -13,6 +13,7 @@ members = [
     "crates/moor-config",
     "crates/moor-client-core",
     "crates/moor-client-tauri",
+    "crates/moor-client-web",
     "xtask",
 ]
 

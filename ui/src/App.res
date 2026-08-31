@@ -7,7 +7,7 @@
 let chooseCore = (): Core.t =>
   switch tauriInternals->Nullable.toOption {
   | Some(_) => CoreTauri.make()
-  | None => CoreWasm.make()
+  | None => CoreWs.make(~url=CoreWs.defaultUrl())
   }
 
 /// Keys the browser would otherwise act on when they reach the keymap.

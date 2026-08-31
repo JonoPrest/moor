@@ -3114,6 +3114,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "moor-client-web"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "fastrand",
+ "futures-util",
+ "gethostname",
+ "moor-client-core",
+ "moor-client-host",
+ "moor-config",
+ "moor-protocol",
+ "moor-review-core",
+ "moor-test-support",
+ "moord",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-tungstenite",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "moor-config"
 version = "0.1.0"
 dependencies = [
