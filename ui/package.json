@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "res:build": "rescript",
-    "res:watch": "rescript -w",
+    "res:watch": "rescript watch",
     "res:clean": "rescript clean",
     "dev": "vite",
     "build": "rescript && vite build",
