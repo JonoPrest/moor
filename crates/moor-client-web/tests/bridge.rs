@@ -51,7 +51,7 @@ async fn browser_attach_sees_subscribed_view() {
         .await
         .unwrap();
 
-    let (ws, _) = tokio_tungstenite::connect_async(format!("ws://{}", bridge.addr()))
+    let (ws, _) = tokio_tungstenite::connect_async(format!("ws://{}/ws", bridge.addr()))
         .await
         .unwrap();
     let (mut tx, mut rx) = ws.split();
@@ -90,6 +90,26 @@ async fn browser_attach_sees_subscribed_view() {
         .expect("bridge closed after bad command")
         .unwrap();
     assert!(matches!(msg, Message::Text(_)));
+
+    // The same port serves the embedded UI over plain HTTP.
+    let mut http = tokio::net::TcpStream::connect(bridge.addr()).await.unwrap();
+    tokio::io::AsyncWriteExt::write_all(&mut http, b"GET /?review=abc HTTP/1.1\r\nhost: x\r\n\r\n")
+        .await
+        .unwrap();
+    let mut body = Vec::new();
+    tokio::io::AsyncReadExt::read_to_end(&mut http, &mut body)
+        .await
+        .unwrap();
+    let text = String::from_utf8_lossy(&body);
+    assert!(
+        text.starts_with("HTTP/1.1 200"),
+        "{}",
+        &text[..40.min(text.len())]
+    );
+    assert!(
+        text.contains("<div id=\"root\">"),
+        "should serve index.html"
+    );
 
     bridge.stop();
     shutdown.cancel();

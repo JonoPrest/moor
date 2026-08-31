@@ -67,6 +67,18 @@ module Shell = {
       core.attach()
       Some(unsubscribe)
     })
+    // Deep link: open `?review=<id>` once the daemon is subscribed.
+    let deepLinked = React.useRef(false)
+    React.useEffect1(() => {
+      switch (model.connection, CoreWs.reviewParam()) {
+      | (Subscribed(_), Some(reviewId)) if !deepLinked.current => {
+          deepLinked.current = true
+          core.dispatch(OpenReview({reviewId: reviewId}))
+        }
+      | _ => ()
+      }
+      None
+    }, [model.connection])
     React.useEffect0(() => {
       let handler = ev => onKeyDown(core, ev)
       KeyEvent.listen("keydown", handler)

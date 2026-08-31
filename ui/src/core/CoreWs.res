@@ -75,11 +75,17 @@ let make = (~url: string, ~onError: string => unit=e => Console.error(e)): Core.
   }
 }
 
-/// `?ws=<url>` beats the default bridge next to the dev server.
+/// `?ws=<url>` beats same-origin `/ws` (which `moor` and the Vite dev
+/// proxy both serve).
 let defaultUrl = () => {
   let fromQuery = %raw(`new URLSearchParams(window.location.search).get("ws")`)
   switch fromQuery->Nullable.toOption {
   | Some(url) => url
-  | None => "ws://127.0.0.1:9777"
+  | None => %raw(`(window.location.protocol === "https:" ? "wss://" : "ws://") + window.location.host + "/ws"`)
   }
 }
+
+/// `?review=<id>`: the review to open once subscribed (bare `moor` links
+/// here).
+let reviewParam = (): option<string> =>
+  %raw(`new URLSearchParams(window.location.search).get("review")`)->Nullable.toOption

@@ -82,10 +82,20 @@ Written 2026-08-27 at the end of the session that finished Milestone 3 and
 - 4.6: remote connection UX (ssh target picker) is a host concern —
   `moor-client-host` takes a socket path; the picker belongs in the Tauri
   wrapper with `moor-config` contexts.
+- Bare `moor` (added 2026-08-31) is the vite-style entry point: walks up
+  to the repo root (worktree-aware — each worktree is its own repo),
+  auto-creates workspace+repo on first use, finds or creates the open
+  review with head `WorkingTree` (base: upstream, else origin/HEAD, else
+  `main`), then serves the browser UI on a free port and prints
+  `http://127.0.0.1:<port>/?review=<id>`; Ctrl-C stops it. `--headless`
+  prints the review id and exits (remote flow); `--ui desktop` launches a
+  sibling `moor-desktop` (no deep link there yet); `--ui tui` reserved.
 - Browser dev/test path (added 2026-08-31): `moor-client-web` (`moor-web`
-  bin) bridges `moor-client-host` over a WebSocket; `CoreWs.res` is the
+  bin) is now HTTP+WS on one port: `/` serves the `ui/dist` build embedded
+  at compile time (build the UI before cargo — CI's rust job does), `/ws`
+  bridges `moor-client-host`; `CoreWs.res` is the
   browser adapter and `Main.res` picks it outside Tauri
-  (`ws://127.0.0.1:9777`, `?ws=` overrides). Run
+  (same-origin `/ws`; `?ws=` overrides; Vite dev proxies `/ws` → 9777). Run
   `cargo run -p moor-client-web`, serve `ui/dist` (or `pnpm dev`), open in
   a browser — agents can drive it with headless Playwright
   (`npm i playwright && npx playwright install chromium`; verified: page

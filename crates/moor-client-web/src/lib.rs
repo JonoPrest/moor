@@ -1,8 +1,11 @@
-//! WebSocket bridge for the browser UI (dev/test; ARCHITECTURE §6.2).
+//! HTTP + WebSocket bridge for the browser UI (dev/test; ARCHITECTURE
+//! §6.2).
 //!
-//! Speaks the same contract as the Tauri wrapper: commands in, `view`
-//! patch batches out. One `moor-client-host` per server; every connected
-//! browser sees the same view. Messages are JSON text frames:
+//! One port: `GET /…` serves the embedded `ui/dist` build, `GET /ws`
+//! upgrades to the WebSocket that speaks the same contract as the Tauri
+//! wrapper: commands in, `view` patch batches out. One `moor-client-host`
+//! per server; every connected browser sees the same view. Messages are
+//! JSON text frames:
 //!
 //! - in: `{"cmd":"dispatch","action":…}` | `{"cmd":"key","chord":…}` |
 //!   `{"cmd":"attach"}`
@@ -14,12 +17,116 @@
 use std::net::SocketAddr;
 
 use futures_util::{SinkExt as _, StreamExt as _};
+use include_dir::{Dir, include_dir};
 use moor_client_core::{Action, KeyChord};
 use moor_client_host::{Handle, HostConfig, HostError};
-use tokio::net::TcpListener;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::broadcast;
 use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
+use tokio_tungstenite::tungstenite::protocol::Role;
 use tokio_util::sync::CancellationToken;
+
+/// The built browser UI, embedded at compile time (build `ui/dist` first).
+static UI: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../ui/dist");
+
+/// The one request head we parse: method, path, and the two headers the
+/// websocket upgrade needs. Anything else is a plain asset request.
+#[derive(Debug)]
+struct RequestHead {
+    get: bool,
+    path: String,
+    upgrade_websocket: bool,
+    ws_key: Option<String>,
+}
+
+/// Read a request head (≤ 16 KB) off a fresh connection.
+async fn read_head(stream: &mut TcpStream) -> std::io::Result<(RequestHead, Vec<u8>)> {
+    let mut buf = Vec::with_capacity(1024);
+    let mut byte = [0u8; 1024];
+    while !buf.windows(4).any(|w| w == b"\r\n\r\n") {
+        if buf.len() > 16 * 1024 {
+            return Err(std::io::Error::other("request head too large"));
+        }
+        let n = stream.read(&mut byte).await?;
+        if n == 0 {
+            return Err(std::io::ErrorKind::UnexpectedEof.into());
+        }
+        buf.extend_from_slice(&byte[..n]);
+    }
+    let text = String::from_utf8_lossy(&buf);
+    let mut lines = text.lines();
+    let request = lines.next().unwrap_or_default();
+    let mut parts = request.split_whitespace();
+    let method = parts.next().unwrap_or_default();
+    let path = parts.next().unwrap_or("/").to_owned();
+    let mut upgrade_websocket = false;
+    let mut ws_key = None;
+    for line in lines {
+        if line.is_empty() {
+            break;
+        }
+        if let Some((name, value)) = line.split_once(':') {
+            let value = value.trim();
+            match name.to_ascii_lowercase().as_str() {
+                "upgrade" if value.eq_ignore_ascii_case("websocket") => upgrade_websocket = true,
+                "sec-websocket-key" => ws_key = Some(value.to_owned()),
+                _ => {}
+            }
+        }
+    }
+    Ok((
+        RequestHead {
+            get: method == "GET",
+            path,
+            upgrade_websocket,
+            ws_key,
+        },
+        buf,
+    ))
+}
+
+fn mime(path: &str) -> &'static str {
+    match path.rsplit_once('.').map(|(_, ext)| ext) {
+        Some("html") => "text/html; charset=utf-8",
+        Some("js" | "mjs") => "text/javascript",
+        Some("css") => "text/css",
+        Some("json" | "map") => "application/json",
+        Some("svg") => "image/svg+xml",
+        Some("png") => "image/png",
+        Some("ico") => "image/x-icon",
+        Some("woff2") => "font/woff2",
+        _ => "application/octet-stream",
+    }
+}
+
+/// Serve one asset from the embedded build; unknown paths fall back to
+/// `index.html` (query strings like `?review=` land on the app shell).
+async fn respond_asset(stream: &mut TcpStream, head: &RequestHead) -> std::io::Result<()> {
+    let path = head.path.split(['?', '#']).next().unwrap_or("/");
+    let rel = path.trim_start_matches('/');
+    let (body, mime): (&[u8], &str) = match UI.get_file(rel) {
+        Some(f) if head.get && !rel.is_empty() => (f.contents(), mime(rel)),
+        _ if head.get => (
+            UI.get_file("index.html")
+                .map_or(b"missing ui/dist" as &[u8], |f| f.contents()),
+            "text/html; charset=utf-8",
+        ),
+        _ => {
+            stream
+                .write_all(b"HTTP/1.1 405 Method Not Allowed\r\ncontent-length: 0\r\n\r\n")
+                .await?;
+            return Ok(());
+        }
+    };
+    let header = format!(
+        "HTTP/1.1 200 OK\r\ncontent-type: {mime}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+        body.len()
+    );
+    stream.write_all(header.as_bytes()).await?;
+    stream.write_all(body).await
+}
 
 /// One command from the browser; the tag is parsed once, here.
 #[derive(Debug, serde::Deserialize)]
@@ -109,11 +216,8 @@ pub async fn serve(addr: SocketAddr, config: HostConfig) -> Result<Server, Serve
                         let rx = patches_tx.subscribe();
                         let stop = accept_shutdown.clone();
                         tasks.spawn(async move {
-                            match tokio_tungstenite::accept_async(stream).await {
-                                Ok(ws) => client(ws, handle, rx, stop).await,
-                                Err(e) => {
-                                    tracing::debug!(%peer, error = %e, "websocket upgrade failed");
-                                }
+                            if let Err(e) = route(stream, handle, rx, stop).await {
+                                tracing::debug!(%peer, error = %e, "connection failed");
                             }
                         });
                     }
@@ -127,6 +231,35 @@ pub async fn serve(addr: SocketAddr, config: HostConfig) -> Result<Server, Serve
         tasks.abort_all();
     });
     Ok(Server { addr, shutdown })
+}
+
+/// One TCP connection: `/ws` + upgrade becomes a bridge client, anything
+/// else is a single asset response.
+async fn route(
+    mut stream: TcpStream,
+    handle: Handle,
+    patches: broadcast::Receiver<String>,
+    shutdown: CancellationToken,
+) -> std::io::Result<()> {
+    let (head, _raw) = read_head(&mut stream).await?;
+    if head.get && head.upgrade_websocket && head.path.starts_with("/ws") {
+        let Some(key) = &head.ws_key else {
+            stream
+                .write_all(b"HTTP/1.1 400 Bad Request\r\ncontent-length: 0\r\n\r\n")
+                .await?;
+            return Ok(());
+        };
+        let accept = derive_accept_key(key.as_bytes());
+        let reply = format!(
+            "HTTP/1.1 101 Switching Protocols\r\nupgrade: websocket\r\nconnection: Upgrade\r\nsec-websocket-accept: {accept}\r\n\r\n"
+        );
+        stream.write_all(reply.as_bytes()).await?;
+        let ws =
+            tokio_tungstenite::WebSocketStream::from_raw_socket(stream, Role::Server, None).await;
+        client(ws, handle, patches, shutdown).await;
+        return Ok(());
+    }
+    respond_asset(&mut stream, &head).await
 }
 
 async fn client<S>(

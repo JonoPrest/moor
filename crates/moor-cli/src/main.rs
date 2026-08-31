@@ -52,8 +52,26 @@ struct Cli {
     /// Act as this agent (attribution `Agent{via: Cli}`) instead of a human.
     #[arg(long, env = "MOOR_AGENT", global = true)]
     agent: Option<String>,
+    /// With no subcommand: open (or create) the review for the current
+    /// directory and serve the browser UI until Ctrl-C, vite-style.
+    /// `--headless` only ensures the review exists (e.g. on a remote box);
+    /// `--desktop` launches the Tauri app instead of the web UI.
+    #[arg(long, value_enum, default_value_t = Ui::Web, conflicts_with = "headless")]
+    ui: Ui,
+    /// Shorthand for `--ui headless`.
+    #[arg(long)]
+    headless: bool,
     #[command(subcommand)]
-    cmd: Cmd,
+    cmd: Option<Cmd>,
+}
+
+/// How bare `moor` presents the review. A configurable default is future
+/// work; `Tui` is reserved.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum Ui {
+    Web,
+    Desktop,
+    Headless,
 }
 
 #[derive(Debug, Subcommand)]
@@ -452,22 +470,23 @@ async fn main() -> anyhow::Result<()> {
     let json = cli.json;
     let cfg_path = config_path(&cli)?;
     let mut cfg = moor_config::Config::load(&cfg_path)?;
-    if let Cmd::Context(c) = cli.cmd {
+    if let Some(Cmd::Context(c)) = cli.cmd {
         return context_cmd(&mut cfg, &cfg_path, cli.context.as_deref(), c, json);
     }
     let (name, ctx) = resolve_context(&cli, &cfg)?;
-    if let Cmd::Daemon(c) = cli.cmd {
+    if let Some(Cmd::Daemon(c)) = cli.cmd {
         return daemon_cmd(&cfg, &name, &ctx, c, json).await;
     }
     let mut ops = connect(&cli, &ctx).await?;
-    match cli.cmd {
+    let Some(cmd) = cli.cmd else {
+        return open_here(&cli, &ctx, &mut ops).await;
+    };
+    match cmd {
         Cmd::Context(_) | Cmd::Daemon(_) => unreachable!("handled above"),
         Cmd::Workspace(c) => workspace(&mut ops, c, json).await,
         Cmd::Review(c) => review(&mut ops, c, json).await,
         Cmd::Comment(c) => comment(&mut ops, c, json).await,
-        Cmd::Files { .. } | Cmd::Diff { .. } | Cmd::Show { .. } => {
-            content(&ops, cli.cmd, json).await
-        }
+        Cmd::Files { .. } | Cmd::Diff { .. } | Cmd::Show { .. } => content(&ops, cmd, json).await,
         Cmd::Events {
             follow,
             review,
@@ -475,6 +494,169 @@ async fn main() -> anyhow::Result<()> {
             awaiting,
             since,
         } => events(&ops, follow, review, workspace, awaiting, since, json).await,
+    }
+}
+
+/// Bare `moor`: find or create the review for the current directory's
+/// repo (head = working tree), then serve the browser UI in the
+/// foreground on a free port and print the deep-linked URL.
+async fn open_here(cli: &Cli, ctx: &Context, ops: &mut Ops) -> anyhow::Result<()> {
+    let cwd = std::env::current_dir().context("current dir")?;
+    let root = repo_root(&cwd)
+        .with_context(|| format!("{} is not inside a git repository", cwd.display()))?;
+    let dir_name = root
+        .file_name()
+        .map_or_else(|| "repo".into(), |n| n.to_string_lossy().into_owned());
+    let located = match ops.locate(&root).await {
+        Ok(l) => l,
+        Err(moord::ops::OpsError::Invalid(_)) => {
+            // First time here: a workspace named after the directory.
+            let (ws_id, _) = ops.create_workspace(dir_name.clone()).await?;
+            let path = root.to_string_lossy().into_owned();
+            ops.attach_repo(ws_id, path, dir_name.clone()).await?;
+            ops.locate(&root).await?
+        }
+        Err(e) => return Err(e.into()),
+    };
+    let review_id = working_tree_review(ops, &located, &root, &dir_name).await?;
+    let ui = if cli.headless { Ui::Headless } else { cli.ui };
+    match ui {
+        Ui::Headless => {
+            println!("{review_id}");
+            return Ok(());
+        }
+        Ui::Desktop => {
+            // The Tauri app next to this binary (no deep link yet).
+            let app = std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|d| d.join("moor-desktop")))
+                .filter(|p| p.exists())
+                .ok_or_else(|| anyhow::anyhow!("moor-desktop not found next to moor"))?;
+            let mut child = std::process::Command::new(app);
+            if let Some(c) = &cli.context {
+                child.arg(c);
+            }
+            child.spawn().context("launching moor-desktop")?;
+            return Ok(());
+        }
+        Ui::Web => {}
+    }
+    // The bridge runs its own host, so it needs the daemon socket, not
+    // our already-open client.
+    let socket = match ctx {
+        Context::Local { data_dir, socket } => {
+            moord::contexts::local_spec(data_dir.as_ref(), socket.as_ref())?.socket
+        }
+        Context::Ssh { .. } | Context::Ws { .. } => {
+            anyhow::bail!("bare `moor` needs a local context (remote UIs: PLAN 4.6)")
+        }
+    };
+    let host = moor_client_host::local_config(
+        &socket,
+        web_identity(cli),
+        moor_client_core::IdSeed(moord::ids::fresh_parts().1),
+        moor_client_host::KvConfig::Memory,
+    );
+    let addr = std::net::SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, 0));
+    let server = moor_client_web::serve(addr, host).await?;
+    println!("\n  moor: http://{}/?review={review_id}\n", server.addr());
+    tokio::signal::ctrl_c().await?;
+    server.stop();
+    Ok(())
+}
+
+/// The open review whose head is this repo's working tree, created if
+/// missing (base: upstream, else the default branch).
+async fn working_tree_review(
+    ops: &mut Ops,
+    located: &moord::ops::Located,
+    root: &Path,
+    dir_name: &str,
+) -> anyhow::Result<ReviewId> {
+    let reviews = ops.reviews(located.workspace.id).await?;
+    let existing = reviews.iter().find(|r| {
+        r.status == moor_protocol::ReviewStatus::Open
+            && r.targets
+                .iter()
+                .any(|t| t.repo_id == located.repo.id && t.head == RefSpec::WorkingTree)
+    });
+    let review_id = if let Some(r) = existing {
+        eprintln!("review: {} \"{}\"", r.id, r.title);
+        r.id
+    } else {
+        {
+            let target = moor_protocol::ReviewTarget {
+                repo_id: located.repo.id,
+                base: RefSpec::Upstream,
+                head: RefSpec::WorkingTree,
+            };
+            let targets = moor_protocol::NonEmpty::singleton(target);
+            let created = ops
+                .create_review(located.workspace.id, dir_name.to_owned(), targets)
+                .await;
+            let (id, _) = if let Ok(created) = created {
+                created
+            } else {
+                {
+                    // No upstream configured: fall back to the default branch.
+                    let target = moor_protocol::ReviewTarget {
+                        repo_id: located.repo.id,
+                        base: RefSpec::Branch {
+                            name: default_branch(root),
+                        },
+                        head: RefSpec::WorkingTree,
+                    };
+                    ops.create_review(
+                        located.workspace.id,
+                        dir_name.to_owned(),
+                        moor_protocol::NonEmpty::singleton(target),
+                    )
+                    .await?
+                }
+            };
+            eprintln!("review: {id} \"{dir_name}\" (created)");
+            id
+        }
+    };
+    Ok(review_id)
+}
+
+/// Walk up to the nearest `.git` (a dir in a main checkout, a file in a
+/// linked worktree); each worktree is its own root.
+fn repo_root(from: &Path) -> Option<PathBuf> {
+    let mut dir = from.to_path_buf();
+    loop {
+        if dir.join(".git").exists() {
+            return std::fs::canonicalize(dir).ok();
+        }
+        if !dir.pop() {
+            return None;
+        }
+    }
+}
+
+/// `origin/HEAD`'s target, else `main`.
+fn default_branch(root: &Path) -> String {
+    std::process::Command::new("git")
+        .args(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])
+        .current_dir(root)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| {
+            String::from_utf8(o.stdout)
+                .ok()
+                .and_then(|s| s.trim().strip_prefix("origin/").map(str::to_owned))
+        })
+        .unwrap_or_else(|| "main".into())
+}
+
+fn web_identity(cli: &Cli) -> moor_client_host::Identity {
+    let id = identity(cli);
+    moor_client_host::Identity {
+        client_id: id.client_id,
+        client: id.client,
+        author: id.author,
     }
 }
 

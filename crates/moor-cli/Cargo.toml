@@ -9,6 +9,9 @@ name = "moor"
 path = "src/main.rs"
 
 [dependencies]
+moor-client-web = { path = "../moor-client-web" }
+moor-client-host = { workspace = true }
+moor-client-core = { workspace = true }
 moor-protocol = { workspace = true }
 moord = { workspace = true }
 serde = { workspace = true }
