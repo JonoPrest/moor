@@ -52,10 +52,13 @@ struct Cli {
     /// Act as this agent (attribution `Agent{via: Cli}`) instead of a human.
     #[arg(long, env = "MOOR_AGENT", global = true)]
     agent: Option<String>,
-    /// With no subcommand: open (or create) the review for the current
-    /// directory and serve the browser UI until Ctrl-C, vite-style.
-    /// `--headless` only ensures the review exists (e.g. on a remote box);
-    /// `--desktop` launches the Tauri app instead of the web UI.
+    /// With no subcommand: serve the browser UI until Ctrl-C, vite-style.
+    /// A path (`moor .`) opens (or creates) that directory's review; no
+    /// path opens the workspace menu. `--headless` only ensures the
+    /// review exists (e.g. `moor -c hetzner ~/proj --headless` on a
+    /// remote context); `--ui desktop` launches the Tauri app instead.
+    #[arg(value_name = "PATH")]
+    path: Option<PathBuf>,
     #[arg(long, value_enum, default_value_t = Ui::Web, conflicts_with = "headless")]
     ui: Ui,
     /// Shorthand for `--ui headless`.
@@ -479,7 +482,7 @@ async fn main() -> anyhow::Result<()> {
     }
     let mut ops = connect(&cli, &ctx).await?;
     let Some(cmd) = cli.cmd else {
-        return open_here(&cli, &ctx, &mut ops).await;
+        return open_ui(&cli, &ctx, &mut ops).await;
     };
     match cmd {
         Cmd::Context(_) | Cmd::Daemon(_) => unreachable!("handled above"),
@@ -497,13 +500,81 @@ async fn main() -> anyhow::Result<()> {
     }
 }
 
-/// Bare `moor`: find or create the review for the current directory's
-/// repo (head = working tree), then serve the browser UI in the
-/// foreground on a free port and print the deep-linked URL.
-async fn open_here(cli: &Cli, ctx: &Context, ops: &mut Ops) -> anyhow::Result<()> {
-    let cwd = std::env::current_dir().context("current dir")?;
-    let root = repo_root(&cwd)
-        .with_context(|| format!("{} is not inside a git repository", cwd.display()))?;
+/// Bare `moor [path]`: with a path, find or create that directory's
+/// review (head = working tree); then serve the browser UI in the
+/// foreground on a free port and print the URL (deep-linked when a
+/// review was resolved). Without a path: the workspace menu.
+async fn open_ui(cli: &Cli, ctx: &Context, ops: &mut Ops) -> anyhow::Result<()> {
+    let review_id = if let Some(path) = &cli.path {
+        Some(directory_review(cli, ops, path).await?)
+    } else {
+        anyhow::ensure!(
+            !cli.headless && cli.ui != Ui::Headless,
+            "--headless needs a path: it only ensures a review exists"
+        );
+        None
+    };
+    let ui = if cli.headless { Ui::Headless } else { cli.ui };
+    match (ui, review_id) {
+        (Ui::Headless, Some(id)) => {
+            println!("{id}");
+            return Ok(());
+        }
+        (Ui::Headless, None) => unreachable!("checked above"),
+        (Ui::Desktop, _) => {
+            // The Tauri app next to this binary (no deep link yet).
+            let app = std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|d| d.join("moor-desktop")))
+                .filter(|p| p.exists())
+                .ok_or_else(|| anyhow::anyhow!("moor-desktop not found next to moor"))?;
+            let mut child = std::process::Command::new(app);
+            if let Some(c) = &cli.context {
+                child.arg(c);
+            }
+            child.spawn().context("launching moor-desktop")?;
+            return Ok(());
+        }
+        (Ui::Web, _) => {}
+    }
+    // The bridge runs its own host, so it needs the daemon socket, not
+    // our already-open client.
+    let socket = match ctx {
+        Context::Local { data_dir, socket } => {
+            moord::contexts::local_spec(data_dir.as_ref(), socket.as_ref())?.socket
+        }
+        Context::Ssh { .. } | Context::Ws { .. } => {
+            anyhow::bail!(
+                "the web UI needs a local context so far (remote viewing: PLAN 4.6); \
+                 `--headless` works on remote contexts"
+            )
+        }
+    };
+    let host = moor_client_host::local_config(
+        &socket,
+        web_identity(cli),
+        moor_client_core::IdSeed(moord::ids::fresh_parts().1),
+        moor_client_host::KvConfig::Memory,
+    );
+    let addr = std::net::SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, 0));
+    let server = moor_client_web::serve(addr, host).await?;
+    let query = review_id.map_or_else(String::new, |id| format!("?review={id}"));
+    println!("\n  moor: http://{}/{query}\n", server.addr());
+    tokio::signal::ctrl_c().await?;
+    server.stop();
+    Ok(())
+}
+
+/// The review for `path`'s repo: locate (attaching workspace+repo on
+/// first use), then find or create the working-tree review.
+async fn directory_review(
+    cli: &Cli,
+    ops: &mut Ops,
+    path: &Path,
+) -> anyhow::Result<moor_protocol::ReviewId> {
+    let _ = cli;
+    let root = repo_root(path)
+        .with_context(|| format!("{} is not inside a git repository", path.display()))?;
     let dir_name = root
         .file_name()
         .map_or_else(|| "repo".into(), |n| n.to_string_lossy().into_owned());
@@ -518,51 +589,7 @@ async fn open_here(cli: &Cli, ctx: &Context, ops: &mut Ops) -> anyhow::Result<()
         }
         Err(e) => return Err(e.into()),
     };
-    let review_id = working_tree_review(ops, &located, &root, &dir_name).await?;
-    let ui = if cli.headless { Ui::Headless } else { cli.ui };
-    match ui {
-        Ui::Headless => {
-            println!("{review_id}");
-            return Ok(());
-        }
-        Ui::Desktop => {
-            // The Tauri app next to this binary (no deep link yet).
-            let app = std::env::current_exe()
-                .ok()
-                .and_then(|p| p.parent().map(|d| d.join("moor-desktop")))
-                .filter(|p| p.exists())
-                .ok_or_else(|| anyhow::anyhow!("moor-desktop not found next to moor"))?;
-            let mut child = std::process::Command::new(app);
-            if let Some(c) = &cli.context {
-                child.arg(c);
-            }
-            child.spawn().context("launching moor-desktop")?;
-            return Ok(());
-        }
-        Ui::Web => {}
-    }
-    // The bridge runs its own host, so it needs the daemon socket, not
-    // our already-open client.
-    let socket = match ctx {
-        Context::Local { data_dir, socket } => {
-            moord::contexts::local_spec(data_dir.as_ref(), socket.as_ref())?.socket
-        }
-        Context::Ssh { .. } | Context::Ws { .. } => {
-            anyhow::bail!("bare `moor` needs a local context (remote UIs: PLAN 4.6)")
-        }
-    };
-    let host = moor_client_host::local_config(
-        &socket,
-        web_identity(cli),
-        moor_client_core::IdSeed(moord::ids::fresh_parts().1),
-        moor_client_host::KvConfig::Memory,
-    );
-    let addr = std::net::SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, 0));
-    let server = moor_client_web::serve(addr, host).await?;
-    println!("\n  moor: http://{}/?review={review_id}\n", server.addr());
-    tokio::signal::ctrl_c().await?;
-    server.stop();
-    Ok(())
+    working_tree_review(ops, &located, &root, &dir_name).await
 }
 
 /// The open review whose head is this repo's working tree, created if

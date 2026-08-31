@@ -82,14 +82,19 @@ Written 2026-08-27 at the end of the session that finished Milestone 3 and
 - 4.6: remote connection UX (ssh target picker) is a host concern —
   `moor-client-host` takes a socket path; the picker belongs in the Tauri
   wrapper with `moor-config` contexts.
-- Bare `moor` (added 2026-08-31) is the vite-style entry point: walks up
+- `moor [PATH]` (added 2026-08-31) is the vite-style entry point. No
+  path: serves the workspace menu. With a path: walks up
   to the repo root (worktree-aware — each worktree is its own repo),
   auto-creates workspace+repo on first use, finds or creates the open
   review with head `WorkingTree` (base: upstream, else origin/HEAD, else
   `main`), then serves the browser UI on a free port and prints
   `http://127.0.0.1:<port>/?review=<id>`; Ctrl-C stops it. `--headless`
-  prints the review id and exits (remote flow); `--ui desktop` launches a
+  (needs a path) prints the review id and exits — the remote flow is
+  `moor -c <ctx> <path> --headless`, then find the review from a local
+  client; remotes are named contexts only (an ad-hoc `--ssh` was tried
+  and removed — one way of doing things). `--ui desktop` launches a
   sibling `moor-desktop` (no deep link there yet); `--ui tui` reserved.
+  The web UI itself still needs a local context (PLAN 4.6).
 - Browser dev/test path (added 2026-08-31): `moor-client-web` (`moor-web`
   bin) is now HTTP+WS on one port: `/` serves the `ui/dist` build embedded
   at compile time (build the UI before cargo — CI's rust job does), `/ws`
