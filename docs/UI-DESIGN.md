@@ -52,8 +52,13 @@ light both):
   badges; commits list below (chronological, working tree on top).
 - **Center**: all changed files stacked in one scroll, sticky per-file
   headers (`path · +A −D · viewed checkbox`), viewed files collapse.
-- **Hint bar** footer: connection state, viewed progress, primary
-  bindings for the focused context.
+- **Hint bar** footer: connection state, viewed progress, and — always —
+  the current mode's shortcuts (zellij-style): the focused context's
+  primary keys by default, the group's keys while a leader is pending
+  (`g: a all-changes · c by-commit · w worktree · …`), the composer's
+  keys while composing (`ctrl+enter submit · esc discard`), and
+  `esc back` in jump-to-context. The bar is the mode indicator; there is
+  never a state whose keys it does not show.
 
 ## Diff scope
 
