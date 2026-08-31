@@ -864,7 +864,7 @@ impl ClientCore {
                 let mut effects = Vec::new();
                 self.close_review(&mut effects);
                 // Diff, threads, tree, progress: derived after this returns.
-                effects.push(render(&[ViewSection::Draft]));
+                effects.push(render(&[ViewSection::ReviewList, ViewSection::Draft]));
                 Ok(effects)
             }
             Action::Viewport {
@@ -1278,6 +1278,7 @@ impl ClientCore {
     /// Drop the open review and everything content-side it pinned.
     fn close_review(&mut self, effects: &mut Vec<Effect>) {
         self.view.review = None;
+        self.view.open_review = None;
         self.view.draft = None;
         self.view.pending_refresh = false;
         self.deferred.clear();
@@ -1304,6 +1305,7 @@ impl ClientCore {
         };
         self.close_review(effects);
         self.committed = Some(snapshot.clone());
+        self.view.open_review = Some(snapshot.review.id);
         self.view.review = Some(OpenReview::new(snapshot));
         self.pending = pending;
         self.rebase();
@@ -1550,6 +1552,7 @@ impl ClientCore {
                 self.install_snapshot(snapshot, &mut effects);
                 self.expect_streamed_trees(&mut effects);
                 effects.push(render(&[
+                    ViewSection::ReviewList,
                     ViewSection::Diff,
                     ViewSection::Threads,
                     ViewSection::Conversation,
@@ -1734,6 +1737,7 @@ impl ClientCore {
                 self.install_snapshot(snapshot, &mut effects);
                 self.review_opened_piecewise(review_id, &mut effects);
                 effects.push(render(&[
+                    ViewSection::ReviewList,
                     ViewSection::Diff,
                     ViewSection::Threads,
                     ViewSection::Conversation,
@@ -1877,7 +1881,12 @@ impl ClientCore {
                 }
                 if self.open_mut(*review_id).is_some() {
                     self.close_review(&mut effects);
-                    sections.extend([ViewSection::Diff, ViewSection::Threads, ViewSection::Draft]);
+                    sections.extend([
+                        ViewSection::ReviewList,
+                        ViewSection::Diff,
+                        ViewSection::Threads,
+                        ViewSection::Draft,
+                    ]);
                 }
             }
             EventBody::ReviewTargetsResolved { review_id, .. }

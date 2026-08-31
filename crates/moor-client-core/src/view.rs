@@ -2,8 +2,8 @@
 //! names the sections that changed.
 
 use moor_protocol::{
-    Anchor, ClientSeq, EventBody, RenderOpts, Review, ReviewSnapshot, RpcError, ThreadId, TreeOid,
-    ViewSection, Workspace,
+    Anchor, ClientSeq, EventBody, RenderOpts, Review, ReviewId, ReviewSnapshot, RpcError, ThreadId,
+    TreeOid, ViewSection, Workspace,
 };
 
 use crate::cache::RenderKey;
@@ -179,6 +179,9 @@ pub struct ViewModel {
     /// the union of every workspace's reviews.
     pub workspaces: Vec<Workspace>,
     pub reviews: Vec<Review>,
+    /// Which of `reviews` is open, for headers (the review itself is in
+    /// `review`, which is never pushed to the UI).
+    pub open_review: Option<ReviewId>,
     pub review: Option<OpenReview>,
     pub draft: Option<Draft>,
     /// A working-tree refresh arrived while `draft` was open and is being

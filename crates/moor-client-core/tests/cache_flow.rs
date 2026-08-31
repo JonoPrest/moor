@@ -497,6 +497,7 @@ fn streamed_open_fills_and_pins_the_cache_and_renders_once_at_end() {
     assert_eq!(
         rendered(&effects),
         vec![
+            ViewSection::ReviewList,
             ViewSection::Diff,
             ViewSection::Threads,
             ViewSection::Conversation,
@@ -1276,6 +1277,7 @@ fn close_review_releases_pins_and_drops_queued_fetches() {
     assert_eq!(
         rendered(&effects),
         vec![
+            ViewSection::ReviewList,
             ViewSection::Draft,
             ViewSection::Tree,
             ViewSection::Progress,

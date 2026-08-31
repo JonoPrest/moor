@@ -192,6 +192,24 @@
   .conn-dot.conn-rejected {
     background: var(--color-diff-remove-fg);
   }
+  .review-header {
+    @apply flex items-center gap-3 border-b border-border bg-panel px-3 py-2 text-sm;
+  }
+  .review-header-title {
+    @apply font-medium;
+  }
+  .review-header-target {
+    @apply flex items-center gap-1;
+  }
+  .review-header-repo {
+    @apply text-muted;
+  }
+  .review-header-ref {
+    @apply rounded border border-border bg-bg px-1.5 font-mono text-xs;
+  }
+  .review-header-arrow {
+    @apply text-muted;
+  }
   .new-review {
     @apply p-2;
   }

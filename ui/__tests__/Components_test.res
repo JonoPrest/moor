@@ -308,6 +308,21 @@ describe("ReviewList", () => {
   })
 })
 
+describe("ReviewHeader", () => {
+  test("shows base → head for the open review, nothing otherwise", () => {
+    let review = Fixtures.parse(Domain.Review.schema, "protocol", "Review", "default")
+    let ws = Fixtures.parse(Domain.Workspace.schema, "protocol", "Workspace", "default")
+    let {container} = render(
+      <ReviewHeader reviews=[review] workspaces=[ws] openReview=Some(review.id) />,
+    )
+    let refs = Element.querySelectorAll(container, ".review-header-ref")
+    expect(Array.length(refs))->toBe(2 * Array.length(review.targets))
+    cleanup()
+    let {container: closed} = render(<ReviewHeader reviews=[review] workspaces=[ws] openReview=None />)
+    expect(Element.querySelector(closed, ".review-header"))->toBeNull
+  })
+})
+
 describe("Tree (viewed)", () => {
   test("the per-file checkbox marks and unmarks viewed without moving focus", () => {
     let dispatch = fn()

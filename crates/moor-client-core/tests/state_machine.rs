@@ -519,6 +519,7 @@ fn events_update_only_what_they_touch() {
     assert_eq!(
         rendered(&effects),
         vec![
+            ViewSection::ReviewList,
             ViewSection::Diff,
             ViewSection::Threads,
             ViewSection::Draft,

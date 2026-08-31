@@ -687,6 +687,7 @@ enum_fixture!(
         ViewPatch::ReviewList {
             workspaces: vec![proto::<Workspace>()?],
             reviews: vec![proto::<Review>()?],
+            open_review: Some(proto::<Review>()?.id),
         },
         ViewPatch::Tree {
             tree: local::<TreeView>()?,
@@ -740,6 +741,7 @@ struct_fixture!(
         last_error: None,
         workspaces: vec![proto::<Workspace>()?],
         reviews: vec![proto::<Review>()?],
+        open_review: Some(proto::<Review>()?.id),
         review: Some(local::<OpenReview>()?),
         draft: Some(local::<Draft>()?),
         pending_refresh: true,

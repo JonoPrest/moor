@@ -347,6 +347,7 @@ module ViewModel = {
     @as("last_error") lastError: @s.null option<Rpc.RpcError.t>,
     workspaces: array<Domain.Workspace.t>,
     reviews: array<Domain.Review.t>,
+    @as("open_review") openReview: @s.null option<reviewId>,
     review: @s.null option<OpenReview.t>,
     draft: @s.null option<Draft.t>,
     @as("pending_refresh") pendingRefresh: bool,
@@ -368,6 +369,7 @@ module ViewModel = {
     lastError: None,
     workspaces: [],
     reviews: [],
+    openReview: None,
     review: None,
     draft: None,
     pendingRefresh: false,
@@ -382,7 +384,11 @@ module ViewPatch = {
     | @as("Connection")
     Connection({connection: ConnectionView.t, @as("last_error") lastError: @s.null option<Rpc.RpcError.t>})
     | @as("ReviewList")
-    ReviewList({workspaces: array<Domain.Workspace.t>, reviews: array<Domain.Review.t>})
+    ReviewList({
+        workspaces: array<Domain.Workspace.t>,
+        reviews: array<Domain.Review.t>,
+        @as("open_review") openReview: @s.null option<reviewId>,
+      })
     | @as("Tree") Tree({tree: TreeView.t})
     | @as("Diff") Diff({diff: @s.null option<DiffView.t>, prefs: ViewPrefs.t})
     | @as("Threads") Threads({threads: array<ThreadView.t>})
@@ -398,7 +404,7 @@ module ViewPatch = {
   let apply = (model: ViewModel.t, patch: t): ViewModel.t =>
     switch patch {
     | Connection({connection, lastError}) => {...model, connection, lastError}
-    | ReviewList({workspaces, reviews}) => {...model, workspaces, reviews}
+    | ReviewList({workspaces, reviews, openReview}) => {...model, workspaces, reviews, openReview}
     | Tree({tree}) => {...model, tree}
     | Diff({diff, prefs}) => {...model, diff, prefs}
     | Threads({threads}) => {...model, threads}

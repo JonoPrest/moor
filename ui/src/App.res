@@ -104,6 +104,9 @@ module Shell = {
       <div className="app-body">
         <aside className="app-left"> left </aside>
         <div className="app-center">
+          <ReviewHeader
+            reviews=model.reviews workspaces=model.workspaces openReview=model.openReview
+          />
           {switch model.tree.search {
           | Some(search) => <SearchBox search dispatch />
           | None => React.null

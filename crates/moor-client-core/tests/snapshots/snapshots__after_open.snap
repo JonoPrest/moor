@@ -238,6 +238,7 @@ expression: core.view()
       "status": "Open"
     }
   ],
+  "open_review": "00000000040000000000000001",
   "review": {
     "snapshot": {
       "review": {
