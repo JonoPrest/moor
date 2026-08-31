@@ -34,6 +34,7 @@ module Element = {
   @send external querySelector: (element, string) => Nullable.t<element> = "querySelector"
   @send external querySelectorAll: (element, string) => array<element> = "querySelectorAll"
   @get external className: element => string = "className"
+  @get external textContent: element => string = "textContent"
   @send external getAttribute: (element, string) => Nullable.t<string> = "getAttribute"
   @send external hasAttribute: (element, string) => bool = "hasAttribute"
 }

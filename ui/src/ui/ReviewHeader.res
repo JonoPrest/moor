@@ -15,6 +15,60 @@ module Toggle = {
   }
 }
 
+// The scope control (UI-DESIGN §Diff scope): All changes (± working
+// tree) vs By commit, with the step position while stepping.
+module ScopeControl = {
+  @react.component
+  let make = (
+    ~scope: Domain.DiffScope.t,
+    ~stepper: option<View.CommitStepper.t>,
+    ~chrome: array<View.Hint.t>,
+    ~dispatch: Action.t => unit,
+  ) => {
+    let allish = switch scope {
+    | All(_) | Committed(_) => true
+    | Commit(_) | Worktree(_) => false
+    }
+    let position = switch (scope, stepper) {
+    | (Worktree(_), _) => Some("worktree")
+    | (Commit({oid}), Some(s)) =>
+      s.commits
+      ->Array.findIndexOpt(c => c.oid == oid)
+      ->Option.map(i =>
+        Int.toString(Array.length(s.commits) - i) ++ " of " ++ Int.toString(Array.length(s.commits))
+      )
+    | (Commit(_), None) | (All(_), _) | (Committed(_), _) => None
+    }
+    <span className="scope-control" role="group" ariaLabel="diff scope">
+      <Toggle
+        label="All changes"
+        active=allish
+        title={Chrome.tip(chrome, ScopeAll)}
+        onClick={() => dispatch(SetScope({scope: All({})}))}
+      />
+      {allish
+        ? <Toggle
+            label="+ working tree"
+            active={scope == All({})}
+            title={Chrome.tip(chrome, ScopeWorktree)}
+            onClick={() =>
+              dispatch(SetScope({scope: scope == All({}) ? Committed({}) : All({})}))}
+          />
+        : React.null}
+      <Toggle
+        label="By commit"
+        active={!allish}
+        title={Chrome.tip(chrome, ScopeByCommit)}
+        onClick={() => dispatch(SetScope({scope: ByCommit({})}))}
+      />
+      {switch position {
+      | Some(text) => <span className="scope-position"> {React.string(text)} </span>
+      | None => React.null
+      }}
+    </span>
+  }
+}
+
 @react.component
 let make = (
   ~reviews: array<Domain.Review.t>,
@@ -22,6 +76,8 @@ let make = (
   ~resolvedTargets: array<Domain.ResolvedTarget.t>,
   ~openReview: option<Ids.reviewId>,
   ~prefs: View.ViewPrefs.t,
+  ~scope: Domain.DiffScope.t=Domain.DiffScope.All({}),
+  ~stepper: option<View.CommitStepper.t>=?,
   ~chrome: array<View.Hint.t>=[],
   ~dispatch: Action.t => unit=_ => (),
 ) =>
@@ -44,6 +100,7 @@ let make = (
       let many = Array.length(review.targets) > 1
       <header className="review-header" ariaLabel="review targets">
         <span className="review-header-title"> {React.string(review.title)} </span>
+        <ScopeControl scope stepper chrome dispatch />
         {review.targets
         ->Array.map(t =>
           <span key=t.repoId className="review-header-target">

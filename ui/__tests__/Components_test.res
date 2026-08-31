@@ -396,6 +396,56 @@ describe("ReviewHeader", () => {
   })
 })
 
+describe("ScopeControl", () => {
+  test("shows the scope, toggles worktree, enters by-commit, shows the step", () => {
+    let dispatch = fn()
+    let review = Fixtures.parse(Domain.Review.schema, "protocol", "Review", "default")
+    let ws = Fixtures.parse(Domain.Workspace.schema, "protocol", "Workspace", "default")
+    let prefs = View.ViewModel.empty.prefs
+    let render_ = (scope, stepper) => render(
+      <ReviewHeader
+        reviews=[review]
+        workspaces=[ws]
+        resolvedTargets=[]
+        openReview=Some(review.id)
+        prefs
+        scope
+        ?stepper
+        dispatch
+      />,
+    )
+    let _ = render_(Domain.DiffScope.All({}), None)
+    let all = Screen.getByText("All changes")
+    expect(Element.hasAttribute(all, "data-active"))->toBe(true)
+    expect(Element.hasAttribute(Screen.getByText("+ working tree"), "data-active"))->toBe(true)
+    FireEvent.click(Screen.getByText("+ working tree"))
+    expect(dispatch)->toHaveBeenLastCalledWith(Action.SetScope({scope: Committed({})}))
+    FireEvent.click(Screen.getByText("By commit"))
+    expect(dispatch)->toHaveBeenLastCalledWith(Action.SetScope({scope: ByCommit({})}))
+    cleanup()
+    // Committed: worktree toggle shown but off.
+    let _ = render_(Domain.DiffScope.Committed({}), None)
+    expect(Element.hasAttribute(Screen.getByText("+ working tree"), "data-active"))->toBe(false)
+    cleanup()
+    // By-commit at a commit: position indicator from the stepper.
+    let stepper = Fixtures.parse(View.CommitStepper.schema, "client", "CommitStepper", "default")
+    let oid = (stepper.commits->Array.getUnsafe(0)).oid
+    let repoId = stepper.repoId
+    let {container} = render_(Domain.DiffScope.Commit({repoId, oid}), Some(stepper))
+    expect(Element.hasAttribute(Screen.getByText("By commit"), "data-active"))->toBe(true)
+    expect(Array.length(Screen.queryAllByText("+ working tree")))->toBe(0)
+    let position =
+      Element.querySelector(container, ".scope-position")->Nullable.toOption->Option.getExn
+    expect(Element.textContent(position))->toContain("of")
+    cleanup()
+    // The worktree step names itself.
+    let {container} = render_(Domain.DiffScope.Worktree({repoId: repoId}), Some(stepper))
+    let position =
+      Element.querySelector(container, ".scope-position")->Nullable.toOption->Option.getExn
+    expect(Element.textContent(position))->toBe("worktree")
+  })
+})
+
 describe("Tabs", () => {
   test("marks the active tab, shows counts, dispatches SetTab on click", () => {
     let dispatch = fn()

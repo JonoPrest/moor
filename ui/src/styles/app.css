@@ -375,6 +375,12 @@
   .tab-placeholder {
     @apply flex flex-1 items-center justify-center text-muted;
   }
+  .scope-control {
+    @apply flex items-center gap-1;
+  }
+  .scope-position {
+    @apply ml-1 font-mono text-xs text-muted;
+  }
   .review-header-toggles {
     @apply ml-auto flex gap-1;
   }

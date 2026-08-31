@@ -113,6 +113,8 @@ module Shell = {
             resolvedTargets=model.resolvedTargets
             openReview=model.openReview
             prefs=model.prefs
+            scope=model.scope
+            stepper=?model.stepper
             chrome=model.chrome
             dispatch
           />
