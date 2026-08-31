@@ -82,6 +82,16 @@ Written 2026-08-27 at the end of the session that finished Milestone 3 and
 - 4.6: remote connection UX (ssh target picker) is a host concern —
   `moor-client-host` takes a socket path; the picker belongs in the Tauri
   wrapper with `moor-config` contexts.
+- Browser dev/test path (added 2026-08-31): `moor-client-web` (`moor-web`
+  bin) bridges `moor-client-host` over a WebSocket; `CoreWs.res` is the
+  browser adapter and `Main.res` picks it outside Tauri
+  (`ws://127.0.0.1:9777`, `?ws=` overrides). Run
+  `cargo run -p moor-client-web`, serve `ui/dist` (or `pnpm dev`), open in
+  a browser — agents can drive it with headless Playwright
+  (`npm i playwright && npx playwright install chromium`; verified: page
+  connects, review opens, threads render, zero console errors). Tauri
+  remains the shipping shell; its IPC layer is only covered by the manual
+  smoke.
 - `CoreWasm` is a stub that refuses actions (PLAN "Later").
 - Edit-comment through the composer (an "edit draft") is not modelled;
   `Action::EditComment` takes the text directly.
