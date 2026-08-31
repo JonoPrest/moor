@@ -231,6 +231,10 @@
         "client_seq": 7
       }
     ],
+    "scope": {
+      "type": "All"
+    },
+    "scoped_targets": [],
     "snapshot": {
       "comments": [
         {
@@ -439,6 +443,9 @@
       "workspace_id": "01HF7YAT000000000000000001"
     }
   ],
+  "scope": {
+    "type": "All"
+  },
   "stepper": {
     "commits": [
       {

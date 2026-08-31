@@ -1,7 +1,7 @@
 //! Workspaces, reviews, files, commits, renders and viewed marks on `Core`.
 
 use moor_protocol::{
-    BlobOid, ChangeKind, CommitInfo, CommitOid, EntityKind, EventBody, FileChange,
+    BlobOid, ChangeKind, CommitInfo, CommitOid, DiffScope, EntityKind, EventBody, FileChange,
     FileRenderHeader, NonEmpty, RefSpec, RenderOpts, RenderTarget, Repo, RepoId, RepoPath,
     ResolvedRef, ResolvedSource, ResolvedTarget, Review, ReviewId, ReviewSnapshot, ReviewStatus,
     ReviewTarget, TreeDelta, TreeEntryKind, TreeSnapshot, ViewedMark, Workspace, WorkspaceId,
@@ -281,10 +281,61 @@ impl Core {
             .ok_or_else(|| CoreError::not_found(EntityKind::Repo, &repo_id))
     }
 
+    /// The targets `scope` selects (UI-DESIGN §Diff scope), starting from
+    /// the review's resolved targets. `Commit` and `Worktree` must name a
+    /// repo the review targets.
+    pub fn scoped_targets(
+        &self,
+        id: ReviewId,
+        scope: &DiffScope,
+    ) -> Result<NonEmpty<ResolvedTarget>, CoreError> {
+        let (_, resolved) = self.resolved(id)?;
+        match scope {
+            DiffScope::All => Ok(resolved),
+            DiffScope::Committed => {
+                let mapped = resolved
+                    .into_iter()
+                    .map(|mut t| {
+                        if matches!(t.head.source, ResolvedSource::WorkingTree { .. }) {
+                            t.head = self.repo(t.repo_id)?.resolve(&RefSpec::Head)?;
+                        }
+                        Ok(t)
+                    })
+                    .collect::<Result<Vec<_>, CoreError>>()?;
+                NonEmpty::new(mapped).map_err(|_| CoreError::invalid("review has no targets"))
+            }
+            DiffScope::Commit { repo_id, oid } => {
+                Self::target(&resolved, *repo_id)?;
+                Ok(NonEmpty::singleton(self.commit_step(*repo_id, *oid)?))
+            }
+            DiffScope::Worktree { repo_id } => {
+                Self::target(&resolved, *repo_id)?;
+                let repo = self.repo(*repo_id)?;
+                Ok(NonEmpty::singleton(ResolvedTarget {
+                    repo_id: *repo_id,
+                    base: repo.resolve(&RefSpec::Head)?,
+                    head: repo.resolve(&RefSpec::WorkingTree)?,
+                }))
+            }
+        }
+    }
+
     /// Every changed file across all targets, ordered by repo display name
     /// then path. This is the flat form of the merged tree.
     pub fn files(&self, id: ReviewId) -> Result<Vec<FileChange>, CoreError> {
-        let (rec, resolved) = self.resolved(id)?;
+        self.files_scoped(id, &DiffScope::All)
+            .map(|(files, _)| files)
+    }
+
+    /// [`Self::files`] under `scope`, with the targets the files were
+    /// diffed between.
+    pub fn files_scoped(
+        &self,
+        id: ReviewId,
+        scope: &DiffScope,
+    ) -> Result<(Vec<FileChange>, NonEmpty<ResolvedTarget>), CoreError> {
+        let rec = self.review(id)?;
+        let resolved = self.scoped_targets(id, scope)?;
         let ws = self.workspace(rec.review.workspace_id)?;
         let mut targets: Vec<&ResolvedTarget> = resolved.iter().collect();
         let name = |rid: RepoId| {
@@ -306,33 +357,44 @@ impl Core {
                 kind: c.kind,
             }));
         }
-        Ok(out)
+        Ok((out, resolved))
     }
 
-    /// The change for one file, if it is in the review.
+    /// The change for one file, if it is in the review under `scope`.
     pub fn file_change(
         &self,
         id: ReviewId,
         repo_id: RepoId,
         path: &RepoPath,
+        scope: &DiffScope,
     ) -> Result<FileChange, CoreError> {
-        self.files(id)?
+        self.files_scoped(id, scope)?
+            .0
             .into_iter()
             .find(|f| f.repo_id == repo_id && &f.path == path)
             .ok_or_else(|| CoreError::not_found(EntityKind::Path, &path))
     }
 
     /// Commits between base and head for one repo target (newest first).
-    /// Empty when either side is the working tree or the ref is not a commit.
+    /// A working-tree head steps through the checked-out branch's commits
+    /// (the worktree itself is the final step). Empty when the base is not
+    /// a commit.
     pub fn commits(&self, id: ReviewId, repo_id: RepoId) -> Result<Vec<CommitInfo>, CoreError> {
         let (_, resolved) = self.resolved(id)?;
         let t = Self::target(&resolved, repo_id)?;
-        let (ResolvedSource::Commit { oid: base }, ResolvedSource::Commit { oid: head }) =
-            (&t.base.source, &t.head.source)
-        else {
+        let ResolvedSource::Commit { oid: base } = t.base.source else {
             return Ok(vec![]);
         };
-        Ok(self.repo(repo_id)?.commits_between(*base, *head)?)
+        let head = match t.head.source {
+            ResolvedSource::Commit { oid } => oid,
+            ResolvedSource::WorkingTree { .. } => {
+                match self.repo(repo_id)?.resolve(&RefSpec::Head)?.source {
+                    ResolvedSource::Commit { oid } => oid,
+                    ResolvedSource::WorkingTree { .. } => return Ok(vec![]),
+                }
+            }
+        };
+        Ok(self.repo(repo_id)?.commits_between(base, head)?)
     }
 
     /// A single-commit sub-target for stepping: base = first parent.
@@ -386,15 +448,16 @@ impl Core {
 
     // ---- render -----------------------------------------------------------
 
-    /// Render one changed file of a review. Cached by content.
+    /// Render one changed file of a review under `scope`. Cached by content.
     pub fn file_render(
         &self,
         id: ReviewId,
         repo_id: RepoId,
         path: &RepoPath,
         opts: RenderOpts,
+        scope: &DiffScope,
     ) -> Result<(FileRenderHeader, Rendered), CoreError> {
-        let change = self.file_change(id, repo_id, path)?;
+        let change = self.file_change(id, repo_id, path, scope)?;
         self.render_change(repo_id, path, change.kind, opts)
     }
 

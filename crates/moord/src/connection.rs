@@ -288,10 +288,11 @@ impl Connection {
                 path,
                 opts,
                 first_chunk,
+                scope,
             } => {
                 let r = self
                     .daemon
-                    .read(move |core| core.file_render(review_id, repo_id, &path, opts))
+                    .read(move |core| core.file_render(review_id, repo_id, &path, opts, &scope))
                     .await
                     .map(|(header, rendered)| {
                         stream_render(&self.outbox, id, header, &rendered, first_chunk);

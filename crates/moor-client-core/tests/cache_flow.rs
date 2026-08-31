@@ -13,11 +13,12 @@ use moor_client_core::{
 };
 use moor_protocol::{
     Author, BlobOid, BuildInfo, ChangeKind, ChunkIndex, ClientId, ClientMsg, ClientSeq, CommitOid,
-    Event, EventBody, FileChange, FileRenderHeader, NonEmpty, Oid, ProtocolVersion, RefSpec,
-    RenderChunk, RenderContent, RenderOpts, RenderTarget, RepoId, RepoPath, Request, RequestId,
-    ResolvedRef, ResolvedSource, ResolvedTarget, Response, Review, ReviewId, ReviewSnapshot,
-    ReviewStatus, ReviewTarget, Row, SchemaVersion, Seq, ServerMsg, StreamItem, Timestamp,
-    TreeDelta, TreeEntry, TreeEntryKind, TreeOid, TreeSnapshot, ViewSection, WorkspaceId,
+    DiffScope, Event, EventBody, FileChange, FileRenderHeader, NonEmpty, Oid, ProtocolVersion,
+    RefSpec, RenderChunk, RenderContent, RenderOpts, RenderTarget, RepoId, RepoPath, Request,
+    RequestId, ResolvedRef, ResolvedSource, ResolvedTarget, Response, Review, ReviewId,
+    ReviewSnapshot, ReviewStatus, ReviewTarget, Row, SchemaVersion, Seq, ServerMsg, StreamItem,
+    Timestamp, TreeDelta, TreeEntry, TreeEntryKind, TreeOid, TreeSnapshot, ViewSection,
+    WorkspaceId,
 };
 
 // ---- fixtures -----------------------------------------------------------
@@ -758,6 +759,7 @@ fn viewport_before_header_streams_the_file_and_cancels_past_the_radius() {
             id: files_id,
             response: Response::Files {
                 files: vec![change("a.rs")],
+                resolved: Vec::new(),
             },
         }))
         .unwrap();
@@ -774,6 +776,7 @@ fn viewport_before_header_streams_the_file_and_cancels_past_the_radius() {
             path: path("a.rs"),
             opts: RenderOpts::default(),
             first_chunk: ChunkIndex::FIRST,
+            scope: DiffScope::All,
         }
     );
     item(
@@ -895,6 +898,7 @@ fn disk_tier_load_before_send_and_dedupes_concurrent_misses() {
             id: files_id,
             response: Response::Files {
                 files: vec![change("a.rs")],
+                resolved: Vec::new(),
             },
         }))
         .unwrap();
@@ -979,6 +983,7 @@ fn eviction_respects_both_budgets_and_pins_survive() {
             id: files_id,
             response: Response::Files {
                 files: vec![change("a.rs")],
+                resolved: Vec::new(),
             },
         }))
         .unwrap();
@@ -1098,6 +1103,7 @@ fn restart_serves_the_previous_review_from_disk_without_content_requests() {
                 id: files_id.unwrap(),
                 response: Response::Files {
                     files: vec![change("a.rs")],
+                    resolved: Vec::new(),
                 },
             }))
             .unwrap();
@@ -1156,6 +1162,7 @@ fn restart_serves_the_previous_review_from_disk_without_content_requests() {
             id: files_id,
             response: Response::Files {
                 files: vec![change("a.rs")],
+                resolved: Vec::new(),
             },
         }))
         .unwrap();
@@ -1509,6 +1516,7 @@ fn prefs_are_loaded_once_on_connect_persisted_on_change_and_re_key_renders() {
             id: reqs[0].0,
             response: Response::Files {
                 files: vec![change("a.rs")],
+                resolved: Vec::new(),
             },
         }))
         .unwrap();
@@ -1894,4 +1902,134 @@ fn commit_stepper_lists_and_steps() {
     // Closing the review drops the stepper.
     core.handle(Input::User(Action::CloseReview)).unwrap();
     assert!(core.view().stepper.is_none());
+}
+
+#[test]
+fn scope_switching_refetches_files_and_steps_commits() {
+    use moor_client_core::{ScopeChoice, resolve_command};
+    let mut core = subscribed(local());
+    assert_eq!(
+        core.handle(Input::User(Action::SetScope {
+            scope: ScopeChoice::All
+        })),
+        Err(CoreError::NoOpenReview)
+    );
+    open_streamed(&mut core);
+    // Entering by-commit without a commit list fetches it first.
+    let effects = core
+        .handle(Input::User(Action::SetScope {
+            scope: ScopeChoice::ByCommit,
+        }))
+        .unwrap();
+    let (id, request) = requests(&effects)[0].clone();
+    assert_eq!(
+        request,
+        Request::ListCommits {
+            review_id: review_id(),
+            repo_id: repo_id()
+        }
+    );
+    let sig = moor_protocol::Sig {
+        name: "ada".into(),
+        email: "ada@example.com".into(),
+        time: Timestamp::from_millis(5),
+        offset_minutes: 0,
+    };
+    let commit = |fill: u8, subject: &str| moor_protocol::CommitInfo {
+        oid: CommitOid::new(Oid::from_bytes([fill; 20])),
+        parents: Vec::new(),
+        tree: tree_oid(fill),
+        author: sig.clone(),
+        committer: sig.clone(),
+        subject: subject.into(),
+        body: String::new(),
+    };
+    // Newest first, as the daemon lists them.
+    let effects = core
+        .handle(Input::Server(ServerMsg::Response {
+            id,
+            response: Response::Commits {
+                commits: vec![commit(9, "newest"), commit(8, "older")],
+            },
+        }))
+        .unwrap();
+    // The answer enters by-commit at the newest commit and refetches files.
+    let newest = CommitOid::new(Oid::from_bytes([9; 20]));
+    let (files_id, request) = requests(&effects)[0].clone();
+    assert_eq!(
+        request,
+        Request::ListFiles {
+            review_id: review_id(),
+            scope: DiffScope::Commit {
+                repo_id: repo_id(),
+                oid: newest
+            }
+        }
+    );
+    assert_eq!(core.view().stepper.as_ref().unwrap().selected, Some(0));
+    // The scoped answer carries the step's targets; the header follows them.
+    let step_targets = vec![ResolvedTarget {
+        repo_id: repo_id(),
+        base: ResolvedRef {
+            tree: tree_oid(8),
+            source: ResolvedSource::Commit {
+                oid: CommitOid::new(Oid::from_bytes([8; 20])),
+            },
+        },
+        head: ResolvedRef {
+            tree: tree_oid(9),
+            source: ResolvedSource::Commit { oid: newest },
+        },
+    }];
+    core.handle(Input::Server(ServerMsg::Response {
+        id: files_id,
+        response: Response::Files {
+            files: vec![change("a.rs")],
+            resolved: step_targets.clone(),
+        },
+    }))
+    .unwrap();
+    assert_eq!(core.view().resolved_targets, step_targets);
+    assert_eq!(
+        core.view().scope,
+        DiffScope::Commit {
+            repo_id: repo_id(),
+            oid: newest
+        }
+    );
+    // `p` steps toward the base: the older commit; the step refetches.
+    let action = resolve_command(&core, moor_client_core::Command::PrevHunk).unwrap();
+    assert_eq!(action, Action::StepCommit { selected: Some(1) });
+    let effects = core.handle(Input::User(action)).unwrap();
+    let older = CommitOid::new(Oid::from_bytes([8; 20]));
+    assert!(requests(&effects).iter().any(|(_, r)| *r
+        == Request::ListFiles {
+            review_id: review_id(),
+            scope: DiffScope::Commit {
+                repo_id: repo_id(),
+                oid: older
+            }
+        }));
+    // At the oldest commit `p` has nowhere to go.
+    assert_eq!(
+        resolve_command(&core, moor_client_core::Command::PrevHunk),
+        Err(moor_client_core::NoTarget::AtEdge)
+    );
+    // Back to all changes: the snapshot's resolved targets return.
+    let effects = core
+        .handle(Input::User(Action::SetScope {
+            scope: ScopeChoice::All,
+        }))
+        .unwrap();
+    assert!(requests(&effects).iter().any(|(_, r)| *r
+        == Request::ListFiles {
+            review_id: review_id(),
+            scope: DiffScope::All
+        }));
+    assert_eq!(core.view().scope, DiffScope::All);
+    assert_eq!(
+        core.view().resolved_targets,
+        resolved(1, 2).into_iter().collect::<Vec<_>>()
+    );
+    assert_eq!(core.view().stepper.as_ref().unwrap().selected, None);
 }

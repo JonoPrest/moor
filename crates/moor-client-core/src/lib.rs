@@ -37,10 +37,11 @@ mod view;
 use std::collections::BTreeMap;
 
 use moor_protocol::{
-    Anchor, Author, BuildInfo, ClientId, ClientMsg, ClientSeq, CommentId, CommentKind, Event,
-    EventBody, Mutation, NonEmpty, ProtocolVersion, RenderTarget, RepoId, RepoPath, Request,
-    RequestId, Response, ReviewId, ReviewSnapshot, ReviewTarget, RpcError, Seq, ServerMsg, Since,
-    StreamItem, SubscribeScope, ThreadId, Timestamp, ViewSection, WorkspaceId,
+    Anchor, Author, BuildInfo, ClientId, ClientMsg, ClientSeq, CommentId, CommentKind, CommitOid,
+    DiffScope, Event, EventBody, Mutation, NonEmpty, ProtocolVersion, RenderTarget, RepoId,
+    RepoPath, Request, RequestId, ResolvedSource, Response, ReviewId, ReviewSnapshot, ReviewTarget,
+    RpcError, Seq, ServerMsg, Since, StreamItem, SubscribeScope, ThreadId, Timestamp, ViewSection,
+    WorkspaceId,
 };
 use serde::{Deserialize, Serialize};
 use strum::EnumDiscriminants;
@@ -222,10 +223,29 @@ pub enum Action {
     ListCommits {
         repo_id: RepoId,
     },
-    /// Move the stepper cursor; `None` shows the whole range.
+    /// Move the stepper cursor; `None` shows the whole range (in by-commit
+    /// scope: the worktree step).
     StepCommit {
         selected: Option<usize>,
     },
+    /// Change the diff scope (UI-DESIGN §Diff scope).
+    SetScope {
+        scope: ScopeChoice,
+    },
+}
+
+/// What the user asked the scope to become. `ByCommit` enters commit
+/// stepping (fetching the commit list first when needed); the rest map to
+/// wire scopes directly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumDiscriminants, Serialize, Deserialize)]
+#[strum_discriminants(name(ScopeChoiceKind), derive(Hash, PartialOrd, Ord, strum::EnumIter))]
+#[serde(tag = "type", deny_unknown_fields)]
+pub enum ScopeChoice {
+    All,
+    Committed,
+    ByCommit,
+    Commit { repo_id: RepoId, oid: CommitOid },
+    Worktree { repo_id: RepoId },
 }
 
 /// Something the host must do for the core.
@@ -422,6 +442,8 @@ pub struct ClientCore {
     help_open: bool,
     /// Focus to return to when the composer or help closes.
     focus_return: Option<Focus>,
+    /// `SetScope { ByCommit }` is waiting for its `ListCommits` answer.
+    by_commit_pending: bool,
 }
 
 /// A mutation applied locally and awaiting the daemon's echo.
@@ -462,6 +484,7 @@ impl ClientCore {
             chord_started: 0,
             help_open: false,
             focus_return: None,
+            by_commit_pending: false,
         }
     }
 
@@ -552,12 +575,8 @@ impl ClientCore {
         let mut sections = Vec::new();
         let (tree, progress) = match (&self.view.review, &self.committed) {
             (Some(open), Some(_)) => {
-                let heads: Vec<moor_protocol::TreeOid> = open
-                    .snapshot
-                    .resolved
-                    .as_ref()
-                    .map(|r| r.iter().map(|t| t.head.tree).collect())
-                    .unwrap_or_default();
+                let heads: Vec<moor_protocol::TreeOid> =
+                    open.current_targets().iter().map(|t| t.head.tree).collect();
                 let trees: Vec<&moor_protocol::TreeSnapshot> = heads
                     .iter()
                     .filter_map(|root| {
@@ -637,6 +656,16 @@ impl ClientCore {
         if self.stepper != self.view.stepper {
             self.view.stepper.clone_from(&self.stepper);
             sections.push(ViewSection::CommitStepper);
+        }
+        let scope = self
+            .view
+            .review
+            .as_ref()
+            .map(|r| r.scope)
+            .unwrap_or_default();
+        if scope != self.view.scope {
+            self.view.scope = scope;
+            sections.push(ViewSection::ReviewList);
         }
         let focus = focus::clamp(&self.view, self.view.focus);
         if focus != self.view.focus {
@@ -777,11 +806,12 @@ impl ClientCore {
             self.content.config.render_opts = prefs.render_opts();
             if let Some(open) = &mut self.view.review {
                 let review_id = open.snapshot.review.id;
+                let scope = open.scope;
                 open.files.clear();
                 open.open_file = None;
                 if let Connection::Subscribed { .. } = self.connection {
                     effects.push(self.request(
-                        Request::ListFiles { review_id },
+                        Request::ListFiles { review_id, scope },
                         InFlight::ListFiles { review_id },
                     ));
                 }
@@ -789,6 +819,64 @@ impl ClientCore {
         }
         effects.push(render(&sections));
         effects
+    }
+
+    /// Install `scope` on the open review and refetch its file list; the
+    /// old files and open file are dropped (their renders stay cached).
+    fn apply_scope(&mut self, scope: DiffScope) -> Vec<Effect> {
+        let Some(open) = &mut self.view.review else {
+            return Vec::new();
+        };
+        if open.scope == scope {
+            return Vec::new();
+        }
+        let review_id = open.snapshot.review.id;
+        open.scope = scope;
+        open.scoped_targets.clear();
+        open.files.clear();
+        open.open_file = None;
+        // The stepper cursor mirrors the scope.
+        if let Some(stepper) = &mut self.stepper {
+            stepper.selected = match scope {
+                DiffScope::Commit { repo_id, oid } if repo_id == stepper.repo_id => {
+                    stepper.commits.iter().position(|c| c.oid == oid)
+                }
+                DiffScope::All
+                | DiffScope::Committed
+                | DiffScope::Commit { .. }
+                | DiffScope::Worktree { .. } => None,
+            };
+        }
+        let mut effects = Vec::new();
+        self.rebase();
+        if let Connection::Subscribed { .. } = self.connection {
+            effects.push(self.request(
+                Request::ListFiles { review_id, scope },
+                InFlight::ListFiles { review_id },
+            ));
+        }
+        effects.push(render(&[ViewSection::ReviewList, ViewSection::Diff]));
+        effects
+    }
+
+    /// The step by-commit mode enters at: the worktree step when the
+    /// repo's head is a working tree, else the newest commit. `None` when
+    /// a commit-headed review has no commits between base and head.
+    fn default_by_commit_scope(&self, repo_id: RepoId) -> Option<DiffScope> {
+        let open = self.view.review.as_ref()?;
+        let head_worktree = open.snapshot.resolved.as_ref().is_some_and(|r| {
+            r.iter().any(|t| {
+                t.repo_id == repo_id && matches!(t.head.source, ResolvedSource::WorkingTree { .. })
+            })
+        });
+        if head_worktree {
+            return Some(DiffScope::Worktree { repo_id });
+        }
+        let stepper = self.stepper.as_ref().filter(|st| st.repo_id == repo_id)?;
+        stepper.commits.first().map(|c| DiffScope::Commit {
+            repo_id,
+            oid: c.oid,
+        })
     }
 
     fn wrong_state(&self, input: InputKind) -> CoreError {
@@ -969,7 +1057,58 @@ impl ClientCore {
                     return Err(CoreError::CommitOutOfRange(i));
                 }
                 stepper.selected = selected;
+                // In by-commit scope the cursor *is* the diff: stepping
+                // re-targets the file list (worktree = the final step).
+                let by_commit = self.view.review.as_ref().is_some_and(|open| {
+                    matches!(
+                        open.scope,
+                        DiffScope::Commit { .. } | DiffScope::Worktree { .. }
+                    )
+                });
+                if by_commit {
+                    let repo_id = stepper.repo_id;
+                    let scope = match selected {
+                        Some(i) => DiffScope::Commit {
+                            repo_id,
+                            oid: stepper.commits[i].oid,
+                        },
+                        None => DiffScope::Worktree { repo_id },
+                    };
+                    return Ok(self.apply_scope(scope));
+                }
                 Ok(Vec::new())
+            }
+            Action::SetScope { scope } => {
+                self.require_subscribed()?;
+                let Some(open) = &self.view.review else {
+                    return Err(CoreError::NoOpenReview);
+                };
+                let review_id = open.snapshot.review.id;
+                let wire = match scope {
+                    ScopeChoice::All => DiffScope::All,
+                    ScopeChoice::Committed => DiffScope::Committed,
+                    ScopeChoice::Commit { repo_id, oid } => DiffScope::Commit { repo_id, oid },
+                    ScopeChoice::Worktree { repo_id } => DiffScope::Worktree { repo_id },
+                    ScopeChoice::ByCommit => {
+                        let repo_id = open.snapshot.review.targets.first().repo_id;
+                        let have_stepper = self
+                            .stepper
+                            .as_ref()
+                            .is_some_and(|st| st.repo_id == repo_id);
+                        if !have_stepper {
+                            // No step list yet: fetch it and enter
+                            // by-commit when it answers.
+                            self.by_commit_pending = true;
+                            return Ok(vec![self.request(
+                                Request::ListCommits { review_id, repo_id },
+                                InFlight::ListCommits { repo_id },
+                            )]);
+                        }
+                        self.default_by_commit_scope(repo_id)
+                            .ok_or(CoreError::NoStepper)?
+                    }
+                };
+                Ok(self.apply_scope(wire))
             }
             Action::DraftOpened { anchor } => {
                 if self.view.review.is_none() {
@@ -1299,12 +1438,18 @@ impl ClientCore {
             return Vec::new();
         };
         let mut shown = committed.clone();
-        // The header's resolved refs follow the committed snapshot.
-        self.view.resolved_targets = committed
-            .resolved
-            .as_ref()
-            .map(|r| r.iter().cloned().collect())
-            .unwrap_or_default();
+        // The header's resolved refs follow the committed snapshot, or the
+        // scoped targets when a narrower scope is on screen.
+        self.view.resolved_targets = match open.scope {
+            DiffScope::All => committed
+                .resolved
+                .as_ref()
+                .map(|r| r.iter().cloned().collect())
+                .unwrap_or_default(),
+            DiffScope::Committed | DiffScope::Commit { .. } | DiffScope::Worktree { .. } => {
+                open.scoped_targets.clone()
+            }
+        };
         let mut sections = Vec::new();
         let author = self.config.author.clone();
         for p in &self.pending {
@@ -1350,6 +1495,7 @@ impl ClientCore {
         self.stepper = None;
         self.focus_return = None;
         self.help_open = false;
+        self.by_commit_pending = false;
         self.review_closed(effects);
     }
 
@@ -1809,18 +1955,36 @@ impl ClientCore {
                 ]));
                 effects
             }
-            (InFlight::ListFiles { review_id }, Response::Files { files }) => {
+            (InFlight::ListFiles { review_id }, Response::Files { files, resolved }) => {
                 let mut effects = Vec::new();
                 if self.open_mut(review_id).is_some() {
+                    if let Some(open) = &mut self.view.review
+                        && !matches!(open.scope, DiffScope::All)
+                    {
+                        open.scoped_targets = resolved;
+                        // The header chips and the explorer trees follow
+                        // the scoped targets.
+                        let sections = self.rebase();
+                        self.want_review_trees(&mut effects);
+                        effects.push(render(&sections));
+                        effects.push(render(&[ViewSection::ReviewList]));
+                    }
                     self.review_files(review_id, files, &mut effects);
                 }
                 effects
             }
             (InFlight::ListCommits { repo_id }, Response::Commits { commits }) => {
+                let mut effects = Vec::new();
                 if self.view.review.is_some() {
                     self.stepper = Some(CommitStepper::from_commits(repo_id, &commits));
+                    if self.by_commit_pending {
+                        self.by_commit_pending = false;
+                        if let Some(scope) = self.default_by_commit_scope(repo_id) {
+                            effects = self.apply_scope(scope);
+                        }
+                    }
                 }
-                Vec::new()
+                effects
             }
             (InFlight::TreeSnapshot { root }, Response::TreeSnapshot { snapshot }) => {
                 if snapshot.root_oid != root {
@@ -2040,8 +2204,14 @@ impl ClientCore {
                 // New heads mean new trees and renders: refetch the trees
                 // and the file list; headers re-key by blob.
                 self.want_review_trees(&mut effects);
+                let scope = self
+                    .view
+                    .review
+                    .as_ref()
+                    .map(|r| r.scope)
+                    .unwrap_or_default();
                 effects.push(self.request(
-                    Request::ListFiles { review_id },
+                    Request::ListFiles { review_id, scope },
                     InFlight::ListFiles { review_id },
                 ));
             }

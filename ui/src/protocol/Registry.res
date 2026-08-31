@@ -31,6 +31,7 @@ let schemas: dict<S.t<unknown>> = Dict.fromArray([
   ("ViewedMark", erase(Domain.ViewedMark.schema)),
   ("RenderOpts", erase(Domain.RenderOpts.schema)),
   ("ChangeKind", erase(Domain.ChangeKind.schema)),
+  ("DiffScope", erase(Domain.DiffScope.schema)),
   ("FileChange", erase(Domain.FileChange.schema)),
   ("TreeEntryKind", erase(Domain.TreeEntryKind.schema)),
   ("TreeEntry", erase(Domain.TreeEntry.schema)),

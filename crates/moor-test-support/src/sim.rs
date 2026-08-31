@@ -440,7 +440,10 @@ impl Sim {
                 peer,
                 ServerMsg::Response {
                     id,
-                    response: Response::Files { files: Vec::new() },
+                    response: Response::Files {
+                        files: Vec::new(),
+                        resolved: Vec::new(),
+                    },
                 },
             ),
             Request::ListWorkspaces => self.push_down(

@@ -156,6 +156,7 @@ registry!(
     Context,
     Command,
     Action,
+    ScopeChoice,
     Override,
     Overrides,
     ViewDelta,
@@ -226,6 +227,9 @@ fn thread_id() -> Result<ThreadId, FixtureError> {
 }
 fn comment_id() -> Result<CommentId, FixtureError> {
     Ok(proto::<Comment>()?.id)
+}
+fn commit_oid() -> Result<CommitOid, FixtureError> {
+    Ok(proto::<CommitInfo>()?.oid)
 }
 fn path(s: &str) -> Result<RepoPath, FixtureError> {
     Ok(RepoPath::new(s)?)
@@ -309,6 +313,8 @@ struct_fixture!(
         trees: vec![proto::<TreeSnapshot>()?.root_oid],
         files: vec![render_key()?],
         open_file: Some(local::<OpenFile>()?),
+        scope: DiffScope::All,
+        scoped_targets: Vec::new(),
     }
 );
 unit_enum_fixture!(ViewedState, "ViewedState");
@@ -645,6 +651,26 @@ enum_fixture!(
             repo_id: repo_id()?,
         },
         Action::StepCommit { selected: Some(0) },
+        Action::SetScope {
+            scope: ScopeChoice::ByCommit
+        },
+    ]
+);
+enum_fixture!(
+    ScopeChoice,
+    ScopeChoiceKind,
+    "ScopeChoice",
+    [
+        ScopeChoice::All,
+        ScopeChoice::Committed,
+        ScopeChoice::ByCommit,
+        ScopeChoice::Commit {
+            repo_id: repo_id()?,
+            oid: commit_oid()?
+        },
+        ScopeChoice::Worktree {
+            repo_id: repo_id()?
+        },
     ]
 );
 unit_enum_fixture!(NamedKey, "NamedKey");
@@ -696,6 +722,7 @@ enum_fixture!(
             reviews: vec![proto::<Review>()?],
             open_review: Some(proto::<Review>()?.id),
             resolved_targets: vec![proto::<ResolvedTarget>()?],
+            scope: DiffScope::All,
         },
         ViewPatch::Tree {
             tree: local::<TreeView>()?,
@@ -757,6 +784,7 @@ struct_fixture!(
         reviews: vec![proto::<Review>()?],
         open_review: Some(proto::<Review>()?.id),
         resolved_targets: vec![proto::<ResolvedTarget>()?],
+        scope: DiffScope::All,
         review: Some(local::<OpenReview>()?),
         draft: Some(local::<Draft>()?),
         pending_refresh: true,

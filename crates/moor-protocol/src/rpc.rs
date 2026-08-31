@@ -9,9 +9,9 @@ use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter};
 
 use crate::domain::{
-    Anchor, Author, ChangeKind, Comment, CommentKind, CommitInfo, FileChange, RefSpec, RenderOpts,
-    ResolvedTarget, Review, ReviewStatus, ReviewTarget, Thread, TreeDelta, TreeSnapshot,
-    ViewedMark, Workspace,
+    Anchor, Author, ChangeKind, Comment, CommentKind, CommitInfo, DiffScope, FileChange, RefSpec,
+    RenderOpts, ResolvedTarget, Review, ReviewStatus, ReviewTarget, Thread, TreeDelta,
+    TreeSnapshot, ViewedMark, Workspace,
 };
 use crate::events::Event;
 use crate::ids::{
@@ -238,8 +238,11 @@ pub enum Request {
         review_id: ReviewId,
     },
     /// Changed files across the review's targets, with rename detection.
+    /// `scope` narrows which diff (UI-DESIGN §Diff scope); absent = `All`.
     ListFiles {
         review_id: ReviewId,
+        #[serde(default)]
+        scope: DiffScope,
     },
     /// Streamed: `ReviewSnapshot` → `TreeSnapshot` per target ref →
     /// `FileRenderHeader` per changed file → first `RenderChunk` per file.
@@ -268,6 +271,8 @@ pub enum Request {
         path: RepoPath,
         opts: RenderOpts,
         first_chunk: ChunkIndex,
+        #[serde(default)]
+        scope: DiffScope,
     },
     /// Streamed: header, then chunks starting at `first_chunk`.
     BlobRender {
@@ -357,6 +362,10 @@ pub enum Response {
     },
     Files {
         files: Vec<FileChange>,
+        /// The targets the files were diffed between under the request's
+        /// scope (for `All`: the review's resolved targets).
+        #[serde(default)]
+        resolved: Vec<ResolvedTarget>,
     },
     /// The targets after resolution (whether or not they changed).
     Resolved {

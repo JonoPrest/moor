@@ -172,6 +172,7 @@ registry!(
     ViewedMark,
     RenderOpts,
     ChangeKind,
+    DiffScope,
     FileChange,
     TreeEntryKind,
     TreeEntry,
@@ -796,6 +797,20 @@ struct_fixture!(
     }
 );
 enum_fixture!(
+    DiffScope,
+    DiffScopeKind,
+    "DiffScope",
+    [
+        DiffScope::All,
+        DiffScope::Committed,
+        DiffScope::Commit {
+            repo_id: repo_id(),
+            oid: commit(11)
+        },
+        DiffScope::Worktree { repo_id: repo_id() },
+    ]
+);
+enum_fixture!(
     ChangeKind,
     ChangeKindKind,
     "ChangeKind",
@@ -1269,7 +1284,8 @@ enum_fixture!(
             review_id: review_id()
         },
         Request::ListFiles {
-            review_id: review_id()
+            review_id: review_id(),
+            scope: DiffScope::All
         },
         Request::OpenReview {
             review_id: review_id(),
@@ -1293,7 +1309,8 @@ enum_fixture!(
             repo_id: repo_id(),
             path: path("src/lib.rs")?,
             opts: RenderOpts::default(),
-            first_chunk: ChunkIndex::new(2)
+            first_chunk: ChunkIndex::new(2),
+            scope: DiffScope::Committed
         },
         Request::BlobRender {
             repo_id: repo_id(),
@@ -1350,7 +1367,8 @@ enum_fixture!(
                 repo_id: repo_id(),
                 path: path("src/lib.rs")?,
                 kind: modified()
-            }]
+            }],
+            resolved: resolved_targets()?.into_iter().collect()
         },
         Response::Resolved {
             targets: resolved_targets()?,

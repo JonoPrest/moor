@@ -1,9 +1,9 @@
 //! End-to-end scenarios over `Core` (plan 1.6–1.8).
 
 use moor_protocol::{
-    AgentVia, Anchor, Author, ClientId, ClientSeq, CommentId, CommentKind, CommentState, EventBody,
-    NonEmpty, RefSpec, RenderOpts, RepoId, RepoPath, ReviewId, ReviewTarget, Row, Side,
-    ThreadResolution, Timestamp, WorkspaceId,
+    AgentVia, Anchor, Author, ClientId, ClientSeq, CommentId, CommentKind, CommentState, CommitOid,
+    DiffScope, EventBody, NonEmpty, RefSpec, RenderOpts, RepoId, RepoPath, ReviewId, ReviewTarget,
+    Row, Side, ThreadResolution, Timestamp, WorkspaceId,
 };
 use moor_review_core::comments::{lines_anchor, thread_id_of};
 use moor_review_core::review::ViewedState;
@@ -139,7 +139,9 @@ fn targets() -> NonEmpty<ReviewTarget> {
 }
 
 fn head_blob(core: &Core, review: ReviewId, repo: RepoId, path: &str) -> moor_protocol::BlobOid {
-    let f = core.file_change(review, repo, &p(path)).unwrap();
+    let f = core
+        .file_change(review, repo, &p(path), &DiffScope::All)
+        .unwrap();
     f.kind.new_blob().unwrap()
 }
 
@@ -601,7 +603,7 @@ fn base_side_anchor_survives_base_move() {
         .unwrap();
     let old_blob = w
         .core
-        .file_change(review_id(1), rid(1), &p("src/main.rs"))
+        .file_change(review_id(1), rid(1), &p("src/main.rs"), &DiffScope::All)
         .unwrap()
         .kind
         .old_blob()
@@ -695,6 +697,7 @@ fn file_render_and_snapshot_and_reopen() {
             rid(1),
             &p("src/main.rs"),
             RenderOpts::default(),
+            &DiffScope::All,
         )
         .unwrap();
     assert_eq!(header.lang.as_deref(), Some("Rust"));
@@ -712,6 +715,7 @@ fn file_render_and_snapshot_and_reopen() {
             rid(1),
             &p("src/main.rs"),
             RenderOpts::default(),
+            &DiffScope::All,
         )
         .unwrap();
     assert_eq!(again, (header.clone(), rendered.clone()));
@@ -730,8 +734,13 @@ fn file_render_and_snapshot_and_reopen() {
     assert!(br.rows.iter().all(|r| matches!(r, Row::Context { .. })));
     assert_eq!(bh.lang.as_deref(), Some("Rust"));
     assert!(matches!(
-        w.core
-            .file_render(review_id(1), rid(1), &p("nope.rs"), RenderOpts::default()),
+        w.core.file_render(
+            review_id(1),
+            rid(1),
+            &p("nope.rs"),
+            RenderOpts::default(),
+            &DiffScope::All,
+        ),
         Err(CoreError::NotFound { .. })
     ));
 
@@ -767,4 +776,84 @@ fn file_render_and_snapshot_and_reopen() {
         Err(CoreError::NotFound { .. })
     ));
     drop(w.b);
+}
+
+#[test]
+fn diff_scopes_narrow_files_and_step_a_worktree_review() {
+    let w = world();
+    // A worktree-headed review: main → working tree, with one commit on
+    // top of main and uncommitted changes on top of that.
+    w.a.git(&["checkout", "-q", "main"]).unwrap();
+    let base_oid = CommitOid::new(w.a.rev_parse("HEAD").unwrap().parse().unwrap());
+    w.a.write_file("src/main.rs", b"fn main() {}\n").unwrap();
+    w.a.git(&["commit", "-qam", "tip"]).unwrap();
+    w.a.write_file("uncommitted.txt", b"dirty\n").unwrap();
+    let wt = NonEmpty::singleton(ReviewTarget {
+        repo_id: rid(1),
+        base: RefSpec::Commit { oid: base_oid },
+        head: RefSpec::WorkingTree,
+    });
+    w.core
+        .create_review(&human(), review_id(3), ws(), "wt".into(), wt)
+        .unwrap();
+    // The commit range steps through the checked-out branch even though
+    // the head is the working tree.
+    let commits = w.core.commits(review_id(3), rid(1)).unwrap();
+    assert_eq!(commits.len(), 1);
+    assert_eq!(commits[0].subject, "tip");
+    // All: committed + uncommitted changes.
+    let (all, _) = w.core.files_scoped(review_id(3), &DiffScope::All).unwrap();
+    let paths = |fs: &[moor_protocol::FileChange]| {
+        fs.iter().map(|f| f.path.to_string()).collect::<Vec<_>>()
+    };
+    assert_eq!(paths(&all), ["src/main.rs", "uncommitted.txt"]);
+    // Committed: the working-tree head stops at the checked-out commit.
+    let (committed, resolved) = w
+        .core
+        .files_scoped(review_id(3), &DiffScope::Committed)
+        .unwrap();
+    assert_eq!(paths(&committed), ["src/main.rs"]);
+    assert!(matches!(
+        resolved.first().head.source,
+        moor_protocol::ResolvedSource::Commit { .. }
+    ));
+    // Commit: the tip against its parent.
+    let (step, _) = w
+        .core
+        .files_scoped(
+            review_id(3),
+            &DiffScope::Commit {
+                repo_id: rid(1),
+                oid: commits[0].oid,
+            },
+        )
+        .unwrap();
+    assert_eq!(paths(&step), ["src/main.rs"]);
+    // Worktree: only the uncommitted changes (the final step).
+    let (dirty, _) = w
+        .core
+        .files_scoped(review_id(3), &DiffScope::Worktree { repo_id: rid(1) })
+        .unwrap();
+    assert_eq!(paths(&dirty), ["uncommitted.txt"]);
+    // A scoped render agrees with the scoped file list.
+    let err = w
+        .core
+        .file_render(
+            review_id(3),
+            rid(1),
+            &p("uncommitted.txt"),
+            RenderOpts::default(),
+            &DiffScope::Committed,
+        )
+        .unwrap_err();
+    assert!(matches!(err, CoreError::NotFound { .. }));
+    w.core
+        .file_render(
+            review_id(3),
+            rid(1),
+            &p("uncommitted.txt"),
+            RenderOpts::default(),
+            &DiffScope::Worktree { repo_id: rid(1) },
+        )
+        .unwrap();
 }

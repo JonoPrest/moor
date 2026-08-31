@@ -53,6 +53,9 @@
       "workspace_id": "01HF7YAT000000000000000001"
     }
   ],
+  "scope": {
+    "type": "All"
+  },
   "type": "ReviewList",
   "workspaces": [
     {

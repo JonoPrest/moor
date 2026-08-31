@@ -391,6 +391,32 @@ impl Default for RenderOpts {
     }
 }
 
+/// Which diff of a review is being asked about (UI-DESIGN §Diff scope).
+/// `All` is the review's targets as resolved; the others narrow the pair
+/// per repo. Requests carry it with `#[serde(default)]`, so an absent
+/// scope means `All`.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default, EnumDiscriminants,
+)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[strum_discriminants(name(DiffScopeKind), derive(EnumIter, Hash))]
+#[serde(tag = "type", deny_unknown_fields)]
+pub enum DiffScope {
+    /// `base → head` as the review resolves them.
+    #[default]
+    All,
+    /// Like `All`, but a working-tree head stops at its checked-out commit
+    /// (the `+ working tree` toggle off). Targets without a working-tree
+    /// head are unchanged.
+    Committed,
+    /// One commit against its first parent, in one repo; the review's
+    /// other targets drop out of the file list.
+    Commit { repo_id: RepoId, oid: CommitOid },
+    /// The working tree against the checked-out commit — the final
+    /// by-commit step — in one repo.
+    Worktree { repo_id: RepoId },
+}
+
 /// How a file differs between base and head. Carries exactly the blobs that
 /// exist, so there is no `Option<old> + Option<new>` pair to keep consistent.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, EnumDiscriminants)]

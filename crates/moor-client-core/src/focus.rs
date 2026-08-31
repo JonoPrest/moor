@@ -3,7 +3,9 @@
 //! from DOM focus. [`resolve`] turns a [`Command`] into the one [`Action`]
 //! it means right now, or says why it means nothing.
 
-use moor_protocol::{Anchor, BlobOid, ContextHash, LineNo, LineRange, RenderTarget, Row, Side};
+use moor_protocol::{
+    Anchor, BlobOid, ContextHash, DiffScope, LineNo, LineRange, RenderTarget, Row, Side,
+};
 use serde::{Deserialize, Serialize};
 use strum::EnumDiscriminants;
 
@@ -12,7 +14,7 @@ use crate::diff::ThreadPlace;
 use crate::explorer::{TreeNode, ViewedState};
 use crate::keymap::{Command, Context};
 use crate::view::{Layout, SIDEBAR_DEFAULT, SIDEBAR_STEP, Tab, ViewModel};
-use crate::{Action, ClientCore};
+use crate::{Action, ClientCore, ScopeChoice};
 
 /// Rows a file opens with, and a page for `PageDown`/`PageUp`.
 pub const PAGE_ROWS: u32 = 60;
@@ -265,6 +267,46 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
         Command::GoTop => jump(false),
         Command::GoBottom => jump(true),
         Command::NextHunk | Command::PrevHunk | Command::NextComment | Command::PrevComment => {
+            // In by-commit scope `n`/`p` step commits (UI-DESIGN
+            // §bindings), from any list the keys are bound in.
+            if matches!(command, Command::NextHunk | Command::PrevHunk)
+                && let Some(open) = &view.review
+                && matches!(
+                    open.scope,
+                    DiffScope::Commit { .. } | DiffScope::Worktree { .. }
+                )
+            {
+                let stepper = view.stepper.as_ref().ok_or_else(nothing)?;
+                // Steps run oldest → newest → worktree; commits are listed
+                // newest first, so "next" moves toward index 0, then None.
+                let worktree_last = matches!(open.scope, DiffScope::Worktree { .. })
+                    || open.snapshot.resolved.as_ref().is_some_and(|r| {
+                        r.iter().any(|t| {
+                            t.repo_id == stepper.repo_id
+                                && matches!(
+                                    t.head.source,
+                                    moor_protocol::ResolvedSource::WorkingTree { .. }
+                                )
+                        })
+                    });
+                let selected = match open.scope {
+                    DiffScope::Commit { oid, .. } => {
+                        stepper.commits.iter().position(|c| c.oid == oid)
+                    }
+                    DiffScope::All | DiffScope::Committed | DiffScope::Worktree { .. } => None,
+                };
+                let next = match (command == Command::NextHunk, selected) {
+                    // Toward the worktree (newer).
+                    (true, Some(0)) if worktree_last => None,
+                    (true, Some(0) | None) => return Err(NoTarget::AtEdge),
+                    (true, Some(i)) => Some(i - 1),
+                    // Toward the base (older).
+                    (false, None) if !stepper.commits.is_empty() => Some(0),
+                    (false, Some(i)) if i + 1 < stepper.commits.len() => Some(i + 1),
+                    (false, Some(_) | None) => return Err(NoTarget::AtEdge),
+                };
+                return Ok(Action::StepCommit { selected: next });
+            }
             let Focus::Diff { row } = focus else {
                 return Err(nothing());
             };
@@ -315,7 +357,10 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 | Command::Connect
                 | Command::Disconnect
                 | Command::Commits
-                | Command::Refresh => false,
+                | Command::Refresh
+                | Command::ScopeAll
+                | Command::ScopeByCommit
+                | Command::ScopeWorktree => false,
             };
             let found = if forward {
                 rows.iter().find(|r| r.index > row && wanted(r))
@@ -625,6 +670,35 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
         Command::Connect => Ok(Action::Connect),
         Command::Disconnect => Ok(Action::Disconnect),
         Command::Refresh => Ok(Action::ListWorkspaces),
+        Command::ScopeAll => {
+            if view.review.is_none() {
+                return Err(NoTarget::NoOpenReview);
+            }
+            Ok(Action::SetScope {
+                scope: ScopeChoice::All,
+            })
+        }
+        Command::ScopeByCommit => {
+            if view.review.is_none() {
+                return Err(NoTarget::NoOpenReview);
+            }
+            Ok(Action::SetScope {
+                scope: ScopeChoice::ByCommit,
+            })
+        }
+        Command::ScopeWorktree => {
+            let open = view.review.as_ref().ok_or(NoTarget::NoOpenReview)?;
+            // Toggle the `+ working tree` half of the all-changes scope;
+            // from any other scope it lands on Committed.
+            Ok(Action::SetScope {
+                scope: match open.scope {
+                    DiffScope::Committed => ScopeChoice::All,
+                    DiffScope::All | DiffScope::Commit { .. } | DiffScope::Worktree { .. } => {
+                        ScopeChoice::Committed
+                    }
+                },
+            })
+        }
         Command::Commits => {
             let file = target_file(view, focus);
             let repo_id = match (file, view.review.as_ref()) {

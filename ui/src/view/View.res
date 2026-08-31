@@ -73,6 +73,8 @@ module OpenReview = {
     trees: array<treeOid>,
     files: array<RenderKey.t>,
     @as("open_file") openFile: @s.null option<OpenFile.t>,
+    scope: Domain.DiffScope.t,
+    @as("scoped_targets") scopedTargets: array<Domain.ResolvedTarget.t>,
   }
 }
 
@@ -297,6 +299,9 @@ module Command = {
     | Disconnect
     | Commits
     | Refresh
+    | ScopeAll
+    | ScopeByCommit
+    | ScopeWorktree
 }
 
 /// A key sequence in its text form (`"g g"`, `"ctrl+p"`).
@@ -365,6 +370,7 @@ module ViewModel = {
     reviews: array<Domain.Review.t>,
     @as("open_review") openReview: @s.null option<reviewId>,
     @as("resolved_targets") resolvedTargets: array<Domain.ResolvedTarget.t>,
+    scope: Domain.DiffScope.t,
     review: @s.null option<OpenReview.t>,
     draft: @s.null option<Draft.t>,
     @as("pending_refresh") pendingRefresh: bool,
@@ -391,6 +397,7 @@ module ViewModel = {
     reviews: [],
     openReview: None,
     resolvedTargets: [],
+    scope: All({}),
     review: None,
     draft: None,
     pendingRefresh: false,
@@ -410,6 +417,7 @@ module ViewPatch = {
         reviews: array<Domain.Review.t>,
         @as("open_review") openReview: @s.null option<reviewId>,
         @as("resolved_targets") resolvedTargets: array<Domain.ResolvedTarget.t>,
+        scope: Domain.DiffScope.t,
       })
     | @as("Tree") Tree({tree: TreeView.t})
     | @as("Diff") Diff({diff: @s.null option<DiffView.t>, prefs: ViewPrefs.t})
@@ -426,12 +434,13 @@ module ViewPatch = {
   let apply = (model: ViewModel.t, patch: t): ViewModel.t =>
     switch patch {
     | Connection({connection, lastError}) => {...model, connection, lastError}
-    | ReviewList({workspaces, reviews, openReview, resolvedTargets}) => {
+    | ReviewList({workspaces, reviews, openReview, resolvedTargets, scope}) => {
         ...model,
         workspaces,
         reviews,
         openReview,
         resolvedTargets,
+        scope,
       }
     | Tree({tree}) => {...model, tree}
     | Diff({diff, prefs}) => {...model, diff, prefs}

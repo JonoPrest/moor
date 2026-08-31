@@ -54,9 +54,14 @@ pub async fn single(
             let snapshot = daemon.read(move |c| c.review_snapshot(review_id)).await?;
             Ok(Response::ReviewSnapshot { snapshot })
         }
-        Request::ListFiles { review_id } => {
-            let files = daemon.read(move |c| c.files(review_id)).await?;
-            Ok(Response::Files { files })
+        Request::ListFiles { review_id, scope } => {
+            let (files, resolved) = daemon
+                .read(move |c| c.files_scoped(review_id, &scope))
+                .await?;
+            Ok(Response::Files {
+                files,
+                resolved: resolved.into_iter().collect(),
+            })
         }
         Request::TreeSnapshot { repo_id, ref_spec } => {
             let snapshot = daemon

@@ -2,8 +2,8 @@
 //! names the sections that changed.
 
 use moor_protocol::{
-    Anchor, ClientSeq, EventBody, RenderOpts, ResolvedTarget, Review, ReviewId, ReviewSnapshot,
-    RpcError, ThreadId, TreeOid, ViewSection, Workspace,
+    Anchor, ClientSeq, DiffScope, EventBody, RenderOpts, ResolvedTarget, Review, ReviewId,
+    ReviewSnapshot, RpcError, ThreadId, TreeOid, ViewSection, Workspace,
 };
 
 use crate::cache::RenderKey;
@@ -91,6 +91,14 @@ pub struct OpenReview {
     /// Changed files, in daemon order; one render key each.
     pub files: Vec<RenderKey>,
     pub open_file: Option<OpenFile>,
+    /// Which diff of the review is on screen (UI-DESIGN §Diff scope).
+    #[serde(default)]
+    pub scope: DiffScope,
+    /// What `scope` resolved to, from the last `Files` answer; empty until
+    /// answered (and always empty for `All`, whose targets are the
+    /// snapshot's).
+    #[serde(default)]
+    pub scoped_targets: Vec<ResolvedTarget>,
 }
 
 impl OpenReview {
@@ -102,6 +110,25 @@ impl OpenReview {
             trees: Vec::new(),
             files: Vec::new(),
             open_file: None,
+            scope: DiffScope::All,
+            scoped_targets: Vec::new(),
+        }
+    }
+
+    /// The targets of the current scope: the snapshot's resolved targets
+    /// for `All`, else what the last scoped `Files` answer reported.
+    #[must_use]
+    pub fn current_targets(&self) -> Vec<ResolvedTarget> {
+        match self.scope {
+            DiffScope::All => self
+                .snapshot
+                .resolved
+                .as_ref()
+                .map(|r| r.iter().cloned().collect())
+                .unwrap_or_default(),
+            DiffScope::Committed | DiffScope::Commit { .. } | DiffScope::Worktree { .. } => {
+                self.scoped_targets.clone()
+            }
         }
     }
 }
@@ -218,8 +245,13 @@ pub struct ViewModel {
     /// `review`, which is never pushed to the UI).
     pub open_review: Option<ReviewId>,
     /// The open review's resolved base/head per repo (branch names,
-    /// dirty paths); empty until the daemon has resolved.
+    /// dirty paths) under the current scope; empty until the daemon has
+    /// resolved.
     pub resolved_targets: Vec<ResolvedTarget>,
+    /// Which diff of the open review is on screen (UI-DESIGN §Diff scope);
+    /// `All` when no review is open.
+    #[serde(default)]
+    pub scope: DiffScope,
     pub review: Option<OpenReview>,
     pub draft: Option<Draft>,
     /// A working-tree refresh arrived while `draft` was open and is being

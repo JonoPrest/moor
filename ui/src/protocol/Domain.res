@@ -152,6 +152,17 @@ module CommentKind = {
   @@warning("+27")
 }
 
+module DiffScope = {
+  @@warning("-27")
+  @schema @tag("type")
+  type t =
+    | @as("All") All({})
+    | @as("Committed") Committed({})
+    | @as("Commit") Commit({@as("repo_id") repoId: repoId, oid: commitOid})
+    | @as("Worktree") Worktree({@as("repo_id") repoId: repoId})
+  @@warning("+27")
+}
+
 module ChangeKind = {
   @schema @tag("type")
   type t =

@@ -366,6 +366,13 @@ impl ClientCore {
                         path: render.path.clone(),
                         opts,
                         first_chunk,
+                        scope: self
+                            .view
+                            .review
+                            .as_ref()
+                            .filter(|r| r.snapshot.review.id == review_id)
+                            .map(|r| r.scope)
+                            .unwrap_or_default(),
                     },
                     InFlight::FileRender { render, stop_after },
                 ),
@@ -605,8 +612,14 @@ impl ClientCore {
         effects: &mut Vec<Effect>,
     ) {
         self.want_review_trees(effects);
+        let scope = self
+            .view
+            .review
+            .as_ref()
+            .map(|r| r.scope)
+            .unwrap_or_default();
         effects.push(self.request(
-            Request::ListFiles { review_id },
+            Request::ListFiles { review_id, scope },
             InFlight::ListFiles { review_id },
         ));
     }
@@ -625,12 +638,7 @@ impl ClientCore {
         let Some(open) = &mut self.view.review else {
             return;
         };
-        let targets: Vec<ResolvedTarget> = open
-            .snapshot
-            .resolved
-            .as_ref()
-            .map(|r| r.into_iter().cloned().collect())
-            .unwrap_or_default();
+        let targets: Vec<ResolvedTarget> = open.current_targets();
         let mut fetches = Vec::new();
         let mut trees = Vec::new();
         for t in &targets {

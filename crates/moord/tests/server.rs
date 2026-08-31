@@ -8,9 +8,9 @@ use std::time::{Duration, Instant};
 
 use moor_protocol::{
     Anchor, Author, BuildInfo, ChunkIndex, ClientId, ClientMsg, ClientSeq, CommentId, CommentKind,
-    Envelope, EventBody, Mutation, NonEmpty, ProtocolVersion, RefSpec, RenderOpts, RepoId,
-    RepoPath, Request, RequestId, Response, ReviewId, ReviewTarget, RpcError, Since, StreamItem,
-    SubscribeScope, WorkspaceId,
+    DiffScope, Envelope, EventBody, Mutation, NonEmpty, ProtocolVersion, RefSpec, RenderOpts,
+    RepoId, RepoPath, Request, RequestId, Response, ReviewId, ReviewTarget, RpcError, Since,
+    StreamItem, SubscribeScope, WorkspaceId,
 };
 use moor_review_core::DataDir;
 use moor_test_support::{RepoBuilder, TestRepo, files};
@@ -459,6 +459,7 @@ async fn file_render_streams_requested_chunk_first_and_can_be_cancelled(t: Trans
     seed(&h, &c).await;
     let (_, mut rx) = c
         .stream(Request::FileRender {
+            scope: DiffScope::All,
             review_id: review_id(),
             repo_id: rid(),
             path: RepoPath::new("big.rs").unwrap(),
@@ -512,6 +513,7 @@ async fn a_large_render_does_not_delay_another_clients_mutation(t: Transport) {
 
     let (_, mut rx) = renderer
         .stream(Request::FileRender {
+            scope: DiffScope::All,
             review_id: review_id(),
             repo_id: rid(),
             path: RepoPath::new("big.rs").unwrap(),

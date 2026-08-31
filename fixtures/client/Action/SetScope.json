@@ -1,0 +1,6 @@
+{
+  "scope": {
+    "type": "ByCommit"
+  },
+  "type": "SetScope"
+}

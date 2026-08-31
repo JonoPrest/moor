@@ -7,7 +7,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use moor_protocol::{
-    Anchor, BlobOid, ChunkIndex, CommentId, CommentKind, ContextHash, Event, FileChange,
+    Anchor, BlobOid, ChunkIndex, CommentId, CommentKind, ContextHash, DiffScope, Event, FileChange,
     FileRenderHeader, LineNo, LineRange, Mutation, NonEmpty, RefSpec, RenderChunk, RenderOpts,
     Repo, RepoId, RepoPath, Request, ResolvedSource, Response, Review, ReviewId, ReviewSnapshot,
     ReviewTarget, RpcError, Seq, Side, Since, StreamItem, SubscribeScope, ThreadId, TreeEntryKind,
@@ -162,10 +162,13 @@ impl Ops {
     pub async fn files(&self, review_id: ReviewId) -> Result<Vec<FileChange>, OpsError> {
         match self
             .client
-            .request(Request::ListFiles { review_id })
+            .request(Request::ListFiles {
+                review_id,
+                scope: DiffScope::All,
+            })
             .await?
         {
-            Response::Files { files } => Ok(files),
+            Response::Files { files, .. } => Ok(files),
             _ => Err(OpsError::Shape),
         }
     }
@@ -278,6 +281,7 @@ impl Ops {
         let file = self.file(review_id, repo_id, path).await?;
         let (header, chunks) = self
             .render(Request::FileRender {
+                scope: DiffScope::All,
                 review_id,
                 repo_id: file.repo_id,
                 path: file.path.clone(),

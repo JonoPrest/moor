@@ -38,6 +38,7 @@ let schemas: dict<S.t<unknown>> = Dict.fromArray([
   ("Context", erase(View.Context.schema)),
   ("Command", erase(View.Command.schema)),
   ("Action", erase(Action.schema)),
+  ("ScopeChoice", erase(Action.ScopeChoice.schema)),
   ("Override", erase(View.Override.schema)),
   ("Overrides", erase(View.Overrides.schema)),
   ("ViewDelta", erase(View.ViewDelta.schema)),

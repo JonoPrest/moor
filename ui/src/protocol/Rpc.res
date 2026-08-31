@@ -139,7 +139,7 @@ module Request = {
     | @as("ListReviews") ListReviews({@as("workspace_id") workspaceId: workspaceId})
     | @as("GetReview") GetReview({@as("review_id") reviewId: reviewId})
     | @as("ReviewSnapshot") ReviewSnapshot({@as("review_id") reviewId: reviewId})
-    | @as("ListFiles") ListFiles({@as("review_id") reviewId: reviewId})
+    | @as("ListFiles") ListFiles({@as("review_id") reviewId: reviewId, scope: DiffScope.t})
     | @as("OpenReview") OpenReview({@as("review_id") reviewId: reviewId, opts: RenderOpts.t})
     | @as("ResolveTargets") ResolveTargets({@as("review_id") reviewId: reviewId})
     | @as("ListCommits")
@@ -152,6 +152,7 @@ module Request = {
         path: string,
         opts: RenderOpts.t,
         @as("first_chunk") firstChunk: Render.chunkIndex,
+        scope: DiffScope.t,
       })
     | @as("BlobRender")
     BlobRender({
@@ -183,7 +184,7 @@ module Response = {
     | @as("Reviews") Reviews({reviews: array<Review.t>})
     | @as("Review") Review({review: Review.t})
     | @as("ReviewSnapshot") ReviewSnapshot({snapshot: ReviewSnapshot.t})
-    | @as("Files") Files({files: array<FileChange.t>})
+    | @as("Files") Files({files: array<FileChange.t>, resolved: array<ResolvedTarget.t>})
     | @as("Resolved") Resolved({targets: array<ResolvedTarget.t>, changed: bool})
     | @as("Commits") Commits({commits: array<CommitInfo.t>})
     | @as("TreeSnapshot") TreeSnapshot({snapshot: TreeSnapshot.t})

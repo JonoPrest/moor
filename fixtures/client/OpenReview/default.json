@@ -81,6 +81,10 @@
       "client_seq": 7
     }
   ],
+  "scope": {
+    "type": "All"
+  },
+  "scoped_targets": [],
   "snapshot": {
     "comments": [
       {

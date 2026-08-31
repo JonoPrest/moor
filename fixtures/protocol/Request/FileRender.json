@@ -7,5 +7,8 @@
   "path": "src/lib.rs",
   "repo_id": "01HF7YAT000000000000000002",
   "review_id": "01HF7YATZ80000000000000004",
+  "scope": {
+    "type": "Committed"
+  },
   "type": "FileRender"
 }

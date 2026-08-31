@@ -80,6 +80,12 @@ pub enum Command {
     Disconnect,
     /// Fetch the commit list for the focused repo.
     Commits,
+    /// Scope: all changes (`base → head` as resolved).
+    ScopeAll,
+    /// Scope: step commit by commit (worktree last).
+    ScopeByCommit,
+    /// Toggle the `+ working tree` part of the all-changes scope.
+    ScopeWorktree,
     /// Re-list workspaces and reviews.
     Refresh,
 }
@@ -376,6 +382,8 @@ impl Keymap {
     pub const KEY: &'static str = "moor/keymap";
 
     /// The built-in table (§6.4). Vim-style movement plus a few chords.
+    // One line per binding; splitting would hide the whole table.
+    #[allow(clippy::too_many_lines)]
     #[must_use]
     pub fn default_table() -> Self {
         use Command as C;
@@ -401,6 +409,9 @@ impl Keymap {
             // The `g` leader (UI-DESIGN §bindings): flat keys are the main
             // flow; everything less common is a `g`-prefixed group. The
             // hint bar switches to the group while `g` is pending.
+            b(X::Global, keys!("g a"), C::ScopeAll, false),
+            b(X::Global, keys!("g c"), C::ScopeByCommit, false),
+            b(X::Global, keys!("g w"), C::ScopeWorktree, false),
             b(X::Global, keys!("g s"), C::ToggleLayout, false),
             b(X::Global, keys!("g h"), C::ToggleWhitespace, false),
             b(X::Global, keys!("g f"), C::NextFile, false),
@@ -432,6 +443,8 @@ impl Keymap {
             b(X::Tree, keys!("v"), C::ToggleViewed, true),
             b(X::Tree, keys!("] f"), C::NextFile, false),
             b(X::Tree, keys!("[ f"), C::PrevFile, false),
+            b(X::Tree, keys!("n"), C::NextHunk, false),
+            b(X::Tree, keys!("p"), C::PrevHunk, false),
             b(X::Tree, keys!("c"), C::Commits, false),
             // Diff
             b(X::Diff, keys!("j"), C::MoveDown, true),
@@ -473,6 +486,8 @@ impl Keymap {
             b(X::CommitStepper, keys!("k"), C::MoveUp, true),
             b(X::CommitStepper, keys!("down"), C::MoveDown, false),
             b(X::CommitStepper, keys!("up"), C::MoveUp, false),
+            b(X::CommitStepper, keys!("n"), C::NextHunk, false),
+            b(X::CommitStepper, keys!("p"), C::PrevHunk, false),
             b(X::CommitStepper, keys!("enter"), C::Open, true),
             b(X::CommitStepper, keys!("g g"), C::GoTop, false),
             b(X::CommitStepper, keys!("G"), C::GoBottom, false),
@@ -727,6 +742,9 @@ pub fn label(command: Command) -> &'static str {
         Command::Disconnect => "disconnect",
         Command::Commits => "commits",
         Command::Refresh => "refresh",
+        Command::ScopeAll => "all changes",
+        Command::ScopeByCommit => "by commit",
+        Command::ScopeWorktree => "worktree",
     }
 }
 

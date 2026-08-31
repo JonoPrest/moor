@@ -35,7 +35,7 @@ impl ProtocolVersion {
     /// The version this crate serialises.
     pub const CURRENT: ProtocolVersion = ProtocolVersion {
         major: 0,
-        minor: 1,
+        minor: 2,
         patch: 0,
     };
 
@@ -192,7 +192,7 @@ mod tests {
         }
         assert_eq!(
             serde_json::to_string(&ProtocolVersion::CURRENT).unwrap(),
-            "\"0.1.0\""
+            "\"0.2.0\""
         );
     }
 

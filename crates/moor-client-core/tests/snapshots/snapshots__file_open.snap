@@ -424,6 +424,21 @@ expression: core.view()
       "label": "whitespace"
     },
     {
+      "keys": "g a",
+      "command": "ScopeAll",
+      "label": "all changes"
+    },
+    {
+      "keys": "g c",
+      "command": "ScopeByCommit",
+      "label": "by commit"
+    },
+    {
+      "keys": "g w",
+      "command": "ScopeWorktree",
+      "label": "worktree"
+    },
+    {
       "keys": "g f",
       "command": "NextFile",
       "label": "next file"
@@ -499,6 +514,16 @@ expression: core.view()
       "label": "mark viewed"
     },
     {
+      "keys": "n",
+      "command": "NextHunk",
+      "label": "next hunk"
+    },
+    {
+      "keys": "p",
+      "command": "PrevHunk",
+      "label": "previous hunk"
+    },
+    {
       "keys": "c",
       "command": "Commits",
       "label": "commits"
@@ -512,16 +537,6 @@ expression: core.view()
       "keys": "ctrl+u",
       "command": "PageUp",
       "label": "page up"
-    },
-    {
-      "keys": "n",
-      "command": "NextHunk",
-      "label": "next hunk"
-    },
-    {
-      "keys": "p",
-      "command": "PrevHunk",
-      "label": "previous hunk"
     },
     {
       "keys": "] c",
@@ -612,6 +627,9 @@ expression: core.view()
       }
     }
   ],
+  "scope": {
+    "type": "All"
+  },
   "review": {
     "snapshot": {
       "review": {
@@ -790,7 +808,11 @@ expression: core.view()
       },
       "first_row": 0,
       "last_row": 59
-    }
+    },
+    "scope": {
+      "type": "All"
+    },
+    "scoped_targets": []
   },
   "draft": null,
   "pending_refresh": false

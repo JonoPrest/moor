@@ -2,6 +2,18 @@
 
 open Ids
 
+module ScopeChoice = {
+  @@warning("-27")
+  @schema @tag("type")
+  type t =
+    | @as("All") All({})
+    | @as("Committed") Committed({})
+    | @as("ByCommit") ByCommit({})
+    | @as("Commit") Commit({@as("repo_id") repoId: repoId, oid: commitOid})
+    | @as("Worktree") Worktree({@as("repo_id") repoId: repoId})
+  @@warning("+27")
+}
+
 @@warning("-27")
 @schema @tag("type")
 type t =
@@ -43,4 +55,5 @@ type t =
   | @as("UnmarkViewed") UnmarkViewed({file: View.FileRef.t})
   | @as("ListCommits") ListCommits({@as("repo_id") repoId: repoId})
   | @as("StepCommit") StepCommit({selected: @s.null option<int>})
+  | @as("SetScope") SetScope({scope: ScopeChoice.t})
 @@warning("+27")
