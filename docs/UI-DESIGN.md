@@ -24,10 +24,14 @@ where they differ.
   `ctrl+enter` (submit from inside a text input). GUI shells may add mac
   aliases (`⌘K`, `⌘P`, `⌘⇧F` opening the palette) and show them second in
   tooltips; the bare key is the source of truth.
-- **Minimal modality.** No vim-style modes. Text inputs (composer,
-  search) capture keys until `Esc`/submit; everything else is single keys
-  resolved by the focus context. Multi-key sequences stay rare (`] c`
-  style navigation only).
+- **Simple surface, leader for depth (zellij-style).** The main flow is
+  flat single keys. Everything less common lives behind a single leader
+  (`g`): pressing it switches the hint bar to that group's keys
+  (zellij-style pending-mode bar), the next key runs the command, `Esc`
+  cancels. No global vim modes — the only key-capturing states are text
+  inputs (until `Esc`/submit) and a pending leader. Groups are
+  user-definable in keys.toml, so power users can grow their own leader
+  trees without the defaults getting complicated.
 - **User-configurable bindings.** `~/.config/moor/keys.toml` overrides
   per-context bindings. Commands are an enum; an unknown command or
   unparsable chord fails loudly at load. Everything derived from the
@@ -121,26 +125,37 @@ One palette, three modes, `tab` cycles; each mode has a bare-key opener:
 
 | Chord | Action |
 | --- | --- |
-| `:` | palette in Actions mode |
-| `t` | palette in Files mode |
-| `F` | palette in Content mode (find in files) |
-| `/` | find in open file |
+Flat (the main flow):
+
+| Chord | Action |
+| --- | --- |
 | `j`/`k` (and arrows, unadvertised) | next/prev row |
 | `n`/`p` | next/prev hunk (next/prev commit in By-commit mode) |
-| `]f` / `[f` | next/prev file |
+| `enter` | open the focused thing |
 | `c` / `r` | comment / reply |
 | `v` | toggle viewed |
-| `s` / `w` | split layout / hide whitespace |
 | `x` | expand context at cursor |
+| `t` | palette: files · `F` content · `:` actions |
+| `/` | find in open file |
 | `1`/`2`/`3` | Files changed / Conversation / Browse |
 | `tab`/`shift-tab` | cycle pane focus |
-| `<` / `>` / `=` | shrink / grow / reset the sidebar |
-| `ctrl+enter` | submit comment |
-| `Esc` | close/back (also leaves jump-to-context) |
+| `ctrl+enter` | submit comment (inside the composer) |
+| `Esc` | close/back/cancel leader (also leaves jump-to-context) |
 | `?` | help overlay |
 
-Arrow keys work wherever `j`/`k` do but are deliberately not listed in
-the hint bar.
+Leader `g` (hint bar switches to the group while pending, zellij-style):
+
+| Sequence | Action |
+| --- | --- |
+| `g a` / `g c` | scope: All changes / By commit |
+| `g w` | toggle `+ working tree` in All changes |
+| `g s` / `g h` | split layout / hide whitespace |
+| `g f` / `g F` | next / prev file |
+| `g g` / `g e` | top / end of the file list |
+| `g <` `g >` `g =` | shrink / grow / reset the sidebar |
+
+(`s`/`w` stay available flat too while there is no conflict; the leader
+spelling is the stable one for docs and keys.toml examples.)
 
 ## Implementation notes
 
