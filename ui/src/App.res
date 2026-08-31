@@ -100,41 +100,73 @@ module Shell = {
         reviews=model.reviews workspaces=model.workspaces connection=model.connection focus=model.focus dispatch
       />
     }
+    let sidebarStyle: ReactDOM.Style.t = {
+      width: Int.toString(model.prefs.sidebarWidth) ++ "px",
+    }
     <main className="app-shell">
       <div className="app-body">
-        <aside className="app-left"> left </aside>
+        <aside className="app-left" style=sidebarStyle> left </aside>
         <div className="app-center">
           <ReviewHeader
             reviews=model.reviews
             workspaces=model.workspaces
             resolvedTargets=model.resolvedTargets
             openReview=model.openReview
+            prefs=model.prefs
+            chrome=model.chrome
+            dispatch
           />
-          {switch model.tree.search {
-          | Some(search) => <SearchBox search dispatch />
-          | None => React.null
-          }}
-          {switch model.diff {
-          | Some(diff) => <DiffView diff layout=model.prefs.layout focus=model.focus dispatch />
-          | None => <div className="diff-empty"> {React.string("Open a file")} </div>
-          }}
-          {switch model.draft {
-          | Some(draft) => <Composer draft pendingRefresh=model.pendingRefresh dispatch />
-          | None => React.null
+          <Tabs
+            tab=model.tab
+            fileCount=model.progress.total
+            threadCount={Array.length(model.conversation)}
+            chrome=model.chrome
+            dispatch
+          />
+          {switch model.tab {
+          | FilesChanged =>
+            <>
+              {switch model.tree.search {
+              | Some(search) => <SearchBox search dispatch />
+              | None => React.null
+              }}
+              {switch model.diff {
+              | Some(diff) => <DiffView diff layout=model.prefs.layout focus=model.focus dispatch />
+              | None => <div className="diff-empty"> {React.string("Open a file")} </div>
+              }}
+              {switch model.draft {
+              | Some(draft) => <Composer draft pendingRefresh=model.pendingRefresh dispatch />
+              | None => React.null
+              }}
+            </>
+          | Conversation =>
+            <Threads
+              title="Conversation" threads=model.conversation focus=model.focus indexOffset=0 dispatch
+            />
+          | Browse =>
+            <div className="tab-placeholder">
+              {React.string("Browse — reading any ref without a diff — is coming soon")}
+            </div>
           }}
         </div>
-        <aside className="app-right">
-          <Threads title="Threads" threads=model.threads focus=model.focus indexOffset=0 dispatch />
-          <Threads
-            title="Conversation" threads=model.conversation focus=model.focus indexOffset=0 dispatch
-          />
-          {switch model.stepper {
-          | Some(stepper) => <Stepper stepper focus=model.focus dispatch />
-          | None => React.null
-          }}
-        </aside>
+        {model.tab == FilesChanged
+          ? <aside className="app-right">
+              <Threads
+                title="Threads" threads=model.threads focus=model.focus indexOffset=0 dispatch
+              />
+              {switch model.stepper {
+              | Some(stepper) => <Stepper stepper focus=model.focus dispatch />
+              | None => React.null
+              }}
+            </aside>
+          : React.null}
       </div>
-      <HintBar hints=model.hints connection=model.connection progress=model.progress />
+      <HintBar
+        hints=model.hints
+        pendingKeys=model.pendingKeys
+        connection=model.connection
+        progress=model.progress
+      />
       {switch model.help {
       | Some(help) => <HelpOverlay help dispatch />
       | None => React.null

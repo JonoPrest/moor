@@ -362,6 +362,38 @@
   .hint {
     @apply ml-3;
   }
+  .tab-row {
+    @apply flex gap-1 border-b border-border bg-panel px-3;
+  }
+  .tab {
+    @apply cursor-pointer border-b-2 border-transparent px-2 py-1 text-sm text-muted;
+  }
+  .tab[data-active] {
+    border-bottom-color: var(--color-accent);
+    color: var(--color-fg);
+  }
+  .tab-placeholder {
+    @apply flex flex-1 items-center justify-center text-muted;
+  }
+  .review-header-toggles {
+    @apply ml-auto flex gap-1;
+  }
+  .toggle[data-active] {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
+  /* Pending leader (UI-DESIGN: the zellij-style group bar). */
+  .hint-bar-pending {
+    border-top-color: var(--color-accent);
+    background: color-mix(in oklch, var(--color-accent) 12%, var(--color-panel));
+  }
+  .pending-keys {
+    @apply ml-3 font-bold;
+  }
+  .pending-keys kbd {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
   .conn-connected {
     color: var(--color-diff-add-fg);
   }

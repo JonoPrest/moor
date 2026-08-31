@@ -97,6 +97,22 @@ describe("HintBar", () => {
     expect(Screen.getByText("connected"))->toBeTruthy
     expect(Screen.getByText("2/5 viewed"))->toBeTruthy
   })
+
+  test("switches to the pending-leader style and shows the pending keys", () => {
+    let hint: View.Hint.t = {keys: "s", command: ToggleLayout, label: "split layout"}
+    let {container} = render(
+      <HintBar
+        hints=[hint]
+        pendingKeys="g"
+        connection={Subscribed({})}
+        progress={{viewed: 0, changedSinceViewed: 0, total: 0}}
+      />,
+    )
+    expect(Element.querySelector(container, ".hint-bar-pending"))->not_->toBeNull
+    expect(Element.querySelector(container, ".pending-keys"))->not_->toBeNull
+    expect(Screen.getByText("g"))->toBeTruthy
+    expect(Screen.getByText("split layout"))->toBeTruthy
+  })
 })
 
 describe("Tree", () => {
@@ -318,18 +334,88 @@ describe("ReviewHeader", () => {
       "ResolvedTarget",
       "default",
     )
+    let prefs = View.ViewModel.empty.prefs
     let {container} = render(
       <ReviewHeader
-        reviews=[review] workspaces=[ws] resolvedTargets=[resolved] openReview=Some(review.id)
+        reviews=[review] workspaces=[ws] resolvedTargets=[resolved] openReview=Some(review.id) prefs
       />,
     )
     let refs = Element.querySelectorAll(container, ".review-header-ref")
     expect(Array.length(refs))->toBe(2 * Array.length(review.targets))
     cleanup()
     let {container: closed} = render(
-      <ReviewHeader reviews=[review] workspaces=[ws] resolvedTargets=[] openReview=None />,
+      <ReviewHeader reviews=[review] workspaces=[ws] resolvedTargets=[] openReview=None prefs />,
     )
     expect(Element.querySelector(closed, ".review-header"))->toBeNull
+  })
+
+  test("layout and whitespace toggles dispatch, with keymap-derived tooltips", () => {
+    let dispatch = fn()
+    let review = Fixtures.parse(Domain.Review.schema, "protocol", "Review", "default")
+    let ws = Fixtures.parse(Domain.Workspace.schema, "protocol", "Workspace", "default")
+    let prefs = View.ViewModel.empty.prefs
+    let chrome: array<View.Hint.t> = [
+      {keys: "g s", command: ToggleLayout, label: "split layout"},
+      {keys: "g h", command: ToggleWhitespace, label: "hide whitespace"},
+    ]
+    let _ = render(
+      <ReviewHeader
+        reviews=[review]
+        workspaces=[ws]
+        resolvedTargets=[]
+        openReview=Some(review.id)
+        prefs
+        chrome
+        dispatch
+      />,
+    )
+    let split = Screen.getByText("split")
+    expect(Element.getAttribute(split, "title"))->toEqual(Nullable.make("split layout (g s)"))
+    FireEvent.click(split)
+    expect(dispatch)->toHaveBeenLastCalledWith(Action.SetLayout({layout: Split}))
+    FireEvent.click(Screen.getByText("hide whitespace"))
+    expect(dispatch)->toHaveBeenLastCalledWith(
+      Action.SetRenderOpts({ignoreWhitespace: true, contextLines: prefs.contextLines}),
+    )
+    // No data-active until the pref says so.
+    expect(Element.hasAttribute(split, "data-active"))->toBe(false)
+    cleanup()
+    let _ = render(
+      <ReviewHeader
+        reviews=[review]
+        workspaces=[ws]
+        resolvedTargets=[]
+        openReview=Some(review.id)
+        prefs={...prefs, layout: Split, ignoreWhitespace: true}
+        chrome
+        dispatch
+      />,
+    )
+    expect(Element.hasAttribute(Screen.getByText("split"), "data-active"))->toBe(true)
+    expect(Element.hasAttribute(Screen.getByText("hide whitespace"), "data-active"))->toBe(true)
+  })
+})
+
+describe("Tabs", () => {
+  test("marks the active tab, shows counts, dispatches SetTab on click", () => {
+    let dispatch = fn()
+    let chrome: array<View.Hint.t> = [
+      {keys: "2", command: TabConversation, label: "conversation"},
+    ]
+    let {container} = render(
+      <Tabs tab=FilesChanged fileCount=4 threadCount=2 chrome dispatch />,
+    )
+    let tabs = Element.querySelectorAll(container, "[role=\"tab\"]")
+    expect(Array.length(tabs))->toBe(3)
+    expect(Element.hasAttribute(tabs->Array.getUnsafe(0), "data-active"))->toBe(true)
+    expect(Element.hasAttribute(tabs->Array.getUnsafe(1), "data-active"))->toBe(false)
+    expect(Element.getAttribute(tabs->Array.getUnsafe(1), "title"))->toEqual(
+      Nullable.make("conversation (2)"),
+    )
+    FireEvent.click(tabs->Array.getUnsafe(1))
+    expect(dispatch)->toHaveBeenLastCalledWith(Action.SetTab({tab: Conversation}))
+    FireEvent.click(tabs->Array.getUnsafe(2))
+    expect(dispatch)->toHaveBeenLastCalledWith(Action.SetTab({tab: Browse}))
   })
 })
 
