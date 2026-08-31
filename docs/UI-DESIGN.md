@@ -11,17 +11,19 @@ where they differ.
 - **Keyboard-first, everywhere.** Every feature, toggle, tab, and pane is
   reachable by keyboard; a mouse click is an alias for a chord. Every
   button's hover tooltip shows its shortcut. Pane focus cycles with
-  `tab`/`shift-tab`; if pane resizing is built it is keyboard-native
-  (`⌥←/→` resize focused pane, `⌥0` reset), never drag-only.
+  `tab`/`shift-tab`; pane resizing is keyboard-native (`<`/`>` resize the
+  sidebar, `=` resets), never drag-only.
 - **One keymap, all shells.** The keymap lives in `moor-client-core` and
   drives web, Tauri, and the future TUI identically. Hints, the `?` help
   overlay, and button tooltips are all derived from it — never
   hand-written. A control without a binding is a bug (testable, like the
   CSS-class coverage test).
-- **Terminal-safe canonical bindings.** Canonical chords use single
-  printable keys and `ctrl` only, so the TUI is identical. GUI shells may
-  add mac aliases (`⌘K` for `ctrl+k`, `⌘P`, `⌘⇧F`) and show them in
-  tooltips, but the canonical spelling is the source of truth.
+- **Terminal-safe, modifier-light canonical bindings.** Canonical chords
+  are bare printable keys (capitals allowed), so the TUI is identical and
+  nothing collides with terminal/OS chords. The single modifier chord is
+  `ctrl+enter` (submit from inside a text input). GUI shells may add mac
+  aliases (`⌘K`, `⌘P`, `⌘⇧F` opening the palette) and show them second in
+  tooltips; the bare key is the source of truth.
 - **Minimal modality.** No vim-style modes. Text inputs (composer,
   search) capture keys until `Esc`/submit; everything else is single keys
   resolved by the focus context. Multi-key sequences stay rare (`] c`
@@ -101,16 +103,17 @@ working tree (the daemon's tree snapshots already take an arbitrary
 
 ## Search
 
-One palette (`ctrl+k`), three modes, `tab` cycles:
+One palette, three modes, `tab` cycles; each mode has a bare-key opener:
 
-- **Files** — fuzzy file-name find (exists today; `ctrl+p` opens the
-  palette in this mode).
+- **Files** (`t`, GitHub's file-finder key) — fuzzy file-name find
+  (exists today).
 - **Content** — keyword/regex across files, grouped by file with
   highlighted matching lines and line numbers; scope toggle
   `Changed files | All files @<ref>`; Enter jumps to the file at that
-  line in the current tab. Needs a new daemon `Search` request.
-- **`>` Actions** — every command by name (toggle split, hide
-  whitespace, open review…), the discoverable face of the keymap.
+  line in the current tab. Opened with `F`. Needs a new daemon `Search`
+  request.
+- **Actions** (`:`, ex-style) — every command by name (toggle split,
+  hide whitespace, open review…), the discoverable face of the keymap.
 
 `/` finds within the open file.
 
@@ -118,8 +121,9 @@ One palette (`ctrl+k`), three modes, `tab` cycles:
 
 | Chord | Action |
 | --- | --- |
-| `ctrl+k` | palette (`>` actions, files, content) |
-| `ctrl+p` | palette in Files mode |
+| `:` | palette in Actions mode |
+| `t` | palette in Files mode |
+| `F` | palette in Content mode (find in files) |
 | `/` | find in open file |
 | `j`/`k` (and arrows, unadvertised) | next/prev row |
 | `n`/`p` | next/prev hunk (next/prev commit in By-commit mode) |
@@ -130,6 +134,7 @@ One palette (`ctrl+k`), three modes, `tab` cycles:
 | `x` | expand context at cursor |
 | `1`/`2`/`3` | Files changed / Conversation / Browse |
 | `tab`/`shift-tab` | cycle pane focus |
+| `<` / `>` / `=` | shrink / grow / reset the sidebar |
 | `ctrl+enter` | submit comment |
 | `Esc` | close/back (also leaves jump-to-context) |
 | `?` | help overlay |
