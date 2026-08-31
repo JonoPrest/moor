@@ -8,13 +8,15 @@
 //! ticker, the UI) talks to it over channels, so the core never blocks and
 //! is never shared.
 
+pub mod keys_file;
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use moor_client_core::{
-    Action, CacheConfig, ClientCore, Config, Effect, IdSeed, Input, KeyChord, TransportEvent,
-    ViewPatch,
+    Action, CacheConfig, ClientCore, Config, Effect, IdSeed, Input, KeyChord, Keymap,
+    TransportEvent, ViewPatch,
 };
 use moor_protocol::{Author, BuildInfo, ClientId, ClientMsg, Envelope, ServerMsg};
 use moord::codec;
@@ -50,6 +52,9 @@ pub struct HostConfig {
     pub id_seed: IdSeed,
     /// How often the core sees the clock.
     pub tick: Duration,
+    /// `keys.toml` with keymap overrides (UI-DESIGN §bindings); read when
+    /// the core loads its keymap. `None` disables the file.
+    pub keys_file: Option<PathBuf>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -192,6 +197,7 @@ pub fn spawn(
         cache,
         id_seed,
         tick,
+        keys_file,
     } = config;
     let kv = Kv::open(&kv)?;
     let (actions_tx, actions_rx) = mpsc::unbounded_channel();
@@ -207,6 +213,7 @@ pub fn spawn(
         socket,
         kv,
         tick,
+        keys_file,
         writer: None,
         patches: patches_tx,
     };
@@ -224,6 +231,7 @@ struct Host {
     socket: PathBuf,
     kv: Kv,
     tick: Duration,
+    keys_file: Option<PathBuf>,
     /// Outbound frames while connected.
     writer: Option<mpsc::UnboundedSender<ClientMsg>>,
     patches: mpsc::UnboundedSender<Vec<ViewPatch>>,
@@ -318,11 +326,17 @@ impl Host {
                 }
             }
             Effect::Load { key } => {
-                let value = match self.kv.get(&key) {
-                    Ok(v) => v,
-                    Err(err) => {
-                        tracing::warn!(%err, key, "load failed");
-                        None
+                let value = if key == Keymap::KEY {
+                    // keys.toml outranks anything stored: it is the user's
+                    // file; a bad file is rejected loudly and whole.
+                    self.keymap_overrides()
+                } else {
+                    match self.kv.get(&key) {
+                        Ok(v) => v,
+                        Err(err) => {
+                            tracing::warn!(%err, key, "load failed");
+                            None
+                        }
                     }
                 };
                 // The answer is an input like any other; its effects may
@@ -334,6 +348,30 @@ impl Host {
                 // A closed receiver means the UI is gone; the loop notices
                 // on the next command.
                 let _ = self.patches.send(patches);
+            }
+        }
+    }
+}
+
+impl Host {
+    /// The keymap overrides from `keys.toml`, serialised the way the core
+    /// reads them; `None` when there is no file (or it is broken, which is
+    /// reported and leaves the defaults).
+    fn keymap_overrides(&self) -> Option<Vec<u8>> {
+        let path = self.keys_file.as_ref()?;
+        let text = match std::fs::read_to_string(path) {
+            Ok(t) => t,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return None,
+            Err(err) => {
+                tracing::error!(%err, path = %path.display(), "keys.toml unreadable; keeping default bindings");
+                return None;
+            }
+        };
+        match keys_file::parse(&text) {
+            Ok(overrides) => serde_json::to_vec(&overrides).ok(),
+            Err(err) => {
+                tracing::error!(%err, path = %path.display(), "keys.toml rejected; keeping default bindings");
+                None
             }
         }
     }
@@ -406,5 +444,6 @@ pub fn local_config(
         cache: CacheConfig::default(),
         id_seed,
         tick: Duration::from_millis(100),
+        keys_file: keys_file::default_keys_path(),
     }
 }

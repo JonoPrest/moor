@@ -219,7 +219,11 @@ async fn until(
 }
 
 fn config(h: &Harness, kv: KvConfig) -> HostConfig {
-    local_config(&h.socket, identity(1), IdSeed(0x5eed), kv)
+    // Hermetic: never read the developer's real keys.toml.
+    HostConfig {
+        keys_file: None,
+        ..local_config(&h.socket, identity(1), IdSeed(0x5eed), kv)
+    }
 }
 
 async fn connect_and_open(

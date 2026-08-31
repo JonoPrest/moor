@@ -3106,10 +3106,12 @@ dependencies = [
  "moord",
  "redb",
  "serde_json",
+ "strum",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
  "tokio-util",
+ "toml 0.9.12+spec-1.1.0",
  "tracing",
 ]
 
