@@ -35,6 +35,8 @@ type t =
   | @as("ToggleDir") ToggleDir({@as("repo_id") repoId: repoId, path: @s.null option<string>})
   | @as("FileSearch") FileSearch({query: @s.null option<string>})
   | @as("SetLayout") SetLayout({layout: View.Layout.t})
+  | @as("SetTab") SetTab({tab: View.Tab.t})
+  | @as("SetSidebar") SetSidebar({width: int})
   | @as("SetRenderOpts")
   SetRenderOpts({@as("ignore_whitespace") ignoreWhitespace: bool, @as("context_lines") contextLines: int})
   | @as("MarkViewed") MarkViewed({file: View.FileRef.t})

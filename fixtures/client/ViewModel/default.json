@@ -1,4 +1,11 @@
 {
+  "chrome": [
+    {
+      "command": "NextFile",
+      "keys": "] f",
+      "label": "next file"
+    }
+  ],
   "connection": {
     "type": "Subscribed"
   },
@@ -106,11 +113,13 @@
   ],
   "last_error": null,
   "open_review": "01HF7YATZ80000000000000004",
+  "pending_keys": "",
   "pending_refresh": true,
   "prefs": {
     "context_lines": 5,
     "ignore_whitespace": true,
-    "layout": "Split"
+    "layout": "Split",
+    "sidebar_width": 288
   },
   "progress": {
     "changed_since_viewed": 1,
@@ -448,6 +457,7 @@
     "repo_id": "01HF7YAT000000000000000002",
     "selected": 0
   },
+  "tab": "FilesChanged",
   "threads": [
     {
       "author": {

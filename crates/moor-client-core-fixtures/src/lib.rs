@@ -125,6 +125,7 @@ registry!(
     ViewModel,
     ViewPrefs,
     Layout,
+    Tab,
     ConnectionView,
     Draft,
     PendingEvent,
@@ -254,9 +255,11 @@ struct_fixture!(
         layout: Layout::Split,
         ignore_whitespace: true,
         context_lines: 5,
+        sidebar_width: 288,
     }
 );
 unit_enum_fixture!(Layout, "Layout");
+unit_enum_fixture!(Tab, "Tab");
 enum_fixture!(
     ConnectionView,
     ConnectionViewKind,
@@ -632,6 +635,10 @@ enum_fixture!(
             ignore_whitespace: true,
             context_lines: 5,
         },
+        Action::SetTab {
+            tab: Tab::Conversation,
+        },
+        Action::SetSidebar { width: 320 },
         Action::MarkViewed { file: file_ref()? },
         Action::UnmarkViewed { file: file_ref()? },
         Action::ListCommits {
@@ -711,9 +718,12 @@ enum_fixture!(
         },
         ViewPatch::Focus {
             focus: Focus::Diff { row: 121 },
+            tab: Tab::FilesChanged,
         },
         ViewPatch::Hints {
             hints: vec![local::<Hint>()?],
+            pending: "g".into(),
+            chrome: vec![local::<Hint>()?],
         },
         ViewPatch::Help {
             help: Some(local::<HelpView>()?),
@@ -736,7 +746,10 @@ struct_fixture!(
         conversation: Vec::new(),
         stepper: Some(local::<CommitStepper>()?),
         focus: Focus::Diff { row: 121 },
+        tab: Tab::FilesChanged,
         hints: vec![local::<Hint>()?],
+        pending_keys: String::new(),
+        chrome: vec![local::<Hint>()?],
         help: None,
         connection: ConnectionView::Subscribed,
         last_error: None,

@@ -1,5 +1,56 @@
 # Handover notes
 
+## 2026-08-31 (later): phase 1 core landed — pick up at the UI rendering
+
+Building docs/UI-DESIGN.md phase 1. The **core half is done and green**
+(fmt, clippy -D warnings, all workspace tests, `cargo xtask fixtures`
+no-op, `pnpm rescript` + `pnpm test` 414 passing). What landed (this WIP
+commit):
+
+- **Keymap** (`crates/moor-client-core/src/keymap.rs`): `t` opens file
+  search (ctrl/meta+p stay as aliases); `1`/`2`/`3` → new commands
+  `TabFiles`/`TabConversation`/`TabBrowse`; leader-`g` group per
+  UI-DESIGN — `g s` split, `g h` whitespace, `g f`/`g F` next/prev file,
+  `g e` bottom, `g <`/`g >`/`g =` sidebar resize; Composer `ctrl+enter` →
+  new `Command::Submit` (display-only: resolve returns Err, the host's
+  textarea owns the chord). New keymap methods: `pending_hints(ctx,
+  pressed)` (zellij-style group bar) and `chrome()` (one hint per bound
+  command, for button tooltips — tooltips must come from this, never
+  hand-written).
+- **View state** (`view.rs`): `Tab {FilesChanged, Conversation, Browse}`;
+  `ViewModel.tab`, `.pending_keys` (text of the pending leader, "" when
+  none), `.chrome`; `ViewPrefs.sidebar_width` (serde-defaulted, persisted;
+  consts SIDEBAR_DEFAULT/MIN/MAX/STEP). New `Action::SetTab` /
+  `Action::SetSidebar` (lib.rs user()); derive() now swaps the hint list
+  to the pending group while `self.chords` is non-empty.
+- **Patches**: `ViewPatch::Focus {focus, tab}`, `ViewPatch::Hints {hints,
+  pending, chrome}`. Fixtures + ReScript schemas updated (`View.res`,
+  `Action.res`, `ClientRegistry.res` — Tab registered; boundary test
+  green).
+
+**Next agent picks up here — the UI rendering (ReScript, ui/src):**
+1. Tab row in App.res driven by `model.tab` (Files changed n / 
+   Conversation n / Browse placeholder), clicks dispatch `SetTab`; center
+   pane switches on it (Conversation = full-width Threads list; Browse can
+   be an empty placeholder this phase). Tab buttons' tooltips from
+   `model.chrome` (find by command).
+2. HintBar.res: when `model.pendingKeys != ""` render leader mode —
+   highlight the pending key and show the group hints (they're already in
+   `model.hints`); style it distinctly (see design/ByCommit.dc.html
+   footer mock).
+3. Toggle buttons (split `s`, whitespace `w`) in the review header with
+   tooltips from `model.chrome`; sidebar width: style `.app-left` from
+   `model.prefs.sidebarWidth` (inline style, replaces fixed w-72).
+4. Arrow keys already bound (unadvertised). Palette shell (`F`/`:`) is
+   still open — needs core commands first if done properly; fine to defer
+   to phase 2.
+5. Verify headlessly: `moor .` in the repo, then Playwright scripts in
+   the scratchpad `pw/` dir pattern (see below); keep every gate green.
+   NOTE: `~/.cargo/bin/moor*` predate all of this — `cargo install` the
+   cli/daemon and restart moord before demoing.
+
+Then phases 2–3 as listed in the section below.
+
 ## 2026-08-31: design settled — next task is BUILDING docs/UI-DESIGN.md
 
 `docs/UI-DESIGN.md` is the settled product design (from the design canvas

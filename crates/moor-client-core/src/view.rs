@@ -106,6 +106,17 @@ impl OpenReview {
     }
 }
 
+/// Which center tab is shown (UI-DESIGN §layout): keys `1`/`2`/`3`.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default, strum::EnumIter,
+)]
+pub enum Tab {
+    #[default]
+    FilesChanged,
+    Conversation,
+    Browse,
+}
+
 /// How diff rows are laid out.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default, strum::EnumIter,
@@ -125,6 +136,20 @@ pub struct ViewPrefs {
     pub layout: Layout,
     pub ignore_whitespace: bool,
     pub context_lines: u32,
+    /// Left sidebar width in px (`g <` / `g >` / `g =`). Defaulted so
+    /// prefs stored before the field existed still load.
+    #[serde(default = "default_sidebar")]
+    pub sidebar_width: u32,
+}
+
+/// Sidebar width bounds (px) for the keyboard resize commands.
+pub const SIDEBAR_DEFAULT: u32 = 288;
+pub const SIDEBAR_MIN: u32 = 176;
+pub const SIDEBAR_MAX: u32 = 520;
+pub const SIDEBAR_STEP: u32 = 32;
+
+const fn default_sidebar() -> u32 {
+    SIDEBAR_DEFAULT
 }
 
 impl ViewPrefs {
@@ -147,6 +172,7 @@ impl Default for ViewPrefs {
             layout: Layout::Unified,
             ignore_whitespace: opts.ignore_whitespace,
             context_lines: opts.context_lines,
+            sidebar_width: SIDEBAR_DEFAULT,
         }
     }
 }
@@ -168,8 +194,17 @@ pub struct ViewModel {
     pub stepper: Option<CommitStepper>,
     /// Where keys go (§6.4). Always valid for the current lists.
     pub focus: Focus,
-    /// Primary bindings for the focused context, for the hint bar.
+    /// Which center tab is shown (`1`/`2`/`3`).
+    pub tab: Tab,
+    /// Primary bindings for the focused context, for the hint bar — or,
+    /// while a leader is pending, the pending group's keys.
     pub hints: Vec<Hint>,
+    /// The pending leader sequence in text form (`"g"`), empty when none.
+    /// The hint bar shows it as the mode indicator.
+    pub pending_keys: String,
+    /// One hint per bound command, for button tooltips (derived from the
+    /// keymap, never hand-written).
+    pub chrome: Vec<Hint>,
     /// The `?` overlay while open.
     pub help: Option<HelpView>,
     pub connection: ConnectionView,

@@ -6,7 +6,8 @@ expression: core.view()
   "prefs": {
     "layout": "Unified",
     "ignore_whitespace": false,
-    "context_lines": 3
+    "context_lines": 3,
+    "sidebar_width": 288
   },
   "tree": {
     "roots": [
@@ -332,6 +333,7 @@ expression: core.view()
     "type": "Diff",
     "row": 3
   },
+  "tab": "FilesChanged",
   "hints": [
     {
       "keys": "j",
@@ -369,7 +371,7 @@ expression: core.view()
       "label": "mark viewed"
     },
     {
-      "keys": "ctrl+p",
+      "keys": "t",
       "command": "FileSearch",
       "label": "find file"
     },
@@ -377,6 +379,189 @@ expression: core.view()
       "keys": "?",
       "command": "ToggleHelp",
       "label": "help"
+    }
+  ],
+  "pending_keys": "",
+  "chrome": [
+    {
+      "keys": "?",
+      "command": "ToggleHelp",
+      "label": "help"
+    },
+    {
+      "keys": "tab",
+      "command": "NextPanel",
+      "label": "next panel"
+    },
+    {
+      "keys": "t",
+      "command": "FileSearch",
+      "label": "find file"
+    },
+    {
+      "keys": "1",
+      "command": "TabFiles",
+      "label": "files changed"
+    },
+    {
+      "keys": "2",
+      "command": "TabConversation",
+      "label": "conversation"
+    },
+    {
+      "keys": "3",
+      "command": "TabBrowse",
+      "label": "browse"
+    },
+    {
+      "keys": "s",
+      "command": "ToggleLayout",
+      "label": "split/unified"
+    },
+    {
+      "keys": "w",
+      "command": "ToggleWhitespace",
+      "label": "whitespace"
+    },
+    {
+      "keys": "g f",
+      "command": "NextFile",
+      "label": "next file"
+    },
+    {
+      "keys": "g F",
+      "command": "PrevFile",
+      "label": "previous file"
+    },
+    {
+      "keys": "g e",
+      "command": "GoBottom",
+      "label": "bottom"
+    },
+    {
+      "keys": "g <",
+      "command": "SidebarShrink",
+      "label": "shrink sidebar"
+    },
+    {
+      "keys": "g >",
+      "command": "SidebarGrow",
+      "label": "grow sidebar"
+    },
+    {
+      "keys": "g =",
+      "command": "SidebarReset",
+      "label": "reset sidebar"
+    },
+    {
+      "keys": "esc",
+      "command": "Back",
+      "label": "back"
+    },
+    {
+      "keys": "ctrl+shift+c",
+      "command": "Connect",
+      "label": "connect"
+    },
+    {
+      "keys": "ctrl+shift+d",
+      "command": "Disconnect",
+      "label": "disconnect"
+    },
+    {
+      "keys": "j",
+      "command": "MoveDown",
+      "label": "down"
+    },
+    {
+      "keys": "k",
+      "command": "MoveUp",
+      "label": "up"
+    },
+    {
+      "keys": "g g",
+      "command": "GoTop",
+      "label": "top"
+    },
+    {
+      "keys": "enter",
+      "command": "Open",
+      "label": "open"
+    },
+    {
+      "keys": "R",
+      "command": "Refresh",
+      "label": "refresh"
+    },
+    {
+      "keys": "v",
+      "command": "ToggleViewed",
+      "label": "mark viewed"
+    },
+    {
+      "keys": "c",
+      "command": "Commits",
+      "label": "commits"
+    },
+    {
+      "keys": "ctrl+d",
+      "command": "PageDown",
+      "label": "page down"
+    },
+    {
+      "keys": "ctrl+u",
+      "command": "PageUp",
+      "label": "page up"
+    },
+    {
+      "keys": "n",
+      "command": "NextHunk",
+      "label": "next hunk"
+    },
+    {
+      "keys": "p",
+      "command": "PrevHunk",
+      "label": "previous hunk"
+    },
+    {
+      "keys": "] c",
+      "command": "NextComment",
+      "label": "next comment"
+    },
+    {
+      "keys": "[ c",
+      "command": "PrevComment",
+      "label": "previous comment"
+    },
+    {
+      "keys": "c",
+      "command": "Comment",
+      "label": "comment"
+    },
+    {
+      "keys": "r",
+      "command": "Reply",
+      "label": "reply"
+    },
+    {
+      "keys": "x",
+      "command": "ToggleResolved",
+      "label": "resolve"
+    },
+    {
+      "keys": "d",
+      "command": "Delete",
+      "label": "delete"
+    },
+    {
+      "keys": "a",
+      "command": "ApplySuggestion",
+      "label": "apply suggestion"
+    },
+    {
+      "keys": "ctrl+enter",
+      "command": "Submit",
+      "label": "submit"
     }
   ],
   "help": null,

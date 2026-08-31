@@ -63,6 +63,19 @@ pub enum Command {
     ToggleLayout,
     ToggleWhitespace,
     ToggleHelp,
+    /// Show the "Files changed" tab.
+    TabFiles,
+    /// Show the "Conversation" tab.
+    TabConversation,
+    /// Show the "Browse" tab.
+    TabBrowse,
+    SidebarShrink,
+    SidebarGrow,
+    SidebarReset,
+    /// Submit the open composer. The editor lives in the host, which
+    /// handles the chord itself; the binding exists so hints, help and
+    /// tooltips can derive it.
+    Submit,
     Connect,
     Disconnect,
     /// Fetch the commit list for the focused repo.
@@ -377,10 +390,25 @@ impl Keymap {
             // Global
             b(X::Global, keys!("?"), C::ToggleHelp, true),
             b(X::Global, keys!("tab"), C::NextPanel, false),
-            b(X::Global, keys!("ctrl+p"), C::FileSearch, true),
+            b(X::Global, keys!("t"), C::FileSearch, true),
+            b(X::Global, keys!("ctrl+p"), C::FileSearch, false),
             b(X::Global, keys!("meta+p"), C::FileSearch, false),
+            b(X::Global, keys!("1"), C::TabFiles, false),
+            b(X::Global, keys!("2"), C::TabConversation, false),
+            b(X::Global, keys!("3"), C::TabBrowse, false),
             b(X::Global, keys!("s"), C::ToggleLayout, false),
             b(X::Global, keys!("w"), C::ToggleWhitespace, false),
+            // The `g` leader (UI-DESIGN §bindings): flat keys are the main
+            // flow; everything less common is a `g`-prefixed group. The
+            // hint bar switches to the group while `g` is pending.
+            b(X::Global, keys!("g s"), C::ToggleLayout, false),
+            b(X::Global, keys!("g h"), C::ToggleWhitespace, false),
+            b(X::Global, keys!("g f"), C::NextFile, false),
+            b(X::Global, keys!("g F"), C::PrevFile, false),
+            b(X::Global, keys!("g e"), C::GoBottom, false),
+            b(X::Global, keys!("g <"), C::SidebarShrink, false),
+            b(X::Global, keys!("g >"), C::SidebarGrow, false),
+            b(X::Global, keys!("g ="), C::SidebarReset, false),
             b(X::Global, keys!("esc"), C::Back, false),
             b(X::Global, keys!("ctrl+shift+c"), C::Connect, false),
             b(X::Global, keys!("ctrl+shift+d"), C::Disconnect, false),
@@ -438,6 +466,7 @@ impl Keymap {
             b(X::Thread, keys!("d"), C::Delete, false),
             b(X::Thread, keys!("a"), C::ApplySuggestion, false),
             // Composer: everything else is text; the host submits.
+            b(X::Composer, keys!("ctrl+enter"), C::Submit, true),
             b(X::Composer, keys!("esc"), C::Back, true),
             // Commit stepper
             b(X::CommitStepper, keys!("j"), C::MoveDown, true),
@@ -580,6 +609,54 @@ impl Keymap {
             .collect()
     }
 
+    /// The hint bar while a sequence is pending (UI-DESIGN: the zellij-style
+    /// group bar): every applicable binding that starts with `pressed`,
+    /// keyed by the chords still to type.
+    #[must_use]
+    pub fn pending_hints(&self, context: Context, pressed: &[KeyChord]) -> Vec<Hint> {
+        let mut out: Vec<Hint> = Vec::new();
+        for b in self.applicable(context) {
+            if b.keys.chords().len() > pressed.len() && b.keys.starts_with(pressed) {
+                let rest = b.keys.chords()[pressed.len()..]
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                if !out.iter().any(|h| h.keys == rest) {
+                    out.push(Hint {
+                        keys: rest,
+                        command: b.command,
+                        label: label(b.command).to_owned(),
+                    });
+                }
+            }
+        }
+        out
+    }
+
+    /// One hint per bound command, for button tooltips: the first Global
+    /// binding, else the first binding in any context. Never hand-written
+    /// in a UI; a control without an entry here has no binding, which is
+    /// a bug.
+    #[must_use]
+    pub fn chrome(&self) -> Vec<Hint> {
+        let mut out: Vec<Hint> = Vec::new();
+        let global = self
+            .bindings
+            .iter()
+            .filter(|b| b.context == Context::Global);
+        for b in global.chain(self.bindings.iter()) {
+            if !out.iter().any(|h| h.command == b.command) {
+                out.push(Hint {
+                    keys: b.keys.to_string(),
+                    command: b.command,
+                    label: label(b.command).to_owned(),
+                });
+            }
+        }
+        out
+    }
+
     /// The help overlay for `context`: all its bindings grouped by
     /// context (its own first, then Global), plus conflicts.
     #[must_use]
@@ -639,6 +716,13 @@ pub fn label(command: Command) -> &'static str {
         Command::ToggleLayout => "split/unified",
         Command::ToggleWhitespace => "whitespace",
         Command::ToggleHelp => "help",
+        Command::TabFiles => "files changed",
+        Command::TabConversation => "conversation",
+        Command::TabBrowse => "browse",
+        Command::SidebarShrink => "shrink sidebar",
+        Command::SidebarGrow => "grow sidebar",
+        Command::SidebarReset => "reset sidebar",
+        Command::Submit => "submit",
         Command::Connect => "connect",
         Command::Disconnect => "disconnect",
         Command::Commits => "commits",

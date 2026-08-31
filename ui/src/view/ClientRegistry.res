@@ -7,6 +7,7 @@ let schemas: dict<S.t<unknown>> = Dict.fromArray([
   ("ViewModel", erase(View.ViewModel.schema)),
   ("ViewPrefs", erase(View.ViewPrefs.schema)),
   ("Layout", erase(View.Layout.schema)),
+  ("Tab", erase(View.Tab.schema)),
   ("ConnectionView", erase(View.ConnectionView.schema)),
   ("Draft", erase(View.Draft.schema)),
   ("PendingEvent", erase(View.PendingEvent.schema)),

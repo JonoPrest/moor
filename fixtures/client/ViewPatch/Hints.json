@@ -1,4 +1,11 @@
 {
+  "chrome": [
+    {
+      "command": "NextFile",
+      "keys": "] f",
+      "label": "next file"
+    }
+  ],
   "hints": [
     {
       "command": "NextFile",
@@ -6,5 +13,6 @@
       "label": "next file"
     }
   ],
+  "pending": "g",
   "type": "Hints"
 }

@@ -14,7 +14,7 @@ use crate::diff::{CommitStepper, DiffView, ThreadView};
 use crate::explorer::{Progress, TreeView};
 use crate::focus::Focus;
 use crate::keymap::{HelpView, Hint};
-use crate::view::{ConnectionView, Draft, ViewDelta, ViewModel, ViewPrefs};
+use crate::view::{ConnectionView, Draft, Tab, ViewDelta, ViewModel, ViewPrefs};
 
 /// The part of the view one section owns.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumDiscriminants)]
@@ -54,9 +54,12 @@ pub enum ViewPatch {
     },
     Focus {
         focus: Focus,
+        tab: Tab,
     },
     Hints {
         hints: Vec<Hint>,
+        pending: String,
+        chrome: Vec<Hint>,
     },
     Help {
         help: Option<HelpView>,
@@ -121,9 +124,14 @@ impl ViewModel {
             ViewSection::Progress => ViewPatch::Progress {
                 progress: self.progress,
             },
-            ViewSection::Focus => ViewPatch::Focus { focus: self.focus },
+            ViewSection::Focus => ViewPatch::Focus {
+                focus: self.focus,
+                tab: self.tab,
+            },
             ViewSection::Hints => ViewPatch::Hints {
                 hints: self.hints.clone(),
+                pending: self.pending_keys.clone(),
+                chrome: self.chrome.clone(),
             },
             ViewSection::Help => ViewPatch::Help {
                 help: self.help.clone(),
@@ -178,8 +186,19 @@ impl ViewModel {
             ViewPatch::Conversation { conversation } => self.conversation = conversation,
             ViewPatch::CommitStepper { stepper } => self.stepper = stepper,
             ViewPatch::Progress { progress } => self.progress = progress,
-            ViewPatch::Focus { focus } => self.focus = focus,
-            ViewPatch::Hints { hints } => self.hints = hints,
+            ViewPatch::Focus { focus, tab } => {
+                self.focus = focus;
+                self.tab = tab;
+            }
+            ViewPatch::Hints {
+                hints,
+                pending,
+                chrome,
+            } => {
+                self.hints = hints;
+                self.pending_keys = pending;
+                self.chrome = chrome;
+            }
             ViewPatch::Help { help } => self.help = help,
             ViewPatch::Draft {
                 draft,

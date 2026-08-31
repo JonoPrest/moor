@@ -9,12 +9,18 @@ module Layout = {
   type t = Unified | Split
 }
 
+module Tab = {
+  @schema
+  type t = FilesChanged | Conversation | Browse
+}
+
 module ViewPrefs = {
   @schema
   type t = {
     layout: Layout.t,
     @as("ignore_whitespace") ignoreWhitespace: bool,
     @as("context_lines") contextLines: int,
+    @as("sidebar_width") sidebarWidth: int,
   }
 }
 
@@ -280,6 +286,13 @@ module Command = {
     | ToggleLayout
     | ToggleWhitespace
     | ToggleHelp
+    | TabFiles
+    | TabConversation
+    | TabBrowse
+    | SidebarShrink
+    | SidebarGrow
+    | SidebarReset
+    | Submit
     | Connect
     | Disconnect
     | Commits
@@ -341,7 +354,10 @@ module ViewModel = {
     conversation: array<ThreadView.t>,
     stepper: @s.null option<CommitStepper.t>,
     focus: Focus.t,
+    tab: Tab.t,
     hints: array<Hint.t>,
+    @as("pending_keys") pendingKeys: string,
+    chrome: array<Hint.t>,
     help: @s.null option<HelpView.t>,
     connection: ConnectionView.t,
     @as("last_error") lastError: @s.null option<Rpc.RpcError.t>,
@@ -356,7 +372,7 @@ module ViewModel = {
 
   /// The model before any patch arrives.
   let empty: t = {
-    prefs: {layout: Unified, ignoreWhitespace: false, contextLines: 3},
+    prefs: {layout: Unified, ignoreWhitespace: false, contextLines: 3, sidebarWidth: 288},
     tree: {roots: [], breadcrumbs: [], search: None},
     progress: {viewed: 0, changedSinceViewed: 0, total: 0},
     diff: None,
@@ -364,7 +380,10 @@ module ViewModel = {
     conversation: [],
     stepper: None,
     focus: ReviewList({index: 0}),
+    tab: FilesChanged,
     hints: [],
+    pendingKeys: "",
+    chrome: [],
     help: None,
     connection: Disconnected({}),
     lastError: None,
@@ -398,8 +417,8 @@ module ViewPatch = {
     | @as("Conversation") Conversation({conversation: array<ThreadView.t>})
     | @as("CommitStepper") CommitStepper({stepper: @s.null option<CommitStepper.t>})
     | @as("Progress") Progress({progress: Progress.t})
-    | @as("Focus") Focus({focus: Focus.t})
-    | @as("Hints") Hints({hints: array<Hint.t>})
+    | @as("Focus") Focus({focus: Focus.t, tab: Tab.t})
+    | @as("Hints") Hints({hints: array<Hint.t>, pending: string, chrome: array<Hint.t>})
     | @as("Help") Help({help: @s.null option<HelpView.t>})
     | @as("Draft") Draft({draft: @s.null option<Draft.t>, @as("pending_refresh") pendingRefresh: bool})
 
@@ -420,8 +439,8 @@ module ViewPatch = {
     | Conversation({conversation}) => {...model, conversation}
     | CommitStepper({stepper}) => {...model, stepper}
     | Progress({progress}) => {...model, progress}
-    | Focus({focus}) => {...model, focus}
-    | Hints({hints}) => {...model, hints}
+    | Focus({focus, tab}) => {...model, focus, tab}
+    | Hints({hints, pending, chrome}) => {...model, hints, pendingKeys: pending, chrome}
     | Help({help}) => {...model, help}
     | Draft({draft, pendingRefresh}) => {...model, draft, pendingRefresh}
     }

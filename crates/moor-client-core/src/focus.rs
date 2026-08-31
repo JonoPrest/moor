@@ -11,7 +11,7 @@ use crate::content::FileRef;
 use crate::diff::ThreadPlace;
 use crate::explorer::{TreeNode, ViewedState};
 use crate::keymap::{Command, Context};
-use crate::view::{Layout, ViewModel};
+use crate::view::{Layout, SIDEBAR_DEFAULT, SIDEBAR_STEP, Tab, ViewModel};
 use crate::{Action, ClientCore};
 
 /// Rows a file opens with, and a page for `PageDown`/`PageUp`.
@@ -305,6 +305,13 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 | Command::ToggleLayout
                 | Command::ToggleWhitespace
                 | Command::ToggleHelp
+                | Command::TabFiles
+                | Command::TabConversation
+                | Command::TabBrowse
+                | Command::SidebarShrink
+                | Command::SidebarGrow
+                | Command::SidebarReset
+                | Command::Submit
                 | Command::Connect
                 | Command::Disconnect
                 | Command::Commits
@@ -596,6 +603,25 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
             context_lines: view.prefs.context_lines,
         }),
         Command::ToggleHelp => Ok(Action::ToggleHelp),
+        Command::TabFiles => Ok(Action::SetTab {
+            tab: Tab::FilesChanged,
+        }),
+        Command::TabConversation => Ok(Action::SetTab {
+            tab: Tab::Conversation,
+        }),
+        Command::TabBrowse => Ok(Action::SetTab { tab: Tab::Browse }),
+        Command::SidebarShrink => Ok(Action::SetSidebar {
+            width: view.prefs.sidebar_width.saturating_sub(SIDEBAR_STEP),
+        }),
+        Command::SidebarGrow => Ok(Action::SetSidebar {
+            width: view.prefs.sidebar_width.saturating_add(SIDEBAR_STEP),
+        }),
+        Command::SidebarReset => Ok(Action::SetSidebar {
+            width: SIDEBAR_DEFAULT,
+        }),
+        // The composer lives in the host, which handles the submit chord
+        // itself; the binding exists for hints and tooltips only.
+        Command::Submit => Err(nothing()),
         Command::Connect => Ok(Action::Connect),
         Command::Disconnect => Ok(Action::Disconnect),
         Command::Refresh => Ok(Action::ListWorkspaces),

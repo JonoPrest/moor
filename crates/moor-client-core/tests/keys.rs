@@ -668,13 +668,19 @@ fn sequences_resolve_and_expire() {
     press(&mut core, "enter").unwrap(); // expand root: b.rs, src
     press(&mut core, "G").unwrap();
     assert_eq!(core.view().focus, Focus::Tree { index: 2 });
-    // `g` alone waits; no effects, no error.
+    // `g` alone waits for the rest; the hint bar switches to the group.
     let effects = core.handle(Input::Key(KeyChord::char('g'))).unwrap();
-    assert!(effects.is_empty());
+    assert_eq!(rendered(&effects), vec![ViewSection::Hints]);
+    assert_eq!(core.view().pending_keys, "g");
+    assert!(!core.view().hints.is_empty());
     assert_eq!(core.pending_chords().len(), 1);
     core.handle(Input::Tick(100)).unwrap();
     let effects = core.handle(Input::Key(KeyChord::char('g'))).unwrap();
-    assert_eq!(rendered(&effects), vec![ViewSection::Focus]);
+    assert_eq!(
+        rendered(&effects),
+        vec![ViewSection::Focus, ViewSection::Hints]
+    );
+    assert_eq!(core.view().pending_keys, "");
     assert_eq!(core.view().focus, Focus::Tree { index: 0 });
     assert!(core.pending_chords().is_empty());
     // A stale prefix expires on the clock.

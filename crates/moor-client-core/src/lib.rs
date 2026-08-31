@@ -68,7 +68,7 @@ pub use keymap::{
 };
 pub use patch::{ViewPatch, ViewPatchKind};
 pub use view::{
-    ConnectionView, ConnectionViewKind, Draft, Layout, OpenFile, OpenReview, PendingEvent,
+    ConnectionView, ConnectionViewKind, Draft, Layout, OpenFile, OpenReview, PendingEvent, Tab,
     ViewDelta, ViewModel, ViewPrefs,
 };
 
@@ -197,6 +197,14 @@ pub enum Action {
     },
     SetLayout {
         layout: Layout,
+    },
+    /// Show a center tab (`1`/`2`/`3`).
+    SetTab {
+        tab: Tab,
+    },
+    /// Resize the left sidebar (clamped to the sidebar bounds; persisted).
+    SetSidebar {
+        width: u32,
     },
     /// Change the render options; re-keys every render, so the open
     /// review's headers are fetched again.
@@ -635,9 +643,27 @@ impl ClientCore {
             self.view.focus = focus;
             sections.push(ViewSection::Focus);
         }
-        let hints = self.keymap.hints(focus.context());
+        // The hint bar is the mode indicator (UI-DESIGN): the focused
+        // context's primary keys, or the pending group's keys while a
+        // leader sequence is in progress.
+        let pending_keys =
+            KeySeq::new(self.chords.clone()).map_or_else(|_| String::new(), |s| s.to_string());
+        if pending_keys != self.view.pending_keys {
+            self.view.pending_keys = pending_keys;
+            sections.push(ViewSection::Hints);
+        }
+        let hints = if self.chords.is_empty() {
+            self.keymap.hints(focus.context())
+        } else {
+            self.keymap.pending_hints(focus.context(), &self.chords)
+        };
         if hints != self.view.hints {
             self.view.hints = hints;
+            sections.push(ViewSection::Hints);
+        }
+        let chrome = self.keymap.chrome();
+        if chrome != self.view.chrome {
+            self.view.chrome = chrome;
             sections.push(ViewSection::Hints);
         }
         let help = self.help_open.then(|| self.keymap.help(focus.context()));
@@ -905,6 +931,20 @@ impl ClientCore {
                 let prefs = ViewPrefs {
                     ignore_whitespace,
                     context_lines,
+                    ..self.view.prefs
+                };
+                Ok(self.apply_prefs(prefs, true))
+            }
+            Action::SetTab { tab } => {
+                if self.view.tab == tab {
+                    return Ok(Vec::new());
+                }
+                self.view.tab = tab;
+                Ok(vec![render(&[ViewSection::Focus])])
+            }
+            Action::SetSidebar { width } => {
+                let prefs = ViewPrefs {
+                    sidebar_width: width.clamp(view::SIDEBAR_MIN, view::SIDEBAR_MAX),
                     ..self.view.prefs
                 };
                 Ok(self.apply_prefs(prefs, true))

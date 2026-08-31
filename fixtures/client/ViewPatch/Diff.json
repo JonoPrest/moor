@@ -76,7 +76,8 @@
   "prefs": {
     "context_lines": 5,
     "ignore_whitespace": true,
-    "layout": "Split"
+    "layout": "Split",
+    "sidebar_width": 288
   },
   "type": "Diff"
 }
