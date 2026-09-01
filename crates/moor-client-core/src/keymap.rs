@@ -541,7 +541,11 @@ impl Keymap {
             // configurable `<leader>` (default space) holds the rest.
             b(X::Global, keys!("g f"), C::NextFile, false),
             b(X::Global, keys!("g F"), C::PrevFile, false),
-            b(X::Global, keys!("g e"), C::GoBottom, false),
+            // goto a panel: e(xplorer)/d(iff)/t(hreads)/m (commits).
+            b(X::Global, keys!("g e"), C::FocusTree, false),
+            b(X::Global, keys!("g d"), C::FocusDiff, false),
+            b(X::Global, keys!("g t"), C::FocusThreads, false),
+            b(X::Global, keys!("g m"), C::FocusCommits, false),
             l('a', C::ScopeAll),
             l('c', C::ScopeByCommit),
             l('w', C::ScopeWorktree),
@@ -549,10 +553,6 @@ impl Keymap {
             l('h', C::ToggleWhitespace),
             l('b', C::ToggleSidebar),
             l('C', C::Commits),
-            l('e', C::FocusTree),
-            l('d', C::FocusDiff),
-            l('t', C::FocusThreads),
-            l('m', C::FocusCommits),
             b(X::Global, keys!("esc"), C::Back, false),
             b(X::Global, keys!("ctrl+shift+c"), C::Connect, false),
             b(X::Global, keys!("ctrl+shift+d"), C::Disconnect, false),
