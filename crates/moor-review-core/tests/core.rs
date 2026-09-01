@@ -164,8 +164,9 @@ fn multi_repo_review_lists_files_ordered_by_repo_display_name() {
         files,
         vec![
             (rid(2), "lib.rs".into()),
-            (rid(1), "new.txt".into()),
-            (rid(1), "src/main.rs".into())
+            // Tree display order within a repo: dirs before files.
+            (rid(1), "src/main.rs".into()),
+            (rid(1), "new.txt".into())
         ],
         "alpha (repo 2) sorts before zeta (repo 1)"
     );
