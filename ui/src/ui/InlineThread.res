@@ -44,7 +44,9 @@ let make = (
       {switch composer {
       | c if c != React.null => c
       | _ =>
-        <div className="inline-thread-actions">
+        <div
+          className="inline-thread-actions"
+          onClick={ev => ReactEvent.Mouse.stopPropagation(ev)}>
           <UI.Button
             label="Reply (r)"
             kind=Primary

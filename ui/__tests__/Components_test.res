@@ -63,6 +63,37 @@ describe("DiffView", () => {
   })
 })
 
+describe("InlineThread", () => {
+  test("renders the comments, dispatches reply/resolve, hosts the composer", () => {
+    let dispatch = fn()
+    let thread = Fixtures.parse(View.ThreadView.schema, "client", "ThreadView", "default")
+    let {rerender} = render(
+      <InlineThread thread focused=false index=3 composer=React.null dispatch />,
+    )
+    // Every comment body renders inline (design: threads under their row).
+    expect(Screen.getByText("This should be a newtype."))->toBeTruthy
+    FireEvent.click(Screen.getByText("Reply (r)"))
+    expect(dispatch)->toHaveBeenLastCalledWith(Action.ReplyOpened({threadId: thread.id}))
+    FireEvent.click(Screen.getByText("Resolve (x)"))
+    expect(dispatch)->toHaveBeenLastCalledWith(Action.ResolveThread({threadId: thread.id}))
+    // Clicking the card focuses the thread by its list index.
+    FireEvent.click(Screen.getByText("This should be a newtype."))
+    expect(dispatch)->toHaveBeenLastCalledWith(Action.SetFocus({focus: Thread({index: 3})}))
+    // While a reply is being written the composer replaces the actions.
+    rerender(
+      <InlineThread
+        thread
+        focused=true
+        index=3
+        composer={<div> {React.string("the composer")} </div>}
+        dispatch
+      />,
+    )
+    expect(Screen.getByText("the composer"))->toBeTruthy
+    expect(Array.length(Screen.queryAllByText("Reply (r)")))->toBe(0)
+  })
+})
+
 describe("Composer", () => {
   test("submits with ctrl+enter and discards with esc, never leaking keys", () => {
     let dispatch = fn()
