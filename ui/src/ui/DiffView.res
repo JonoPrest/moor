@@ -8,37 +8,6 @@ open View
 
 let rowHeight = 20
 
-/// Identity of the rendered file; rows cached across viewport moves are
-/// dropped when it changes (another file, a re-render with new totals).
-let fileKey = (diff: DiffView.t): string =>
-  diff.file.repoId ++
-  "\x00" ++
-  diff.file.path ++
-  switch diff.content {
-  | Text({totalRows, additions, deletions}) =>
-    "\x00" ++
-    Int.toString(totalRows) ++
-    "\x00" ++
-    Int.toString(additions) ++
-    "\x00" ++
-    Int.toString(deletions)
-  | Binary(_) => "\x00binary"
-  }
-
-/// Merge the patch's viewport rows into the rows seen so far, so a row
-/// that scrolls out of the core's window keeps rendering instead of
-/// flashing back to a placeholder. Clears when the file identity changes.
-let mergeSeen = (
-  seen: Dict.t<DiffRow.t>,
-  prevKey: string,
-  key: string,
-  rows: array<DiffRow.t>,
-): Dict.t<DiffRow.t> => {
-  let out = prevKey == key ? seen : Dict.make()
-  rows->Array.forEach(r => out->Dict.set(Int.toString(r.index), r))
-  out
-}
-
 /// Rows the virtualizer shows → the viewport the core should serve.
 let viewportOf = (items: array<Virtual.virtualItem>): option<(int, int)> =>
   switch (items[0], items[Array.length(items) - 1]) {
@@ -93,10 +62,10 @@ let make = (
   // A viewed file collapses (§4.4); the reader can expand it for this visit.
   let (expanded, setExpanded) = React.useState(() => false)
   let collapsed = diff.viewed == Viewed && !expanded
-  let key = fileKey(diff)
+  let key = DiffSeen.fileKey(diff)
   let prevKey = React.useRef("")
   let seen = React.useRef(Dict.make())
-  seen.current = mergeSeen(seen.current, prevKey.current, key, diff.rows)
+  seen.current = DiffSeen.mergeSeen(seen.current, prevKey.current, key, diff.rows)
   prevKey.current = key
   let cached = seen.current
   let threadOf = (id: Ids.threadId) => threads->Array.findIndexOpt(t => t.id == id)

@@ -140,19 +140,28 @@ module Shell = {
               | Some(search) => <SearchBox search dispatch />
               | None => React.null
               }}
-              {switch model.diff {
-              | Some(diff) =>
-                <DiffView
-                  diff
-                  layout=model.prefs.layout
-                  focus=model.focus
-                  threads=model.threads
-                  draft=?model.draft
-                  pendingRefresh=model.pendingRefresh
-                  dispatch
-                />
-              | None => <div className="diff-empty"> {React.string("Open a file")} </div>
-              }}
+              {Array.length(model.diffs) > 0
+                ? <div className="diff-stack">
+                    {model.diffs
+                    ->Array.map(diff =>
+                      <FileDiff
+                        key={diff.file.repoId ++ diff.file.path}
+                        diff
+                        layout=model.prefs.layout
+                        focus=model.focus
+                        threads=model.threads
+                        draft=model.draft
+                        pendingRefresh=model.pendingRefresh
+                        isOpen={switch model.diff {
+                        | Some(open_) => open_.file == diff.file
+                        | None => false
+                        }}
+                        dispatch
+                      />
+                    )
+                    ->React.array}
+                  </div>
+                : <div className="diff-empty"> {React.string("No changed files")} </div>}
               {switch model.draft {
               // A reply renders inline in its thread's card; only a fresh
               // comment uses the bottom composer.

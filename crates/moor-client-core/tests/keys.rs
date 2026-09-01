@@ -361,6 +361,8 @@ fn every_action_is_reachable_from_a_binding() {
         ActionKind::FileSearch,   // produced (with an empty query) — see below
         ActionKind::SetBrowseRef, // the ref text comes from the Browse picker
         ActionKind::RunCommand,   // the actions palette picks the command
+        ActionKind::CommentLines, // mouse drag across lines
+        ActionKind::CommentFile,  // the file header's comment button
     ]
     .into_iter()
     .collect();

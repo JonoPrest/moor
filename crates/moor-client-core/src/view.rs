@@ -235,6 +235,9 @@ pub struct ViewModel {
     pub progress: Progress,
     /// The open file over its viewport, with comment overlays (§6.5).
     pub diff: Option<DiffView>,
+    /// The stacked diffs (UI-DESIGN §Layout): one per changed file, rows
+    /// from whatever chunks are cached; empty without an open review.
+    pub diffs: Vec<DiffView>,
     /// Every thread of the open review, oldest first.
     pub threads: Vec<ThreadView>,
     /// Review-level threads (the conversation panel).

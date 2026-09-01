@@ -34,7 +34,10 @@ expression: core.view()
                 "path": "src/lib.rs",
                 "change": "Modified",
                 "viewed": "Unviewed",
-                "open": true
+                "open": true,
+                "additions": 2,
+                "deletions": 1,
+                "threads": 1
               },
               {
                 "type": "File",
@@ -43,7 +46,10 @@ expression: core.view()
                 "path": "src/parser.rs",
                 "change": "Added",
                 "viewed": "Unviewed",
-                "open": false
+                "open": false,
+                "additions": 2,
+                "deletions": 1,
+                "threads": 0
               }
             ]
           }
@@ -60,7 +66,9 @@ expression: core.view()
   "progress": {
     "viewed": 0,
     "changed_since_viewed": 0,
-    "total": 2
+    "total": 2,
+    "additions": 4,
+    "deletions": 2
   },
   "diff": {
     "file": {
@@ -213,6 +221,306 @@ expression: core.view()
     "file_threads": [],
     "original": false
   },
+  "diffs": [
+    {
+      "file": {
+        "repo_id": "00000000020000000000000002",
+        "path": "src/lib.rs"
+      },
+      "lang": "rust",
+      "content": {
+        "type": "Text",
+        "total_rows": 16,
+        "chunk_rows": 8,
+        "chunk_count": 2,
+        "highlighted": true,
+        "additions": 2,
+        "deletions": 1
+      },
+      "viewed": "Unviewed",
+      "first_row": 0,
+      "last_row": 15,
+      "rows": [
+        {
+          "index": 0,
+          "row": {
+            "type": "HunkHeader",
+            "text": "@@ -1,7 +1,8 @@"
+          },
+          "threads": []
+        },
+        {
+          "index": 1,
+          "row": {
+            "type": "Context",
+            "left": {
+              "line_no": 1,
+              "text": "fn parse() {",
+              "spans": [],
+              "changed": []
+            },
+            "right": {
+              "line_no": 1,
+              "text": "fn parse() {",
+              "spans": [],
+              "changed": []
+            }
+          },
+          "threads": []
+        },
+        {
+          "index": 2,
+          "row": {
+            "type": "Removed",
+            "left": {
+              "line_no": 2,
+              "text": "    old()",
+              "spans": [],
+              "changed": []
+            }
+          },
+          "threads": []
+        },
+        {
+          "index": 3,
+          "row": {
+            "type": "Added",
+            "right": {
+              "line_no": 2,
+              "text": "    new()",
+              "spans": [],
+              "changed": []
+            }
+          },
+          "threads": [
+            "00000001YH0000000000000001"
+          ]
+        },
+        {
+          "index": 4,
+          "row": {
+            "type": "Added",
+            "right": {
+              "line_no": 3,
+              "text": "    newer()",
+              "spans": [],
+              "changed": []
+            }
+          },
+          "threads": []
+        },
+        {
+          "index": 5,
+          "row": {
+            "type": "Context",
+            "left": {
+              "line_no": 3,
+              "text": "}",
+              "spans": [],
+              "changed": []
+            },
+            "right": {
+              "line_no": 4,
+              "text": "}",
+              "spans": [],
+              "changed": []
+            }
+          },
+          "threads": []
+        },
+        {
+          "index": 6,
+          "row": {
+            "type": "Context",
+            "left": {
+              "line_no": 4,
+              "text": "",
+              "spans": [],
+              "changed": []
+            },
+            "right": {
+              "line_no": 5,
+              "text": "",
+              "spans": [],
+              "changed": []
+            }
+          },
+          "threads": []
+        },
+        {
+          "index": 7,
+          "row": {
+            "type": "Context",
+            "left": {
+              "line_no": 5,
+              "text": "// end",
+              "spans": [],
+              "changed": []
+            },
+            "right": {
+              "line_no": 6,
+              "text": "// end",
+              "spans": [],
+              "changed": []
+            }
+          },
+          "threads": []
+        }
+      ],
+      "missing": [
+        1
+      ],
+      "file_threads": [],
+      "original": false
+    },
+    {
+      "file": {
+        "repo_id": "00000000020000000000000002",
+        "path": "src/parser.rs"
+      },
+      "lang": "rust",
+      "content": {
+        "type": "Text",
+        "total_rows": 8,
+        "chunk_rows": 8,
+        "chunk_count": 1,
+        "highlighted": true,
+        "additions": 2,
+        "deletions": 1
+      },
+      "viewed": "Unviewed",
+      "first_row": 0,
+      "last_row": 7,
+      "rows": [
+        {
+          "index": 0,
+          "row": {
+            "type": "HunkHeader",
+            "text": "@@ -1,7 +1,8 @@"
+          },
+          "threads": []
+        },
+        {
+          "index": 1,
+          "row": {
+            "type": "Context",
+            "left": {
+              "line_no": 1,
+              "text": "fn parse() {",
+              "spans": [],
+              "changed": []
+            },
+            "right": {
+              "line_no": 1,
+              "text": "fn parse() {",
+              "spans": [],
+              "changed": []
+            }
+          },
+          "threads": []
+        },
+        {
+          "index": 2,
+          "row": {
+            "type": "Removed",
+            "left": {
+              "line_no": 2,
+              "text": "    old()",
+              "spans": [],
+              "changed": []
+            }
+          },
+          "threads": []
+        },
+        {
+          "index": 3,
+          "row": {
+            "type": "Added",
+            "right": {
+              "line_no": 2,
+              "text": "    new()",
+              "spans": [],
+              "changed": []
+            }
+          },
+          "threads": []
+        },
+        {
+          "index": 4,
+          "row": {
+            "type": "Added",
+            "right": {
+              "line_no": 3,
+              "text": "    newer()",
+              "spans": [],
+              "changed": []
+            }
+          },
+          "threads": []
+        },
+        {
+          "index": 5,
+          "row": {
+            "type": "Context",
+            "left": {
+              "line_no": 3,
+              "text": "}",
+              "spans": [],
+              "changed": []
+            },
+            "right": {
+              "line_no": 4,
+              "text": "}",
+              "spans": [],
+              "changed": []
+            }
+          },
+          "threads": []
+        },
+        {
+          "index": 6,
+          "row": {
+            "type": "Context",
+            "left": {
+              "line_no": 4,
+              "text": "",
+              "spans": [],
+              "changed": []
+            },
+            "right": {
+              "line_no": 5,
+              "text": "",
+              "spans": [],
+              "changed": []
+            }
+          },
+          "threads": []
+        },
+        {
+          "index": 7,
+          "row": {
+            "type": "Context",
+            "left": {
+              "line_no": 5,
+              "text": "// end",
+              "spans": [],
+              "changed": []
+            },
+            "right": {
+              "line_no": 6,
+              "text": "// end",
+              "spans": [],
+              "changed": []
+            }
+          },
+          "threads": []
+        }
+      ],
+      "missing": [],
+      "file_threads": [],
+      "original": false
+    }
+  ],
   "threads": [
     {
       "id": "00000001YH0000000000000001",

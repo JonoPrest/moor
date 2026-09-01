@@ -46,6 +46,7 @@ pub enum ViewPatch {
     /// whitespace), which change together.
     Diff {
         diff: Option<DiffView>,
+        diffs: Vec<DiffView>,
         prefs: ViewPrefs,
     },
     Threads {
@@ -126,6 +127,7 @@ impl ViewModel {
             },
             ViewSection::Diff => ViewPatch::Diff {
                 diff: self.diff.clone(),
+                diffs: self.diffs.clone(),
                 prefs: self.prefs,
             },
             ViewSection::Threads => ViewPatch::Threads {
@@ -202,8 +204,9 @@ impl ViewModel {
                 self.browse_ref = browse_ref;
             }
             ViewPatch::Tree { tree } => self.tree = tree,
-            ViewPatch::Diff { diff, prefs } => {
+            ViewPatch::Diff { diff, diffs, prefs } => {
                 self.diff = diff;
+                self.diffs = diffs;
                 self.prefs = prefs;
             }
             ViewPatch::Threads { threads } => self.threads = threads,

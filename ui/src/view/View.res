@@ -384,6 +384,7 @@ module ViewModel = {
     tree: TreeView.t,
     progress: Progress.t,
     diff: @s.null option<DiffView.t>,
+    diffs: array<DiffView.t>,
     threads: array<ThreadView.t>,
     conversation: array<ThreadView.t>,
     stepper: @s.null option<CommitStepper.t>,
@@ -414,6 +415,7 @@ module ViewModel = {
     tree: {roots: [], breadcrumbs: [], search: None},
     progress: {viewed: 0, changedSinceViewed: 0, total: 0, additions: 0, deletions: 0},
     diff: None,
+    diffs: [],
     threads: [],
     conversation: [],
     stepper: None,
@@ -456,7 +458,8 @@ module ViewPatch = {
         @as("browse_ref") browseRef: @s.null option<Domain.RefSpec.t>,
       })
     | @as("Tree") Tree({tree: TreeView.t})
-    | @as("Diff") Diff({diff: @s.null option<DiffView.t>, prefs: ViewPrefs.t})
+    | @as("Diff")
+    Diff({diff: @s.null option<DiffView.t>, diffs: array<DiffView.t>, prefs: ViewPrefs.t})
     | @as("Threads") Threads({threads: array<ThreadView.t>})
     | @as("Conversation") Conversation({conversation: array<ThreadView.t>})
     | @as("CommitStepper") CommitStepper({stepper: @s.null option<CommitStepper.t>})
@@ -485,7 +488,7 @@ module ViewPatch = {
         browseRef,
       }
     | Tree({tree}) => {...model, tree}
-    | Diff({diff, prefs}) => {...model, diff, prefs}
+    | Diff({diff, diffs, prefs}) => {...model, diff, diffs, prefs}
     | Threads({threads}) => {...model, threads}
     | Conversation({conversation}) => {...model, conversation}
     | CommitStepper({stepper}) => {...model, stepper}

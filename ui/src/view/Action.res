@@ -47,6 +47,14 @@ type t =
   | @as("ToggleDir") ToggleDir({@as("repo_id") repoId: repoId, path: @s.null option<string>})
   | @as("FileSearch") FileSearch({query: @s.null option<string>})
   | @as("SetLayout") SetLayout({layout: View.Layout.t})
+  | @as("CommentLines")
+  CommentLines({
+      file: View.FileRef.t,
+      side: Domain.Side.t,
+      @as("start_line") startLine: int,
+      @as("end_line") endLine: int,
+    })
+  | @as("CommentFile") CommentFile({file: View.FileRef.t})
   | @as("SetTab") SetTab({tab: View.Tab.t})
   | @as("SetSidebar") SetSidebar({width: int})
   | @as("SetRenderOpts")

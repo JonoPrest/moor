@@ -63,20 +63,20 @@ describe("DiffView", () => {
   })
 })
 
-describe("DiffView.mergeSeen", () => {
+describe("DiffSeen.mergeSeen", () => {
   test("rows survive a viewport move and clear on a file change", () => {
     let base = Fixtures.parse(View.DiffView.schema, "client", "DiffView", "default")
     let row = (index: int): View.DiffRow.t => {...base.rows->Array.getUnsafe(0), index}
-    let key = DiffView.fileKey(base)
+    let key = DiffSeen.fileKey(base)
     // First window: rows 1 and 2.
-    let seen = DiffView.mergeSeen(Dict.make(), "", key, [row(1), row(2)])
+    let seen = DiffSeen.mergeSeen(Dict.make(), "", key, [row(1), row(2)])
     // The window moves on: row 3 arrives, rows 1–2 must not regress to
     // placeholders (the flicker while scrolling).
-    let seen = DiffView.mergeSeen(seen, key, key, [row(3)])
+    let seen = DiffSeen.mergeSeen(seen, key, key, [row(3)])
     expect(Array.length(Dict.keysToArray(seen)))->toBe(3)
     // A different file (or a re-render with new totals) starts fresh.
-    let other = DiffView.fileKey({...base, file: {...base.file, path: "other.rs"}})
-    let seen = DiffView.mergeSeen(seen, key, other, [row(9)])
+    let other = DiffSeen.fileKey({...base, file: {...base.file, path: "other.rs"}})
+    let seen = DiffSeen.mergeSeen(seen, key, other, [row(9)])
     expect(Dict.keysToArray(seen))->toEqual(["9"])
   })
 })

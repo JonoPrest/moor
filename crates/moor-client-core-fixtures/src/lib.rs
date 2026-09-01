@@ -664,6 +664,13 @@ enum_fixture!(
             ignore_whitespace: true,
             context_lines: 5,
         },
+        Action::CommentLines {
+            file: file_ref()?,
+            side: Side::Head,
+            start_line: 10,
+            end_line: 12,
+        },
+        Action::CommentFile { file: file_ref()? },
         Action::SetTab {
             tab: Tab::Conversation,
         },
@@ -780,6 +787,7 @@ enum_fixture!(
         },
         ViewPatch::Diff {
             diff: Some(local::<DiffView>()?),
+            diffs: vec![local::<DiffView>()?],
             prefs: local::<ViewPrefs>()?,
         },
         ViewPatch::Threads {
@@ -820,6 +828,7 @@ struct_fixture!(
         tree: local::<TreeView>()?,
         progress: local::<Progress>()?,
         diff: Some(local::<DiffView>()?),
+        diffs: vec![local::<DiffView>()?],
         threads: vec![local::<ThreadView>()?],
         conversation: Vec::new(),
         stepper: Some(local::<CommitStepper>()?),

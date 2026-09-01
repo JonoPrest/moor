@@ -508,11 +508,17 @@ fn streamed_open_fills_and_pins_the_cache_and_renders_once_at_end() {
             ViewSection::Focus, // keys now go to the explorer
             ViewSection::Hints,
             // The diffing tree lists only the changed files, so the head
-            // trees arriving render nothing; the file list does.
+            // trees arriving render nothing; the file list does. Each
+            // header/chunk arriving re-renders Diff: the stacked view
+            // (`diffs`) grows with the cache.
             ViewSection::Tree, // file list (derived)
             ViewSection::Progress,
+            ViewSection::Diff, // a.rs header → stacked diffs
+            ViewSection::Diff, // a.rs chunk
             ViewSection::Tree, // header b.rs (derived)
             ViewSection::Progress,
+            ViewSection::Diff, // b.rs header → stacked diffs
+            ViewSection::Diff, // b.rs chunk
             // The stream end auto-opens the first diff (a.rs).
             ViewSection::Focus,
             ViewSection::Diff,

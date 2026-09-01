@@ -105,6 +105,10 @@ pub enum Input {
 /// `g g`) is dropped.
 pub const SEQ_TIMEOUT_MS: Millis = 800;
 
+/// Rows a non-open file contributes to the stacked diff view; keeps every
+/// `Diff` patch bounded (§6.3). The UI asks for more via `Viewport`.
+pub const STACK_ROWS_CAP: u32 = 600;
+
 /// What the transport layer observed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TransportEvent {
@@ -198,6 +202,20 @@ pub enum Action {
     },
     SetLayout {
         layout: Layout,
+    },
+    /// Open a comment draft on a line range of `file` (mouse drag across
+    /// lines, GitHub-style). The core resolves the anchor: it knows the
+    /// file's render target; the UI only knows rows.
+    CommentLines {
+        file: FileRef,
+        side: moor_protocol::Side,
+        start_line: u32,
+        end_line: u32,
+    },
+    /// Open a comment draft on the whole file (the file header's comment
+    /// button, GitHub-style).
+    CommentFile {
+        file: FileRef,
     },
     /// Show a center tab (`1`/`2`/`3`).
     SetTab {
@@ -765,8 +783,35 @@ impl ClientCore {
             }
             (_, d) => d,
         };
-        if diff != self.view.diff {
+        // The stacked view (UI-DESIGN §Layout, GitHub-style): one DiffView
+        // per changed file. Patches stay viewport-bounded (§6.3): the open
+        // file carries its viewport; every other file is capped at
+        // `STACK_ROWS_CAP` rows — the UI accumulates rows it has seen and
+        // asks for more via `Viewport`.
+        let diffs: Vec<DiffView> = match &self.view.review {
+            Some(open) => open
+                .files
+                .iter()
+                .filter_map(|render| {
+                    let (first, last) = match open.open_file.as_ref() {
+                        Some(f) if &f.render == render => (f.first_row, f.last_row),
+                        Some(_) | None => (0, STACK_ROWS_CAP - 1),
+                    };
+                    diff::diff_view(
+                        &self.content.cache,
+                        &open.snapshot,
+                        &self.config.author,
+                        render,
+                        first,
+                        last,
+                    )
+                })
+                .collect(),
+            None => Vec::new(),
+        };
+        if diff != self.view.diff || diffs != self.view.diffs {
             self.view.diff = diff;
+            self.view.diffs = diffs;
             sections.push(ViewSection::Diff);
         }
         if threads != self.view.threads {
@@ -1255,6 +1300,92 @@ impl ClientCore {
                     ..self.view.prefs
                 };
                 Ok(self.apply_prefs(prefs, true))
+            }
+            Action::CommentLines {
+                file,
+                side,
+                start_line,
+                end_line,
+            } => {
+                let Some(open) = &self.view.review else {
+                    return Err(CoreError::NoOpenReview);
+                };
+                if self.view.draft.is_some() {
+                    return Err(CoreError::DraftAlreadyOpen);
+                }
+                let target = open
+                    .files
+                    .iter()
+                    .find(|k| k.repo_id == file.repo_id && k.path == file.path)
+                    .map(|k| &k.target)
+                    .ok_or_else(|| CoreError::UnknownFile(file.clone()))?;
+                let blob = match (target, side) {
+                    (moor_protocol::RenderTarget::Diff { change }, moor_protocol::Side::Head) => {
+                        change.new_blob()
+                    }
+                    (moor_protocol::RenderTarget::Diff { change }, moor_protocol::Side::Base) => {
+                        change.old_blob()
+                    }
+                    (moor_protocol::RenderTarget::Blob { oid }, _) => Some(*oid),
+                }
+                .ok_or_else(|| CoreError::UnknownFile(file.clone()))?;
+                let (lo, hi) = if start_line <= end_line {
+                    (start_line, end_line)
+                } else {
+                    (end_line, start_line)
+                };
+                let (Some(lo), Some(hi)) = (
+                    moor_protocol::LineNo::new(lo.max(1)),
+                    moor_protocol::LineNo::new(hi.max(1)),
+                ) else {
+                    return Err(CoreError::UnknownFile(file));
+                };
+                let Ok(lines) = moor_protocol::LineRange::new(lo, hi) else {
+                    return Err(CoreError::UnknownFile(file));
+                };
+                let anchor = Anchor::Lines {
+                    repo_id: file.repo_id,
+                    path: file.path,
+                    side,
+                    blob_oid: blob,
+                    lines,
+                    // Placeholder; the daemon hashes the context itself.
+                    context_hash: moor_protocol::ContextHash::new(0),
+                };
+                self.view.draft = Some(Draft {
+                    anchor,
+                    reply_to: None,
+                });
+                self.enter(Focus::Composer);
+                Ok(vec![render(&[ViewSection::Draft, ViewSection::Focus])])
+            }
+            Action::CommentFile { file } => {
+                let Some(open) = &self.view.review else {
+                    return Err(CoreError::NoOpenReview);
+                };
+                if self.view.draft.is_some() {
+                    return Err(CoreError::DraftAlreadyOpen);
+                }
+                let blob = open
+                    .files
+                    .iter()
+                    .find(|k| k.repo_id == file.repo_id && k.path == file.path)
+                    .and_then(|k| match &k.target {
+                        moor_protocol::RenderTarget::Diff { change } => change.new_blob(),
+                        moor_protocol::RenderTarget::Blob { oid } => Some(*oid),
+                    })
+                    .ok_or_else(|| CoreError::UnknownFile(file.clone()))?;
+                let anchor = Anchor::File {
+                    repo_id: file.repo_id,
+                    path: file.path,
+                    blob_oid: blob,
+                };
+                self.view.draft = Some(Draft {
+                    anchor,
+                    reply_to: None,
+                });
+                self.enter(Focus::Composer);
+                Ok(vec![render(&[ViewSection::Draft, ViewSection::Focus])])
             }
             Action::SetTab { tab } => {
                 if self.view.tab == tab {
