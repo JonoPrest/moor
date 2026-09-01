@@ -176,3 +176,74 @@ spelling is the stable one for docs and keys.toml examples.)
   `BlobRender` rows), browse-mode comments already possible
   (`Anchor::File/Lines` need not be in the diff), content `Search`
   request.
+
+
+## Settled interactions — Jono's requests ledger (2026-09-01)
+
+Everything explicitly asked for, so no shell or rewrite loses them.
+✓ = shipped; ◻ = specified, pending (see HANDOVER for pickup notes).
+
+### Keyboard & modality
+- ✓ Fully modal, vim-style; contexts (Tree/Diff/Thread/…) are per-panel
+  keymaps and the footer badges the focused one (TREE/DIFF/…).
+- ✓ Configurable leader, default `space`; shown in the footer as a `␣
+  leader` chip; `space` renders as `␣` in every kbd.
+- ✓ Which-key: pending prefix pops the group with its label and stays
+  until continued or cancelled (esc/foreign key — never a timeout);
+  the footer also shows `g Goto · …` while pending.
+- ✓ Typed keys.toml: action-centric, snake_case names, `<leader>`
+  tokens, per-mode tables, schemars-generated JSON schema for editor
+  autocomplete; `moor keys init|schema|check`; collisions are reported,
+  never rejected.
+- ✓ `:` runs any action by name with fuzzy autocomplete (`:comment`).
+- ✓ Footer shows ONE key per command (first in config order); aliases
+  live in `?`. Order: mode/context badge · connection · viewed ·
+  `␣ leader` · keys.
+- ✓ `?` help: restyled, scrolls with j/k/arrows, floats above sticky
+  file headers.
+- ◻ Visual mode: `V` + `j`/`k` + `c` = keyboard multiline comment.
+
+### File tree (neo-tree-style verbs, Tree context)
+- ✓ `y` — yank (copy) the focused file's repo-relative path to the
+  clipboard (also the ⧉ button in file headers; `y` works in the diff
+  too).
+- ✓ `c` — comment on the focused file (file-level anchor).
+- ✓ `C` — collapse the parent dir (or the focused open dir); focus
+  follows. `z` — collapse all dirs. Dirs default open in diffing mode
+  and stay collapsible; Browse keeps its own expansion state.
+- ✓ Commits moved to `<leader>C`.
+- ✓ Sidebar: no resize keys — it auto-expands to fit full file names
+  while the tree is focused, truncates otherwise; `<leader>b` hides it
+  (rail to reopen).
+- ✓ Header is the workspace name as a ⌂ home button (back to the review
+  list) — never churning per-file breadcrumbs.
+- ✓ Rows show `+A −D` and a thread-count badge, no checkboxes (Viewed
+  lives in the file headers; `v` toggles).
+
+### Stacked diffs (GitHub parity)
+- ✓ All changed files queue in ONE scroll, tree order (ordering fixed
+  daemon-side so every client agrees), first diff auto-opens.
+- ✓ Per-file header: fold chevron · path · copy path · ±stats ·
+  file-comment 💬 · expand file · Viewed checkbox (checking folds it).
+- ✓ Folds are core state: `C` folds the focused file, `enter` unfolds,
+  `X` expands full context; a folded file is ONE motion stop — j/k/n/p
+  land on its header and leave with the next press.
+- ✓ Cross-file motions: j/k at a file's edges, n/p past the last
+  hunk/comment, and `g f`/`g F` all continue through the stack.
+- ✓ Mouse drag across lines = multiline comment (keyboard version =
+  Visual mode, pending); inline threads under their rows with in-card
+  reply; comments record the diff they were made on.
+- ◻ Directional expand up/down from the cursor (band splicing); today
+  `x` = more context, `X` = whole file.
+
+### Panels & focus
+- ✓ Goto group: `g e` tree · `g d` diff · `g t` threads · `g m`
+  commits (plus `g g` top, `G` bottom — vim-faithful).
+- ✓ All behavior in moor-client-core (one ViewModel for web/Tauri/TUI);
+  shells only render and own shell effects (clipboard).
+
+### Chrome
+- ✓ Mac-style scrollbars (trackless, slim rounded grey, hover-darken);
+  never two vertical scrollbars.
+- ✓ Demo server pinned to `--port 7788`; the URL is posted on every
+  restart.
