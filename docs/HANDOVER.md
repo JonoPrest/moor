@@ -1,5 +1,55 @@
 # Handover notes
 
+## 2026-09-01: UI-DESIGN build order COMPLETE (phases 1–3)
+
+All three phases of the agreed build order are built, tested and
+verified headlessly (Playwright against a live `moor <repo>` server;
+scripts in the session scratchpad `pw/`). Every commit is pushed and
+every gate is green (fmt, clippy -D warnings, all workspace tests minus
+moor-client-tauri locally — CI covers it —, wasm check, fixtures no-op,
+451 UI tests). Protocol bumped to 0.2.0; reinstall `moor`/`moord` and
+restart the daemon before demoing.
+
+Landed since the last note, per phase:
+
+- **Phase 2 (core)**: diff-scope switching end to end — protocol
+  `DiffScope {All, Committed, Commit, Worktree}` on ListFiles/FileRender,
+  `Response::Files` carries the scoped resolved targets; daemon
+  `scoped_targets`/`files_scoped` (reusing `commit_step`); worktree-headed
+  reviews now list their branch commits. Client: `SetScope`/`ScopeChoice`
+  (`g a`/`g c`/`g w`), by-commit stepping drives the file list, `n`/`p`
+  step commits in that mode; header scope control with the step position.
+  keys.toml (`moor-client-host::keys_file`, `~/.config/moor/keys.toml`,
+  strict parse, loaded by every host). Jump-to-comment-original-diff:
+  streamed `Request::ChangeRender`, `Action::OpenOriginalDiff`, read-only
+  banner, Enter on an outdated thread jumps, Esc returns.
+- **Phase 3 (protocol/daemon)**: context expanders (per-file re-render
+  with +20/whole-file context — content requests now use each
+  RenderKey's own opts; `x`, band click, "expand file" button). Browse
+  tab (`SetBrowseRef` + BrowseTree fetch, full tree at any ref, blob
+  file views via BlobRender, off-diff comments record `context: None`,
+  `viewing: <ref>` picker). Content search (`Request::Search`,
+  case-insensitive substring, changed-files vs all-files scope, capped)
+  plus the palette: `F` content / `:` actions (`Action::RunCommand`
+  resolves a command like its key binding), `tab` cycles.
+- **Bug fix**: `create_review` pre-flight-resolves targets — a failed
+  create (Upstream with no upstream) used to commit a ghost review that
+  `moor <path>` then kept finding. Old ghost reviews may still sit in
+  existing stores (delete or ignore).
+
+Known deviations / loose ends (documented, not blocking):
+
+- The `t` file-name search is still the inline SearchBox, not a third
+  mode of the palette overlay (design wants one palette, three modes).
+- Expanders re-render the whole file at a bigger context rather than
+  splicing the one band; the focused row is not remapped afterwards.
+- Conversation tab lists threads chronologically but does not yet quote
+  diff lines or offer a hide-resolved filter.
+- Browse's ref picker applies to the first target repo only in
+  multi-repo reviews.
+- `docs/TODO.md` holds the agent event-waiting discussion (the
+  requested long-poll already exists as MCP `subscribe_events`).
+
 ## 2026-08-31 (latest): phase 1 UI rendering landed — pick up at phase 2
 
 The UI half of phase 1 below is done (commit "wip(ui-design phase 1): UI
