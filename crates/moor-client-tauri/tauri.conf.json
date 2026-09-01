@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "dev.moor.desktop",
   "build": {
-    "frontendDist": "../../ui/dist"
+    "frontendDist": "../moor-client-web/dist"
   },
   "app": {
     "windows": [{ "title": "moor", "width": 1400, "height": 900 }],

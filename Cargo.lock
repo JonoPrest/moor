@@ -3044,7 +3044,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "moor-cli"
+name = "moor"
 version = "0.1.0"
 dependencies = [
  "anyhow",

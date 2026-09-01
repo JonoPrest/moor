@@ -29,7 +29,7 @@ use tokio_tungstenite::tungstenite::protocol::Role;
 use tokio_util::sync::CancellationToken;
 
 /// The built browser UI, embedded at compile time (build `ui/dist` first).
-static UI: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../ui/dist");
+static UI: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/dist");
 
 /// The one request head we parse: method, path, and the two headers the
 /// websocket upgrade needs. Anything else is a plain asset request.

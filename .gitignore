@@ -1,7 +1,6 @@
 /target
 /ui/node_modules
 /ui/lib
-/ui/dist
 # ReScript compiles in place; CI runs `pnpm rescript` before build/test
 /ui/src/**/*.res.mjs
 /ui/__tests__/**/*.res.mjs

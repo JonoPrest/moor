@@ -3,6 +3,7 @@ name = "moor-review-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "Git access, diffing, anchoring, event store and review logic for Moor. Daemon-only."
 
 [dependencies]

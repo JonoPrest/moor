@@ -3,6 +3,7 @@ name = "moor-protocol"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "Wire types for Moor: domain model, events, render model and RPC. wasm-safe."
 
 [dependencies]

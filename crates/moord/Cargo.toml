@@ -4,6 +4,7 @@ description = "Moor daemon: unix-socket/stdio server over moor-review-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 rust-version.workspace = true
 
 [lib]

@@ -21,19 +21,20 @@ members = [
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
+repository = "https://github.com/JonoPrest/moor"
 rust-version = "1.91"
 
 [workspace.dependencies]
-moor-protocol = { path = "crates/moor-protocol" }
+moor-protocol = { path = "crates/moor-protocol", version = "0.1.0" }
 moor-protocol-fixtures = { path = "crates/moor-protocol-fixtures" }
-moor-review-core = { path = "crates/moor-review-core" }
+moor-review-core = { path = "crates/moor-review-core", version = "0.1.0" }
 moor-test-support = { path = "crates/moor-test-support" }
-moord = { path = "crates/moord" }
-moor-mcp = { path = "crates/moor-mcp" }
-moor-config = { path = "crates/moor-config" }
-moor-client-core = { path = "crates/moor-client-core" }
+moord = { path = "crates/moord", version = "0.1.0" }
+moor-mcp = { path = "crates/moor-mcp", version = "0.1.0" }
+moor-config = { path = "crates/moor-config", version = "0.1.0" }
+moor-client-core = { path = "crates/moor-client-core", version = "0.1.0" }
 moor-client-core-fixtures = { path = "crates/moor-client-core-fixtures" }
-moor-client-host = { path = "crates/moor-client-host" }
+moor-client-host = { path = "crates/moor-client-host", version = "0.1.0" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

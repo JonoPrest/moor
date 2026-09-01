@@ -3,6 +3,7 @@ name = "moor-client-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "Sans-I/O client state machine for Moor: inputs in, effects out. wasm-safe."
 
 [dependencies]

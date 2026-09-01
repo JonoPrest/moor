@@ -3,6 +3,7 @@ name = "moor-client-host"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "Host loop around moor-client-core: unix-socket transport, host KV (redb or memory), clock ticks, and ViewPatch output. Host-agnostic; Tauri and the TUI wrap it."
 
 [dependencies]

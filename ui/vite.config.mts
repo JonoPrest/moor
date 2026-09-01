@@ -5,6 +5,12 @@ import tailwindcss from "@tailwindcss/vite";
 // ReScript compiles `.res` → `.res.mjs` in place; Vite only ever sees JS.
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: {
+    // The built UI lives inside moor-client-web so the crate can embed it
+    // (include_dir) and still be publishable to crates.io.
+    outDir: "../crates/moor-client-web/dist",
+    emptyOutDir: true,
+  },
   server: {
     // Same-origin `/ws` in dev too: run `cargo run -p moor-client-web`.
     proxy: { "/ws": { target: "ws://127.0.0.1:9777", ws: true } },
