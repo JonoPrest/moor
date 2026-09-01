@@ -453,7 +453,7 @@ describe("ReviewHeader", () => {
         dispatch
       />,
     )
-    let split = Screen.getByText("split")
+    let split = Screen.getByText("Split")
     expect(Element.getAttribute(split, "title"))->toEqual(Nullable.make("split layout (g s)"))
     FireEvent.click(split)
     expect(dispatch)->toHaveBeenLastCalledWith(Action.SetLayout({layout: Split}))
@@ -461,7 +461,7 @@ describe("ReviewHeader", () => {
     expect(dispatch)->toHaveBeenLastCalledWith(
       Action.SetRenderOpts({ignoreWhitespace: true, contextLines: prefs.contextLines}),
     )
-    // No data-active until the pref says so.
+    // The inactive segment carries no data-active (Unified is default).
     expect(Element.hasAttribute(split, "data-active"))->toBe(false)
     cleanup()
     let _ = render(
@@ -475,7 +475,7 @@ describe("ReviewHeader", () => {
         dispatch
       />,
     )
-    expect(Element.hasAttribute(Screen.getByText("split"), "data-active"))->toBe(true)
+    expect(Element.hasAttribute(Screen.getByText("Split"), "data-active"))->toBe(true)
     expect(Element.hasAttribute(Screen.getByText("hide whitespace"), "data-active"))->toBe(true)
   })
 })

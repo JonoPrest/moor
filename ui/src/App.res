@@ -105,7 +105,13 @@ module Shell = {
     }
     <main className="app-shell">
       <div className="app-body">
-        <aside className="app-left" style=sidebarStyle> left </aside>
+        <aside className="app-left" style=sidebarStyle>
+          <div className="app-left-tree"> left </div>
+          {switch model.stepper {
+          | Some(stepper) => <Stepper stepper focus=model.focus dispatch />
+          | None => React.null
+          }}
+        </aside>
         <div className="app-center">
           <ReviewHeader
             reviews=model.reviews
@@ -116,12 +122,13 @@ module Shell = {
             scope=model.scope
             stepper=?model.stepper
             chrome=model.chrome
+            connection=model.connection
             dispatch
           />
           <Tabs
             tab=model.tab
             fileCount=model.progress.total
-            threadCount={Array.length(model.conversation)}
+            threadCount={Array.length(model.threads)}
             chrome=model.chrome
             dispatch
           />
@@ -142,8 +149,10 @@ module Shell = {
               }}
             </>
           | Conversation =>
+            // Every thread of the review, chronologically (GitHub-style):
+            // file/line threads and review-level ones together.
             <Threads
-              title="Conversation" threads=model.conversation focus=model.focus indexOffset=0 dispatch
+              title="Conversation" threads=model.threads focus=model.focus indexOffset=0 dispatch
             />
           | Browse =>
             <>
@@ -167,17 +176,6 @@ module Shell = {
             </>
           }}
         </div>
-        {model.tab == FilesChanged
-          ? <aside className="app-right">
-              <Threads
-                title="Threads" threads=model.threads focus=model.focus indexOffset=0 dispatch
-              />
-              {switch model.stepper {
-              | Some(stepper) => <Stepper stepper focus=model.focus dispatch />
-              | None => React.null
-              }}
-            </aside>
-          : React.null}
       </div>
       <HintBar
         hints=model.hints

@@ -121,7 +121,14 @@
     @apply flex min-h-0 flex-1;
   }
   .app-left {
-    @apply w-72 shrink-0 overflow-auto border-r border-border;
+    @apply flex w-72 shrink-0 flex-col overflow-hidden border-r border-border;
+  }
+  .app-left-tree {
+    @apply min-h-0 flex-1 overflow-auto;
+  }
+  /* Commits sit below the tree (UI-DESIGN §Layout). */
+  .app-left > .panel {
+    @apply max-h-80 shrink-0 overflow-auto border-t border-border;
   }
   .app-center {
     @apply flex min-w-0 flex-1 flex-col;
@@ -193,13 +200,31 @@
     background: var(--color-diff-remove-fg);
   }
   .review-header {
-    @apply flex items-center gap-3 border-b border-border bg-panel px-3 py-2 text-sm;
+    @apply flex items-center gap-3 overflow-x-auto border-b border-border bg-panel px-3 py-1.5 text-sm whitespace-nowrap;
+  }
+  .review-header > * {
+    @apply shrink-0;
   }
   .review-header-title {
-    @apply font-medium;
+    @apply text-sm font-semibold;
   }
   .review-header-target {
     @apply flex items-center gap-1;
+  }
+  /* Joined segmented control (design: All changes | By commit). */
+  .segmented {
+    @apply flex overflow-hidden rounded border border-border text-xs;
+  }
+  .seg {
+    @apply cursor-pointer px-2.5 py-0.5 whitespace-nowrap text-muted;
+  }
+  .seg + .seg {
+    border-left: 1px solid var(--color-border);
+  }
+  .seg[data-active] {
+    background: var(--color-accent);
+    color: var(--color-bg);
+    font-weight: 600;
   }
   .review-header-repo {
     @apply text-muted;
@@ -416,10 +441,13 @@
     @apply ml-3;
   }
   .tab-row {
-    @apply flex gap-1 border-b border-border bg-panel px-3;
+    @apply flex gap-0.5 border-b border-border bg-panel px-3;
   }
   .tab {
-    @apply cursor-pointer border-b-2 border-transparent px-2 py-1 text-sm text-muted;
+    @apply cursor-pointer border-b-2 border-transparent px-3 py-1.5 text-sm text-muted;
+  }
+  .tab[data-active] {
+    @apply font-semibold;
   }
   .tab[data-active] {
     border-bottom-color: var(--color-accent);
@@ -435,7 +463,10 @@
     @apply ml-1 font-mono text-xs text-muted;
   }
   .review-header-toggles {
-    @apply ml-auto flex gap-1;
+    @apply ml-auto flex items-center gap-2;
+  }
+  .toggle {
+    @apply whitespace-nowrap;
   }
   .toggle[data-active] {
     border-color: var(--color-accent);

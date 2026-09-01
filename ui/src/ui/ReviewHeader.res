@@ -1,14 +1,36 @@
-// What the open review diffs, like a compare header: `base → head` per
-// target (prefixed by the repo name when the review spans several). A
-// working-tree head shows the checked-out branch from the resolved
-// targets when the daemon has reported one. Layout and whitespace
-// toggles live here; their tooltips come from the keymap chrome.
+// What the open review diffs, like a compare header (UI-DESIGN §Layout):
+// title · scope control · `base → head` chips · layout + whitespace
+// toggles · connection dot. A working-tree head shows the checked-out
+// branch from the resolved targets when the daemon has reported one.
+// Every control's tooltip comes from the keymap chrome, never hand-written.
+
+module Seg = {
+  /// One segment of a joined segmented control.
+  @react.component
+  let make = (~label: string, ~active: bool, ~title: option<string>, ~onClick: unit => unit) => {
+    let el =
+      <button
+        type_="button"
+        className="seg"
+        ?title
+        ariaPressed={active ? #"true" : #"false"}
+        onClick={_ => onClick()}>
+        {React.string(label)}
+      </button>
+    active ? Attrs.withData(el, [("data-active", "true")]) : el
+  }
+}
 
 module Toggle = {
   @react.component
   let make = (~label: string, ~active: bool, ~title: option<string>, ~onClick: unit => unit) => {
     let el =
-      <button type_="button" className="btn toggle" ?title ariaPressed={active ? #"true" : #"false"} onClick={_ => onClick()}>
+      <button
+        type_="button"
+        className="btn toggle"
+        ?title
+        ariaPressed={active ? #"true" : #"false"}
+        onClick={_ => onClick()}>
         {React.string(label)}
       </button>
     active ? Attrs.withData(el, [("data-active", "true")]) : el
@@ -39,33 +61,34 @@ module ScopeControl = {
       )
     | (Commit(_), None) | (All(_), _) | (Committed(_), _) => None
     }
-    <span className="scope-control" role="group" ariaLabel="diff scope">
-      <Toggle
-        label="All changes"
-        active=allish
-        title={Chrome.tip(chrome, ScopeAll)}
-        onClick={() => dispatch(SetScope({scope: All({})}))}
-      />
+    <>
+      <span className="segmented" role="group" ariaLabel="diff scope">
+        <Seg
+          label="All changes"
+          active=allish
+          title={Chrome.tip(chrome, ScopeAll)}
+          onClick={() => dispatch(SetScope({scope: All({})}))}
+        />
+        <Seg
+          label="By commit"
+          active={!allish}
+          title={Chrome.tip(chrome, ScopeByCommit)}
+          onClick={() => dispatch(SetScope({scope: ByCommit({})}))}
+        />
+      </span>
       {allish
         ? <Toggle
             label="+ working tree"
             active={scope == All({})}
             title={Chrome.tip(chrome, ScopeWorktree)}
-            onClick={() =>
-              dispatch(SetScope({scope: scope == All({}) ? Committed({}) : All({})}))}
+            onClick={() => dispatch(SetScope({scope: scope == All({}) ? Committed({}) : All({})}))}
           />
         : React.null}
-      <Toggle
-        label="By commit"
-        active={!allish}
-        title={Chrome.tip(chrome, ScopeByCommit)}
-        onClick={() => dispatch(SetScope({scope: ByCommit({})}))}
-      />
       {switch position {
       | Some(text) => <span className="scope-position"> {React.string(text)} </span>
       | None => React.null
       }}
-    </span>
+    </>
   }
 }
 
@@ -79,6 +102,7 @@ let make = (
   ~scope: Domain.DiffScope.t=Domain.DiffScope.All({}),
   ~stepper: option<View.CommitStepper.t>=?,
   ~chrome: array<View.Hint.t>=[],
+  ~connection: View.ConnectionView.t=View.ConnectionView.Disconnected({}),
   ~dispatch: Action.t => unit=_ => (),
 ) =>
   switch openReview->Option.flatMap(id => reviews->Array.find(r => r.id == id)) {
@@ -98,6 +122,12 @@ let make = (
         | _ => RefSpecText.print(t.head)
         }
       let many = Array.length(review.targets) > 1
+      let conn = switch connection {
+      | Disconnected(_) => "disconnected"
+      | Connecting(_) => "connecting"
+      | Subscribed(_) => "connected"
+      | Rejected(_) => "rejected"
+      }
       <header className="review-header" ariaLabel="review targets">
         <span className="review-header-title"> {React.string(review.title)} </span>
         <ScopeControl scope stepper chrome dispatch />
@@ -116,13 +146,20 @@ let make = (
         )
         ->React.array}
         <span className="review-header-toggles">
-          <Toggle
-            label="split"
-            active={prefs.layout == Split}
-            title={Chrome.tip(chrome, ToggleLayout)}
-            onClick={() =>
-              dispatch(SetLayout({layout: prefs.layout == Split ? Unified : Split}))}
-          />
+          <span className="segmented" role="group" ariaLabel="diff layout">
+            <Seg
+              label="Unified"
+              active={prefs.layout == Unified}
+              title={Chrome.tip(chrome, ToggleLayout)}
+              onClick={() => dispatch(SetLayout({layout: Unified}))}
+            />
+            <Seg
+              label="Split"
+              active={prefs.layout == Split}
+              title={Chrome.tip(chrome, ToggleLayout)}
+              onClick={() => dispatch(SetLayout({layout: Split}))}
+            />
+          </span>
           <Toggle
             label="hide whitespace"
             active=prefs.ignoreWhitespace
@@ -135,6 +172,7 @@ let make = (
                 }),
               )}
           />
+          <span className={"conn-dot conn-" ++ conn} title=conn />
         </span>
       </header>
     }
