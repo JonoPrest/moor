@@ -271,6 +271,15 @@ fn adjacent_file(core: &ClientCore, forward: bool) -> Result<Action, NoTarget> {
     ))
 }
 
+/// Whether the open file's section is folded (a single motion stop).
+fn open_file_collapsed(core: &ClientCore) -> bool {
+    let view = core.view();
+    view.review
+        .as_ref()
+        .and_then(|o| o.open_file.as_ref())
+        .is_some_and(|f| collapsed_of(view, &f.render))
+}
+
 /// The action `command` means with the core in its current state.
 // One arm per command; splitting would hide the exhaustive match.
 #[allow(clippy::too_many_lines)]
@@ -309,15 +318,24 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
         })
     };
     match command {
-        // In the diff, the edges continue into the adjacent file
-        // (skipping folded ones) — the stacked view is one long document.
-        Command::MoveDown => match (step(1), focus) {
-            (Err(NoTarget::AtEdge), Focus::Diff { .. }) => adjacent_file(core, true),
-            (r, _) => r,
+        // In the diff the edges continue into the adjacent file — the
+        // stacked view is one long document. A folded file is one stop:
+        // any vertical motion leaves it immediately.
+        Command::MoveDown => match focus {
+            Focus::Diff { .. } if open_file_collapsed(core) => adjacent_file(core, true),
+            Focus::Diff { .. } => match step(1) {
+                Err(NoTarget::AtEdge) => adjacent_file(core, true),
+                r => r,
+            },
+            _ => step(1),
         },
-        Command::MoveUp => match (step(-1), focus) {
-            (Err(NoTarget::AtEdge), Focus::Diff { .. }) => adjacent_file(core, false),
-            (r, _) => r,
+        Command::MoveUp => match focus {
+            Focus::Diff { .. } if open_file_collapsed(core) => adjacent_file(core, false),
+            Focus::Diff { .. } => match step(-1) {
+                Err(NoTarget::AtEdge) => adjacent_file(core, false),
+                r => r,
+            },
+            _ => step(-1),
         },
         Command::PageDown => step(i64::from(PAGE_ROWS)),
         Command::PageUp => step(-i64::from(PAGE_ROWS)),
@@ -429,7 +447,10 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 | Command::ContentSearch
                 | Command::ActionPalette => false,
             };
-            let found = if forward {
+            // A folded open file contributes no in-file stops.
+            let found = if collapsed_of(view, render) {
+                None
+            } else if forward {
                 rows.iter().find(|r| r.index > row && wanted(r))
             } else {
                 rows.iter().rev().find(|r| r.index < row && wanted(r))
