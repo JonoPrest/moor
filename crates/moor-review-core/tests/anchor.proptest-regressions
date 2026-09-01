@@ -7,3 +7,4 @@
 cc f05ade87de5bb0aea1e00f46269a21124a95a652c080eebb0a2f762df1799ffb # shrinks to n = 12, start = 10, len = 0, edits = [Insert { at: 12, count: 1 }]
 cc cf7486092a94f4d07bdf1b117c0500cf1416c1d7faccf4409d2e473cfd1f54b7 # shrinks to n = 12, start = 1, len = 0, edits = [Insert { at: 0, count: 1 }]
 cc 88080608cf25c7908bd0be579b19e4ec4faa5be06eefb1212c9869f289eee2b5 # shrinks to n = 12, start = 12, len = 0, edits = [Delete { at: 7, count: 1 }, Replace { at: 7 }]
+cc 2966b3f85a69e710a7eb4ae086b444c48b10c2579349b34b31a1c4183149acc4 # shrinks to n = 12, start = 11, len = 0, edits = [Delete { at: 5, count: 1 }, Delete { at: 5, count: 2 }]
