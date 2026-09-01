@@ -878,3 +878,34 @@ fn an_unresolvable_target_leaves_no_ghost_review() {
         "a failed create leaves no review behind"
     );
 }
+
+#[test]
+fn content_search_scans_changed_files_or_the_whole_head_tree() {
+    let w = world();
+    w.core
+        .create_review(&human(), review_id(1), ws(), "r".into(), targets())
+        .unwrap();
+    // "let h" appears in the changed src/main.rs; README.md is unchanged.
+    let (hits, truncated) = w
+        .core
+        .search(review_id(1), "LET H", false, &DiffScope::All)
+        .unwrap();
+    assert!(!truncated);
+    assert!(!hits.is_empty());
+    assert!(hits.iter().all(|h| h.path.as_str() == "src/main.rs"));
+    // All-files search also reaches unchanged files.
+    let (hits, _) = w
+        .core
+        .search(review_id(1), "# a", true, &DiffScope::All)
+        .unwrap();
+    assert!(
+        hits.iter().any(|h| h.path.as_str() == "README.md"),
+        "{hits:?}"
+    );
+    // An empty query matches nothing.
+    let (hits, _) = w
+        .core
+        .search(review_id(1), "  ", true, &DiffScope::All)
+        .unwrap();
+    assert!(hits.is_empty());
+}

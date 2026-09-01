@@ -155,6 +155,17 @@ module TreeView = {
   }
 }
 
+module ContentSearchView = {
+  @schema
+  type t = {
+    query: string,
+    @as("all_files") allFiles: bool,
+    hits: array<Domain.ContentHit.t>,
+    truncated: bool,
+    pending: bool,
+  }
+}
+
 module Progress = {
   @schema
   type t = {viewed: int, @as("changed_since_viewed") changedSinceViewed: int, total: int}
@@ -306,6 +317,8 @@ module Command = {
     | ScopeByCommit
     | ScopeWorktree
     | ExpandContext
+    | ContentSearch
+    | ActionPalette
 }
 
 /// A key sequence in its text form (`"g g"`, `"ctrl+p"`).
@@ -376,6 +389,8 @@ module ViewModel = {
     @as("resolved_targets") resolvedTargets: array<Domain.ResolvedTarget.t>,
     scope: Domain.DiffScope.t,
     @as("browse_ref") browseRef: @s.null option<Domain.RefSpec.t>,
+    @as("content_search") contentSearch: @s.null option<ContentSearchView.t>,
+    @as("action_palette") actionPalette: bool,
     review: @s.null option<OpenReview.t>,
     draft: @s.null option<Draft.t>,
     @as("pending_refresh") pendingRefresh: bool,
@@ -404,6 +419,8 @@ module ViewModel = {
     resolvedTargets: [],
     scope: All({}),
     browseRef: None,
+    contentSearch: None,
+    actionPalette: false,
     review: None,
     draft: None,
     pendingRefresh: false,
@@ -436,6 +453,11 @@ module ViewPatch = {
     | @as("Hints") Hints({hints: array<Hint.t>, pending: string, chrome: array<Hint.t>})
     | @as("Help") Help({help: @s.null option<HelpView.t>})
     | @as("Draft") Draft({draft: @s.null option<Draft.t>, @as("pending_refresh") pendingRefresh: bool})
+    | @as("Search")
+    Search({
+        @as("content_search") contentSearch: @s.null option<ContentSearchView.t>,
+        @as("action_palette") actionPalette: bool,
+      })
 
   /// Install a patch into the UI's copy of the model.
   let apply = (model: ViewModel.t, patch: t): ViewModel.t =>
@@ -460,5 +482,6 @@ module ViewPatch = {
     | Hints({hints, pending, chrome}) => {...model, hints, pendingKeys: pending, chrome}
     | Help({help}) => {...model, help}
     | Draft({draft, pendingRefresh}) => {...model, draft, pendingRefresh}
+    | Search({contentSearch, actionPalette}) => {...model, contentSearch, actionPalette}
     }
 }

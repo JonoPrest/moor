@@ -59,6 +59,7 @@ module ViewSection = {
   @schema
   type t =
     | Connection
+    | Search
     | ReviewList
     | Tree
     | Diff
@@ -140,6 +141,13 @@ module Request = {
     | @as("GetReview") GetReview({@as("review_id") reviewId: reviewId})
     | @as("ReviewSnapshot") ReviewSnapshot({@as("review_id") reviewId: reviewId})
     | @as("ListFiles") ListFiles({@as("review_id") reviewId: reviewId, scope: DiffScope.t})
+    | @as("Search")
+    Search({
+        @as("review_id") reviewId: reviewId,
+        query: string,
+        @as("all_files") allFiles: bool,
+        scope: DiffScope.t,
+      })
     | @as("OpenReview") OpenReview({@as("review_id") reviewId: reviewId, opts: RenderOpts.t})
     | @as("ResolveTargets") ResolveTargets({@as("review_id") reviewId: reviewId})
     | @as("ListCommits")
@@ -193,6 +201,7 @@ module Response = {
     | @as("Review") Review({review: Review.t})
     | @as("ReviewSnapshot") ReviewSnapshot({snapshot: ReviewSnapshot.t})
     | @as("Files") Files({files: array<FileChange.t>, resolved: array<ResolvedTarget.t>})
+    | @as("Search") Search({hits: array<Domain.ContentHit.t>, truncated: bool})
     | @as("Resolved") Resolved({targets: array<ResolvedTarget.t>, changed: bool})
     | @as("Commits") Commits({commits: array<CommitInfo.t>})
     | @as("TreeSnapshot") TreeSnapshot({snapshot: TreeSnapshot.t})

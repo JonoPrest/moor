@@ -366,7 +366,9 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 | Command::ScopeAll
                 | Command::ScopeByCommit
                 | Command::ScopeWorktree
-                | Command::ExpandContext => false,
+                | Command::ExpandContext
+                | Command::ContentSearch
+                | Command::ActionPalette => false,
             };
             let found = if forward {
                 rows.iter().find(|r| r.index > row && wanted(r))
@@ -682,6 +684,22 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
         Command::Connect => Ok(Action::Connect),
         Command::Disconnect => Ok(Action::Disconnect),
         Command::Refresh => Ok(Action::ListWorkspaces),
+        Command::ContentSearch => {
+            if view.review.is_none() {
+                return Err(NoTarget::NoOpenReview);
+            }
+            let (query, all_files) = view
+                .content_search
+                .as_ref()
+                .map_or((String::new(), false), |c| (c.query.clone(), c.all_files));
+            Ok(Action::ContentSearch {
+                query: Some(query),
+                all_files,
+            })
+        }
+        Command::ActionPalette => Ok(Action::ActionPalette {
+            open: !view.action_palette,
+        }),
         Command::ExpandContext => {
             let Focus::Diff { .. } = focus else {
                 return Err(nothing());

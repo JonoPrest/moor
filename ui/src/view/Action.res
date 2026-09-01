@@ -60,4 +60,8 @@ type t =
   | @as("ExpandContext") ExpandContext({file: View.FileRef.t, full: bool})
   | @as("SetBrowseRef")
   SetBrowseRef({@as("repo_id") repoId: repoId, @as("ref_spec") refSpec: @s.null option<Domain.RefSpec.t>})
+  | @as("ContentSearch")
+  ContentSearch({query: @s.null option<string>, @as("all_files") allFiles: bool})
+  | @as("ActionPalette") ActionPalette({@as("open") open_: bool})
+  | @as("RunCommand") RunCommand({command: View.Command.t})
 @@warning("+27")

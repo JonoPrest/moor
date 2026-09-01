@@ -69,8 +69,8 @@ pub use keymap::{
 };
 pub use patch::{ViewPatch, ViewPatchKind};
 pub use view::{
-    ConnectionView, ConnectionViewKind, Draft, Layout, OpenFile, OpenReview, PendingEvent, Tab,
-    ViewDelta, ViewModel, ViewPrefs,
+    ConnectionView, ConnectionViewKind, ContentSearchView, Draft, Layout, OpenFile, OpenReview,
+    PendingEvent, Tab, ViewDelta, ViewModel, ViewPrefs,
 };
 
 pub use moor_protocol as protocol;
@@ -249,6 +249,21 @@ pub enum Action {
         repo_id: RepoId,
         ref_spec: Option<moor_protocol::RefSpec>,
     },
+    /// Open, re-query or (`None`) close the content-search palette
+    /// (UI-DESIGN §Search). A non-empty query asks the daemon.
+    ContentSearch {
+        query: Option<String>,
+        all_files: bool,
+    },
+    /// Open or close the actions palette (`:`): every command by name.
+    ActionPalette {
+        open: bool,
+    },
+    /// Run a command by name (the actions palette's Enter): resolved
+    /// against the current focus exactly like its key binding.
+    RunCommand {
+        command: Command,
+    },
 }
 
 /// How much one `ExpandContext` step adds to a file's context lines.
@@ -371,6 +386,7 @@ pub(crate) enum InFlight {
     ListCommits {
         repo_id: RepoId,
     },
+    Search,
     TreeSnapshot {
         root: moor_protocol::TreeOid,
     },
@@ -406,6 +422,7 @@ impl InFlight {
             | InFlight::ReviewSnapshot { .. }
             | InFlight::ListFiles { .. }
             | InFlight::ListCommits { .. }
+            | InFlight::Search
             | InFlight::Mutate { .. } => false,
         }
     }
@@ -425,6 +442,7 @@ impl InFlight {
             | InFlight::ReviewSnapshot { .. }
             | InFlight::ListFiles { .. }
             | InFlight::ListCommits { .. }
+            | InFlight::Search
             | InFlight::BrowseTree { .. }
             | InFlight::Mutate { .. } => None,
         }
@@ -1286,6 +1304,57 @@ impl ClientCore {
             }
             Action::OpenOriginalDiff { thread_id } => self.open_original(thread_id),
             Action::ExpandContext { file, full } => self.expand_context(&file, full),
+            Action::ContentSearch { query, all_files } => {
+                let Some(open) = &self.view.review else {
+                    return Err(CoreError::NoOpenReview);
+                };
+                let review_id = open.snapshot.review.id;
+                let scope = open.scope;
+                match query {
+                    None => {
+                        self.view.content_search = None;
+                        Ok(vec![render(&[ViewSection::Search])])
+                    }
+                    Some(query) => {
+                        let ask = !query.trim().is_empty();
+                        if ask {
+                            self.require_subscribed()?;
+                        }
+                        self.view.content_search = Some(ContentSearchView {
+                            query: query.clone(),
+                            all_files,
+                            hits: Vec::new(),
+                            truncated: false,
+                            pending: ask,
+                        });
+                        let mut effects = Vec::new();
+                        if ask {
+                            effects.push(self.request(
+                                Request::Search {
+                                    review_id,
+                                    query,
+                                    all_files,
+                                    scope,
+                                },
+                                InFlight::Search,
+                            ));
+                        }
+                        effects.push(render(&[ViewSection::Search]));
+                        Ok(effects)
+                    }
+                }
+            }
+            Action::ActionPalette { open } => {
+                if self.view.action_palette == open {
+                    return Ok(Vec::new());
+                }
+                self.view.action_palette = open;
+                Ok(vec![render(&[ViewSection::Search])])
+            }
+            Action::RunCommand { command } => {
+                let action = focus::resolve(self, command)?;
+                self.user(action)
+            }
             Action::SetBrowseRef { repo_id, ref_spec } => {
                 if self.view.review.is_none() {
                     return Err(CoreError::NoOpenReview);
@@ -1709,6 +1778,8 @@ impl ClientCore {
         self.help_open = false;
         self.by_commit_pending = false;
         self.browse = None;
+        self.view.content_search = None;
+        self.view.action_palette = false;
         self.review_closed(effects);
     }
 
@@ -1859,6 +1930,7 @@ impl ClientCore {
                     | InFlight::ReviewSnapshot { .. }
                     | InFlight::ListFiles { .. }
                     | InFlight::ListCommits { .. }
+                    | InFlight::Search
                     | InFlight::TreeSnapshot { .. }
                     | InFlight::BrowseTree { .. }
                     | InFlight::RenderChunk { .. }
@@ -2068,6 +2140,7 @@ impl ClientCore {
                 | InFlight::ReviewSnapshot { .. }
                 | InFlight::ListFiles { .. }
                 | InFlight::ListCommits { .. }
+                | InFlight::Search
                 | InFlight::TreeSnapshot { .. }
                 | InFlight::BrowseTree { .. }
                 | InFlight::RenderChunk { .. }
@@ -2201,6 +2274,16 @@ impl ClientCore {
                 }
                 effects
             }
+            (InFlight::Search, Response::Search { hits, truncated }) => {
+                if let Some(cs) = &mut self.view.content_search {
+                    cs.hits = hits;
+                    cs.truncated = truncated;
+                    cs.pending = false;
+                    vec![render(&[ViewSection::Search])]
+                } else {
+                    Vec::new()
+                }
+            }
             (InFlight::BrowseTree { repo_id }, Response::TreeSnapshot { snapshot }) => {
                 let mut effects = Vec::new();
                 let root = snapshot.root_oid;
@@ -2300,6 +2383,7 @@ impl ClientCore {
                     InFlight::ReviewSnapshot { .. } => "ReviewSnapshot",
                     InFlight::ListFiles { .. } => "Files",
                     InFlight::ListCommits { .. } => "Commits",
+                    InFlight::Search => "Search",
                     InFlight::TreeSnapshot { .. } | InFlight::BrowseTree { .. } => "TreeSnapshot",
                     InFlight::RenderChunk { .. } => "RenderChunk",
                     InFlight::Mutate { .. } => "Committed",
@@ -2521,6 +2605,7 @@ fn response_name(r: &Response) -> &'static str {
         Response::ReviewSnapshot { .. } => "ReviewSnapshot",
         Response::Files { .. } => "Files",
         Response::Resolved { .. } => "Resolved",
+        Response::Search { .. } => "Search",
         Response::Commits { .. } => "Commits",
         Response::TreeSnapshot { .. } => "TreeSnapshot",
         Response::RenderChunk { .. } => "RenderChunk",

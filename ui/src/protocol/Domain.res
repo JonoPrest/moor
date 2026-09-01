@@ -152,6 +152,16 @@ module CommentKind = {
   @@warning("+27")
 }
 
+module ContentHit = {
+  @schema
+  type t = {
+    @as("repo_id") repoId: repoId,
+    path: string,
+    line: int,
+    text: string,
+  }
+}
+
 module DiffScope = {
   @@warning("-27")
   @schema @tag("type")

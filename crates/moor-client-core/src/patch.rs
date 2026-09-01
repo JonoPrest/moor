@@ -16,7 +16,7 @@ use crate::diff::{CommitStepper, DiffView, ThreadView};
 use crate::explorer::{Progress, TreeView};
 use crate::focus::Focus;
 use crate::keymap::{HelpView, Hint};
-use crate::view::{ConnectionView, Draft, Tab, ViewDelta, ViewModel, ViewPrefs};
+use crate::view::{ConnectionView, ContentSearchView, Draft, Tab, ViewDelta, ViewModel, ViewPrefs};
 
 /// The part of the view one section owns.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumDiscriminants)]
@@ -76,6 +76,11 @@ pub enum ViewPatch {
         draft: Option<Draft>,
         pending_refresh: bool,
     },
+    /// The palettes (UI-DESIGN §Search): content search and actions.
+    Search {
+        content_search: Option<ContentSearchView>,
+        action_palette: bool,
+    },
 }
 
 impl ViewPatch {
@@ -94,6 +99,7 @@ impl ViewPatch {
             ViewPatch::Hints { .. } => ViewSection::Hints,
             ViewPatch::Help { .. } => ViewSection::Help,
             ViewPatch::Draft { .. } => ViewSection::Draft,
+            ViewPatch::Search { .. } => ViewSection::Search,
         }
     }
 }
@@ -149,6 +155,10 @@ impl ViewModel {
             ViewSection::Draft => ViewPatch::Draft {
                 draft: self.draft.clone(),
                 pending_refresh: self.pending_refresh,
+            },
+            ViewSection::Search => ViewPatch::Search {
+                content_search: self.content_search.clone(),
+                action_palette: self.action_palette,
             },
         }
     }
@@ -220,6 +230,13 @@ impl ViewModel {
             } => {
                 self.draft = draft;
                 self.pending_refresh = pending_refresh;
+            }
+            ViewPatch::Search {
+                content_search,
+                action_palette,
+            } => {
+                self.content_search = content_search;
+                self.action_palette = action_palette;
             }
         }
     }

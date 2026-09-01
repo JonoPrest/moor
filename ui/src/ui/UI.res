@@ -101,6 +101,7 @@ module TextInput = {
     ~placeholder: string,
     ~autoFocus=false,
     ~onKey: string => unit=_ => (),
+    ~preventKeys: array<string>=[],
   ) =>
     <input
       className="text-input"
@@ -109,7 +110,11 @@ module TextInput = {
       value
       onChange={ev => onChange(ReactEvent.Form.target(ev)["value"])}
       onKeyDown={ev => {
-        onKey(ReactEvent.Keyboard.key(ev))
+        let key = ReactEvent.Keyboard.key(ev)
+        if preventKeys->Array.includes(key) {
+          ReactEvent.Keyboard.preventDefault(ev)
+        }
+        onKey(key)
         ReactEvent.Keyboard.stopPropagation(ev)
       }}
     />

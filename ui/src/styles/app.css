@@ -359,6 +359,42 @@
   .help-search {
     @apply w-full rounded border border-border bg-bg px-2 py-1 text-sm;
   }
+  .palette-overlay {
+    @apply fixed inset-0 flex justify-center pt-24;
+    background: color-mix(in oklch, var(--color-fg) 30%, transparent);
+  }
+  .palette {
+    @apply h-fit max-h-[60vh] w-[44rem] overflow-auto rounded border border-border bg-bg p-3;
+  }
+  .palette-tabs {
+    @apply mb-2 flex items-center gap-3 text-sm;
+  }
+  .palette-tab {
+    @apply text-muted;
+  }
+  .palette-tab.active {
+    @apply border-b-2 font-medium;
+    border-color: var(--color-accent);
+    color: var(--color-fg);
+  }
+  .palette-hint {
+    @apply ml-auto text-xs text-muted;
+  }
+  .palette-results {
+    @apply mt-2;
+  }
+  .palette-scope {
+    @apply mb-1 block text-xs text-muted;
+  }
+  .hit-path {
+    @apply mr-2 font-mono text-xs text-accent;
+  }
+  .hit-text {
+    @apply mr-2 font-mono text-xs;
+  }
+  .palette-truncated {
+    @apply px-2 text-xs text-muted italic;
+  }
   .help-overlay {
     @apply fixed inset-0 flex items-center justify-center;
     background: color-mix(in oklch, var(--color-fg) 30%, transparent);

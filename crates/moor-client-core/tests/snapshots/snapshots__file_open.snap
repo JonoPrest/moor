@@ -403,6 +403,16 @@ expression: core.view()
       "label": "find file"
     },
     {
+      "keys": "F",
+      "command": "ContentSearch",
+      "label": "find in files"
+    },
+    {
+      "keys": ":",
+      "command": "ActionPalette",
+      "label": "actions"
+    },
+    {
       "keys": "1",
       "command": "TabFiles",
       "label": "files changed"
@@ -640,6 +650,8 @@ expression: core.view()
     "type": "All"
   },
   "browse_ref": null,
+  "content_search": null,
+  "action_palette": false,
   "review": {
     "snapshot": {
       "review": {

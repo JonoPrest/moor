@@ -173,6 +173,7 @@ registry!(
     RenderOpts,
     ChangeKind,
     DiffScope,
+    ContentHit,
     FileChange,
     TreeEntryKind,
     TreeEntry,
@@ -826,6 +827,16 @@ enum_fixture!(
     ]
 );
 struct_fixture!(
+    ContentHit,
+    "ContentHit",
+    ContentHit {
+        repo_id: repo_id(),
+        path: path("src/lib.rs")?,
+        line: LineNo::new(14).ok_or(FixtureError::ZeroLine)?,
+        text: "    let total = 14;".into()
+    }
+);
+struct_fixture!(
     FileChange,
     "FileChange",
     FileChange {
@@ -1291,6 +1302,12 @@ enum_fixture!(
             review_id: review_id(),
             opts: RenderOpts::default()
         },
+        Request::Search {
+            review_id: review_id(),
+            query: "todo".into(),
+            all_files: true,
+            scope: DiffScope::All
+        },
         Request::ResolveTargets {
             review_id: review_id()
         },
@@ -1376,6 +1393,15 @@ enum_fixture!(
                 kind: modified()
             }],
             resolved: resolved_targets()?.into_iter().collect()
+        },
+        Response::Search {
+            hits: vec![ContentHit {
+                repo_id: repo_id(),
+                path: path("src/lib.rs")?,
+                line: LineNo::new(14).ok_or(FixtureError::ZeroLine)?,
+                text: "    let total = 14;".into()
+            }],
+            truncated: false
         },
         Response::Resolved {
             targets: resolved_targets()?,

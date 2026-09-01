@@ -377,6 +377,7 @@ impl Sim {
                     | Request::ResolveTargets { .. }
                     | Request::ListCommits { .. }
                     | Request::TreeSnapshot { .. }
+                    | Request::Search { .. }
                     | Request::FileRender { .. }
                     | Request::ChangeRender { .. }
                     | Request::BlobRender { .. }
@@ -461,6 +462,7 @@ impl Sim {
             | Request::ResolveTargets { .. }
             | Request::ListCommits { .. }
             | Request::TreeSnapshot { .. }
+            | Request::Search { .. }
             | Request::FileRender { .. }
             | Request::ChangeRender { .. }
             | Request::BlobRender { .. }

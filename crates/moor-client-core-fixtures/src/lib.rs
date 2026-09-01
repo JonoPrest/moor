@@ -123,6 +123,7 @@ macro_rules! registry {
 
 registry!(
     ViewModel,
+    ContentSearchView,
     ViewPrefs,
     Layout,
     Tab,
@@ -303,6 +304,17 @@ struct_fixture!(
     }
 );
 struct_fixture!(RenderKey, "RenderKey", render_key()?);
+struct_fixture!(
+    ContentSearchView,
+    "ContentSearchView",
+    ContentSearchView {
+        query: "todo".into(),
+        all_files: true,
+        hits: vec![proto::<ContentHit>()?],
+        truncated: false,
+        pending: false,
+    }
+);
 struct_fixture!(FileRef, "FileRef", file_ref()?);
 struct_fixture!(
     OpenReview,
@@ -670,6 +682,14 @@ enum_fixture!(
                 name: "main".into()
             })
         },
+        Action::ContentSearch {
+            query: Some("todo".into()),
+            all_files: false
+        },
+        Action::ActionPalette { open: true },
+        Action::RunCommand {
+            command: Command::ToggleLayout
+        },
     ]
 );
 enum_fixture!(
@@ -743,6 +763,10 @@ enum_fixture!(
                 name: "main".into()
             }),
         },
+        ViewPatch::Search {
+            content_search: Some(local::<ContentSearchView>()?),
+            action_palette: true,
+        },
         ViewPatch::Tree {
             tree: local::<TreeView>()?,
         },
@@ -805,6 +829,8 @@ struct_fixture!(
         resolved_targets: vec![proto::<ResolvedTarget>()?],
         scope: DiffScope::All,
         browse_ref: None,
+        content_search: Some(local::<ContentSearchView>()?),
+        action_palette: false,
         review: Some(local::<OpenReview>()?),
         draft: Some(local::<Draft>()?),
         pending_refresh: true,

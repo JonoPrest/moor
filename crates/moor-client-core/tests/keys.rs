@@ -360,6 +360,7 @@ fn every_action_is_reachable_from_a_binding() {
         ActionKind::ListReviews,
         ActionKind::FileSearch,   // produced (with an empty query) — see below
         ActionKind::SetBrowseRef, // the ref text comes from the Browse picker
+        ActionKind::RunCommand,   // the actions palette picks the command
     ]
     .into_iter()
     .collect();

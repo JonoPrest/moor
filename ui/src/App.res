@@ -189,6 +189,14 @@ module Shell = {
       | Some(help) => <HelpOverlay help dispatch />
       | None => React.null
       }}
+      {model.contentSearch != None || model.actionPalette
+        ? <Palette
+            contentSearch=model.contentSearch
+            actionPalette=model.actionPalette
+            chrome=model.chrome
+            dispatch
+          />
+        : React.null}
     </main>
   }
 }

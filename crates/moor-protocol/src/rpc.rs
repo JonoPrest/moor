@@ -9,9 +9,9 @@ use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter};
 
 use crate::domain::{
-    Anchor, Author, ChangeKind, Comment, CommentKind, CommitInfo, DiffScope, FileChange, RefSpec,
-    RenderOpts, ResolvedTarget, Review, ReviewStatus, ReviewTarget, Thread, TreeDelta,
-    TreeSnapshot, ViewedMark, Workspace,
+    Anchor, Author, ChangeKind, Comment, CommentKind, CommitInfo, ContentHit, DiffScope,
+    FileChange, RefSpec, RenderOpts, ResolvedTarget, Review, ReviewStatus, ReviewTarget, Thread,
+    TreeDelta, TreeSnapshot, ViewedMark, Workspace,
 };
 use crate::events::Event;
 use crate::ids::{
@@ -274,6 +274,17 @@ pub enum Request {
         #[serde(default)]
         scope: DiffScope,
     },
+    /// Search file contents across the review's targets (UI-DESIGN
+    /// §Search): case-insensitive substring over the scoped changed files,
+    /// or over every file of the head trees when `all_files`.
+    Search {
+        review_id: ReviewId,
+        query: String,
+        #[serde(default)]
+        all_files: bool,
+        #[serde(default)]
+        scope: DiffScope,
+    },
     /// Streamed: header, then chunks starting at `first_chunk` — for an
     /// arbitrary change (a comment's recorded context), not the review's
     /// current diff of the path.
@@ -328,6 +339,7 @@ impl Request {
             | Request::GetReview { .. }
             | Request::ReviewSnapshot { .. }
             | Request::ListFiles { .. }
+            | Request::Search { .. }
             | Request::ResolveTargets { .. }
             | Request::ListCommits { .. }
             | Request::TreeSnapshot { .. }
@@ -377,6 +389,11 @@ pub enum Response {
         /// scope (for `All`: the review's resolved targets).
         #[serde(default)]
         resolved: Vec<ResolvedTarget>,
+    },
+    /// Content search results, capped; `truncated` says the cap was hit.
+    Search {
+        hits: Vec<ContentHit>,
+        truncated: bool,
     },
     /// The targets after resolution (whether or not they changed).
     Resolved {
@@ -483,6 +500,8 @@ pub enum RpcError {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub enum ViewSection {
     Connection,
+    /// The content-search palette (UI-DESIGN §Search).
+    Search,
     ReviewList,
     Tree,
     Diff,

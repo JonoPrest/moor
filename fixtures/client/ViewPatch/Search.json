@@ -1,0 +1,18 @@
+{
+  "action_palette": true,
+  "content_search": {
+    "all_files": true,
+    "hits": [
+      {
+        "line": 14,
+        "path": "src/lib.rs",
+        "repo_id": "01HF7YAT000000000000000002",
+        "text": "    let total = 14;"
+      }
+    ],
+    "pending": false,
+    "query": "todo",
+    "truncated": false
+  },
+  "type": "Search"
+}

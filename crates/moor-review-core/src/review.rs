@@ -383,6 +383,81 @@ impl Core {
             .ok_or_else(|| CoreError::not_found(EntityKind::Path, &path))
     }
 
+    /// Content search (UI-DESIGN §Search): case-insensitive substring over
+    /// the scoped changed files, or over every file of the head trees when
+    /// `all_files`. Binary and oversized blobs are skipped; hits are capped
+    /// (the flag says the cap was hit).
+    pub fn search(
+        &self,
+        id: ReviewId,
+        query: &str,
+        all_files: bool,
+        scope: &DiffScope,
+    ) -> Result<(Vec<moor_protocol::ContentHit>, bool), CoreError> {
+        const MAX_HITS: usize = 200;
+        const MAX_BLOB: usize = 1 << 20;
+        if query.trim().is_empty() {
+            return Ok((Vec::new(), false));
+        }
+        let needle = query.to_lowercase();
+        let (files, targets) = self.files_scoped(id, scope)?;
+        // (repo, path, blob) per searched file, head side.
+        let mut candidates: Vec<(RepoId, RepoPath, BlobOid)> = Vec::new();
+        if all_files {
+            for t in &targets {
+                let snapshot = self.tree_snapshot_of(t.repo_id, &t.head)?;
+                for e in snapshot.entries {
+                    if let TreeEntryKind::File { oid, size, .. } = e.kind
+                        && size <= MAX_BLOB as u64
+                    {
+                        candidates.push((t.repo_id, e.path, oid));
+                    }
+                }
+            }
+        } else {
+            for f in files {
+                // Deleted files are searched on their base side.
+                if let Some(oid) = f.kind.new_blob().or_else(|| f.kind.old_blob()) {
+                    candidates.push((f.repo_id, f.path, oid));
+                }
+            }
+        }
+        let mut hits = Vec::new();
+        let mut truncated = false;
+        'files: for (repo_id, path, oid) in candidates {
+            let repo = self.repo(repo_id)?;
+            let bytes = repo.blob(oid)?;
+            if bytes.len() > MAX_BLOB || crate::git::is_binary(&bytes) {
+                continue;
+            }
+            let text = String::from_utf8_lossy(&bytes);
+            for (i, line) in text.lines().enumerate() {
+                if line.to_lowercase().contains(&needle) {
+                    if hits.len() >= MAX_HITS {
+                        truncated = true;
+                        break 'files;
+                    }
+                    let Some(line_no) =
+                        moor_protocol::LineNo::new(u32::try_from(i + 1).unwrap_or(u32::MAX))
+                    else {
+                        continue;
+                    };
+                    let mut shown: String = line.trim_end().to_owned();
+                    if shown.len() > 300 {
+                        shown.truncate(shown.floor_char_boundary(300));
+                    }
+                    hits.push(moor_protocol::ContentHit {
+                        repo_id,
+                        path: path.clone(),
+                        line: line_no,
+                        text: shown,
+                    });
+                }
+            }
+        }
+        Ok((hits, truncated))
+    }
+
     /// Commits between base and head for one repo target (newest first).
     /// A working-tree head steps through the checked-out branch's commits
     /// (the worktree itself is the final step). Empty when the base is not

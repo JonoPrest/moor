@@ -89,6 +89,10 @@ pub enum Command {
     /// Re-render the focused file with more context (UI-DESIGN
     /// §expanders).
     ExpandContext,
+    /// Open the content-search palette (UI-DESIGN §Search, `F`).
+    ContentSearch,
+    /// Open the actions palette (`:`): every command by name.
+    ActionPalette,
     /// Re-list workspaces and reviews.
     Refresh,
 }
@@ -404,6 +408,8 @@ impl Keymap {
             b(X::Global, keys!("t"), C::FileSearch, true),
             b(X::Global, keys!("ctrl+p"), C::FileSearch, false),
             b(X::Global, keys!("meta+p"), C::FileSearch, false),
+            b(X::Global, keys!("F"), C::ContentSearch, false),
+            b(X::Global, keys!(":"), C::ActionPalette, false),
             b(X::Global, keys!("1"), C::TabFiles, false),
             b(X::Global, keys!("2"), C::TabConversation, false),
             b(X::Global, keys!("3"), C::TabBrowse, false),
@@ -750,6 +756,8 @@ pub fn label(command: Command) -> &'static str {
         Command::ScopeByCommit => "by commit",
         Command::ScopeWorktree => "worktree",
         Command::ExpandContext => "expand context",
+        Command::ContentSearch => "find in files",
+        Command::ActionPalette => "actions",
     }
 }
 

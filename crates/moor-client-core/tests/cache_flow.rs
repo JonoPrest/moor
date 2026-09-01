@@ -466,6 +466,7 @@ fn daemon_answers(core: &mut ClientCore, effects: &[Effect]) -> Vec<Effect> {
             Request::TreeSnapshot { .. }
             | Request::FileRender { .. }
             | Request::ChangeRender { .. }
+            | Request::Search { .. }
             | Request::ListWorkspaces
             | Request::ListReviews { .. }
             | Request::GetReview { .. }
@@ -613,6 +614,7 @@ fn viewport_requests_only_the_window_and_bounds_in_flight() {
             Request::TreeSnapshot { .. }
             | Request::FileRender { .. }
             | Request::ChangeRender { .. }
+            | Request::Search { .. }
             | Request::ListWorkspaces
             | Request::ListReviews { .. }
             | Request::GetReview { .. }
@@ -1086,6 +1088,7 @@ fn restart_serves_the_previous_review_from_disk_without_content_requests() {
                 Request::ListFiles { .. } => files_id = Some(id),
                 Request::FileRender { .. }
                 | Request::ChangeRender { .. }
+                | Request::Search { .. }
                 | Request::RenderChunk { .. }
                 | Request::ListWorkspaces
                 | Request::ListReviews { .. }
@@ -1198,6 +1201,7 @@ fn restart_serves_the_previous_review_from_disk_without_content_requests() {
             Request::TreeSnapshot { .. }
             | Request::FileRender { .. }
             | Request::ChangeRender { .. }
+            | Request::Search { .. }
             | Request::ListWorkspaces
             | Request::ListReviews { .. }
             | Request::GetReview { .. }
@@ -1692,6 +1696,7 @@ fn comments_are_placed_on_rows_by_anchor_and_listed_as_threads() {
             Request::TreeSnapshot { .. }
             | Request::FileRender { .. }
             | Request::ChangeRender { .. }
+            | Request::Search { .. }
             | Request::ListWorkspaces
             | Request::ListReviews { .. }
             | Request::GetReview { .. }

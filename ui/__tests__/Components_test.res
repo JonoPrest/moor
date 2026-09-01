@@ -203,6 +203,32 @@ describe("Threads", () => {
   })
 })
 
+describe("Palette", () => {
+  test("content hits jump to the file; actions run keymap commands", () => {
+    let dispatch = fn()
+    let cs = Fixtures.parse(View.ContentSearchView.schema, "client", "ContentSearchView", "default")
+    let _ = render(<Palette contentSearch=Some(cs) actionPalette=false chrome=[] dispatch />)
+    let hit = cs.hits->Array.getUnsafe(0)
+    FireEvent.click(Screen.getByText(hit.path ++ ":" ++ Int.toString(hit.line)))
+    let calls = mock(dispatch).calls
+    let jumped = calls->Array.some(args =>
+      switch args->Array.getUnsafe(0) {
+      | Action.Viewport({file}) => file.path == hit.path
+      | _ => false
+      }
+    )
+    expect(jumped)->toBe(true)
+    cleanup()
+    let chrome: array<View.Hint.t> = [
+      {keys: "s", command: ToggleLayout, label: "split/unified"},
+      {keys: "w", command: ToggleWhitespace, label: "whitespace"},
+    ]
+    let _ = render(<Palette contentSearch=None actionPalette=true chrome dispatch />)
+    FireEvent.click(Screen.getByText("split/unified"))
+    expect(dispatch)->toHaveBeenLastCalledWith(Action.RunCommand({command: ToggleLayout}))
+  })
+})
+
 describe("Context expanders", () => {
   test("an expander row click and the expand-file button dispatch ExpandContext", () => {
     let dispatch = fn()

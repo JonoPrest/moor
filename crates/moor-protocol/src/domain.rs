@@ -465,6 +465,19 @@ impl ChangeKind {
     }
 }
 
+/// One content-search match (UI-DESIGN §Search).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct ContentHit {
+    pub repo_id: RepoId,
+    pub path: RepoPath,
+    /// 1-based line of the match, on the searched side.
+    pub line: crate::invariants::LineNo,
+    /// The matching line's text, trimmed of the trailing newline.
+    pub text: String,
+}
+
 /// A changed file in one repo. `path` is the head-side path (for renames,
 /// the destination).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

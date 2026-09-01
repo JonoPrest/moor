@@ -210,6 +210,21 @@ impl Default for ViewPrefs {
     }
 }
 
+/// The content-search palette (UI-DESIGN §Search): query, scope toggle
+/// and the daemon's hits.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContentSearchView {
+    pub query: String,
+    /// Search every file of the head trees, not just the changed ones.
+    pub all_files: bool,
+    pub hits: Vec<moor_protocol::ContentHit>,
+    /// The hit cap was reached; more matches exist.
+    pub truncated: bool,
+    /// A query is on its way to the daemon.
+    pub pending: bool,
+}
+
 /// Everything the UI needs, kept identical across hosts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
@@ -262,6 +277,12 @@ pub struct ViewModel {
     /// review's head trees.
     #[serde(default)]
     pub browse_ref: Option<moor_protocol::RefSpec>,
+    /// The content-search palette while open (UI-DESIGN §Search).
+    #[serde(default)]
+    pub content_search: Option<ContentSearchView>,
+    /// The actions palette (`:`) while open; its entries are `chrome`.
+    #[serde(default)]
+    pub action_palette: bool,
     pub review: Option<OpenReview>,
     pub draft: Option<Draft>,
     /// A working-tree refresh arrived while `draft` was open and is being

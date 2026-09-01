@@ -17,6 +17,8 @@ use crate::handshake::Negotiated;
 ///
 /// Streaming requests are matched by the connection before this is called;
 /// reaching them here is a programming error reported as `Internal`.
+// One arm per request; splitting would hide the exhaustive match.
+#[allow(clippy::too_many_lines)]
 pub async fn single(
     daemon: &Arc<Daemon>,
     who: &Negotiated,
@@ -62,6 +64,17 @@ pub async fn single(
                 files,
                 resolved: resolved.into_iter().collect(),
             })
+        }
+        Request::Search {
+            review_id,
+            query,
+            all_files,
+            scope,
+        } => {
+            let (hits, truncated) = daemon
+                .read(move |c| c.search(review_id, &query, all_files, &scope))
+                .await?;
+            Ok(Response::Search { hits, truncated })
         }
         Request::TreeSnapshot { repo_id, ref_spec } => {
             let snapshot = daemon
