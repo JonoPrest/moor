@@ -38,8 +38,10 @@ let make = (~tree: TreeView.t, ~focus: Focus.t, ~dispatch: Action.t => unit) => 
   | _ => None
   }
   <nav className="tree panel" ariaLabel="files">
-    <header className="panel-header">
-      {React.string(tree.breadcrumbs->Array.join(" / "))}
+    <header className="panel-header tree-header">
+      {React.string(
+        Array.length(tree.breadcrumbs) == 0 ? "Files" : tree.breadcrumbs->Array.join(" / "),
+      )}
     </header>
     <ul className="tree-list" role="tree">
       {rows

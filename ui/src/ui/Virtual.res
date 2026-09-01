@@ -17,5 +17,8 @@ type virtualizer
 external useVirtualizer: options => virtualizer = "useVirtualizer"
 
 @send external getVirtualItems: virtualizer => array<virtualItem> = "getVirtualItems"
+/// Ref callback for dynamic row heights (inline threads): the element must
+/// carry `data-index`.
+@get external measureElement: virtualizer => Nullable.t<Dom.element> => unit = "measureElement"
 @send external getTotalSize: virtualizer => int = "getTotalSize"
 @send external scrollToIndex: (virtualizer, int) => unit = "scrollToIndex"

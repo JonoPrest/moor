@@ -140,12 +140,24 @@ module Shell = {
               | None => React.null
               }}
               {switch model.diff {
-              | Some(diff) => <DiffView diff layout=model.prefs.layout focus=model.focus dispatch />
+              | Some(diff) =>
+                <DiffView
+                  diff
+                  layout=model.prefs.layout
+                  focus=model.focus
+                  threads=model.threads
+                  draft=?model.draft
+                  pendingRefresh=model.pendingRefresh
+                  dispatch
+                />
               | None => <div className="diff-empty"> {React.string("Open a file")} </div>
               }}
               {switch model.draft {
-              | Some(draft) => <Composer draft pendingRefresh=model.pendingRefresh dispatch />
-              | None => React.null
+              // A reply renders inline in its thread's card; only a fresh
+              // comment uses the bottom composer.
+              | Some({replyTo: None} as draft) =>
+                <Composer draft pendingRefresh=model.pendingRefresh dispatch />
+              | Some({replyTo: Some(_)}) | None => React.null
               }}
             </>
           | Conversation =>

@@ -1,6 +1,8 @@
 // The open file (§6.5): a virtualized list over `total_rows`; rows the
 // cache holds render, the rest are placeholders until their chunk lands.
 // Scrolling dispatches `Viewport` so the core fetches what is visible.
+// Threads render inline under their anchored row (UI-DESIGN §Comments);
+// rows with threads are measured dynamically.
 
 open View
 
@@ -14,7 +16,15 @@ let viewportOf = (items: array<Virtual.virtualItem>): option<(int, int)> =>
   }
 
 @react.component
-let make = (~diff: DiffView.t, ~layout: Layout.t, ~focus: Focus.t, ~dispatch: Action.t => unit) => {
+let make = (
+  ~diff: DiffView.t,
+  ~layout: Layout.t,
+  ~focus: Focus.t,
+  ~threads: array<ThreadView.t>=[],
+  ~draft: option<Draft.t>=?,
+  ~pendingRefresh: bool=false,
+  ~dispatch: Action.t => unit,
+) => {
   let scrollRef = React.useRef(Nullable.null)
   let total = switch diff.content {
   | Text({totalRows}) => totalRows
@@ -54,14 +64,29 @@ let make = (~diff: DiffView.t, ~layout: Layout.t, ~focus: Focus.t, ~dispatch: Ac
   let collapsed = diff.viewed == Viewed && !expanded
   let cached = Dict.make()
   diff.rows->Array.forEach(r => cached->Dict.set(Int.toString(r.index), r))
+  let threadOf = (id: Ids.threadId) => threads->Array.findIndexOpt(t => t.id == id)
+  let focusedThread = switch focus {
+  | Thread({index}) => Some(index)
+  | _ => None
+  }
+  let replyTo = draft->Option.flatMap(d => d.replyTo)
   let title = diff.file.path
+  let stats = switch diff.content {
+  | Text({additions, deletions}) =>
+    <span className="file-stats">
+      <span className="stat-add"> {React.string("+" ++ Int.toString(additions))} </span>
+      <span className="stat-del"> {React.string("−" ++ Int.toString(deletions))} </span>
+    </span>
+  | Binary(_) => React.null
+  }
   let binary = switch diff.content {
   | Binary(_) => <div className="diff-binary"> {React.string("binary file")} </div>
   | Text(_) => React.null
   }
   <section className="diff-panel panel" role="grid" ariaLabel=title>
-    <header className="panel-header">
-      {React.string(title)}
+    <header className="panel-header file-header">
+      <span className="file-path mono"> {React.string(title)} </span>
+      stats
       <UI.Button
         label="expand file"
         kind=Ghost
@@ -104,30 +129,55 @@ let make = (~diff: DiffView.t, ~layout: Layout.t, ~focus: Focus.t, ~dispatch: Ac
             top: "0",
             left: "0",
             width: "100%",
-            height: Int.toString(item.size) ++ "px",
             transform: "translateY(" ++ Int.toString(item.start) ++ "px)",
           }
           let focused = focusedRow == Some(item.index)
           let inner = switch cached->Dict.get(Int.toString(item.index)) {
           | Some(r) =>
-            <Row
-              row=r.row
-              layout
-              index=item.index
-              focused
-              threads={Array.length(r.threads)}
-              onClick={() => dispatch(SetFocus({focus: Focus.Diff({row: item.index})}))}
-              onExpand={() => dispatch(ExpandContext({file: diff.file, full: false}))}
-            />
+            <>
+              <Row
+                row=r.row
+                layout
+                index=item.index
+                focused
+                threads={Array.length(r.threads)}
+                onClick={() => dispatch(SetFocus({focus: Focus.Diff({row: item.index})}))}
+                onExpand={() => dispatch(ExpandContext({file: diff.file, full: false}))}
+              />
+              {r.threads
+              ->Array.filterMap(threadOf)
+              ->Array.map(ti => {
+                let thread = threads->Array.getUnsafe(ti)
+                let composer = switch (replyTo, draft) {
+                | (Some(id), Some(d)) if id == thread.id =>
+                  <Composer draft=d pendingRefresh dispatch />
+                | _ => React.null
+                }
+                <InlineThread
+                  key=thread.id thread focused={focusedThread == Some(ti)} index=ti composer dispatch
+                />
+              })
+              ->React.array}
+            </>
           | None =>
             Attrs.focused(
-              <div className="row row-placeholder" role="row">
+              <div className="row row-placeholder" role="row" style={{height: "20px"}}>
                 {React.string("…")}
               </div>,
               focused,
             )
           }
-          <div key=item.key style> inner </div>
+          let el =
+            <div
+              key=item.key
+              style
+              ref={ReactDOM.Ref.callbackDomRef(el => {
+                (virtualizer->Virtual.measureElement)(el)
+                None
+              })}>
+              inner
+            </div>
+          Attrs.withData(el, [("data-index", Int.toString(item.index))])
         })
         ->React.array}
       </div>

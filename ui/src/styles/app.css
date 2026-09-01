@@ -282,6 +282,43 @@
   .file-threads {
     @apply border-b border-border px-3 py-1 text-xs text-muted;
   }
+  .file-header {
+    @apply flex items-center gap-2;
+  }
+  .file-path {
+    @apply font-mono text-xs font-semibold;
+  }
+  .file-stats {
+    @apply flex gap-1 font-mono text-xs;
+  }
+  .stat-add {
+    color: var(--color-diff-add-fg);
+  }
+  .stat-del {
+    color: var(--color-diff-remove-fg);
+  }
+  /* Inline threads under their anchored row (UI-DESIGN §Comments). */
+  .inline-thread {
+    @apply my-1 ml-24 mr-6 max-w-2xl rounded border border-border bg-panel p-2 text-sm;
+    font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+    white-space: normal;
+  }
+  .inline-thread[data-focused] {
+    outline: 1px solid var(--color-focus);
+    outline-offset: -1px;
+  }
+  .inline-thread.resolved {
+    @apply opacity-70;
+  }
+  .inline-comment {
+    @apply mb-2;
+  }
+  .inline-comment.pending {
+    @apply opacity-60;
+  }
+  .inline-thread-actions {
+    @apply flex gap-2;
+  }
   .row-placeholder {
     @apply text-muted;
     background: repeating-linear-gradient(
@@ -315,7 +352,13 @@
   .thread-item,
   .stepper-commit,
   .search-hit {
-    @apply cursor-pointer px-2 py-0.5 text-sm select-none;
+    @apply cursor-pointer px-2 py-0.5 text-[13px] select-none;
+  }
+  .tree-header {
+    @apply text-[11px] font-semibold tracking-wide text-muted uppercase;
+  }
+  .tree-viewed {
+    @apply h-3 w-3;
   }
   .tree-list li[data-focused],
   .review-item[data-focused],
