@@ -86,6 +86,32 @@ Gotchas from today, for whoever picks this up:
 - `INSTA_UPDATE=always cargo test -p moor-client-core` while iterating;
   full workspace gates before the final push.
 
+### Also specified, not started (build on the other machine)
+
+**`z` Expand group (Diff context)** — was half-built here and reverted
+clean; spec: Commands `ExpandUp`/`ExpandDown`/`CommentOnFile`, bound
+`z u`/`z d`/`z c`, labels "expand up"/"expand down"/"comment on file",
+group label `z` → "Expand"; resolve: the expands map to
+`Action::ExpandContext { file, full: false }` until band splicing gives
+them distinct semantics; `z c` → existing `Action::CommentFile`.
+Gotcha found when attempting: `keymap::tests::lookup_shadows_global_…`
+asserts `lookup(Diff, ['z']) == Lookup::None` — a `z` prefix in Diff
+makes that `Prefix`; update the test (use an unbound probe like `q`).
+Remember modes_of + View.res Command variants + `moor keys init --force`.
+
+**Search-result stepping** — in every search input (file find `t`,
+content search `F`, actions `:`), Down/Up move a highlighted selection
+through the results while the input keeps focus and typing keeps
+filtering; Enter opens the SELECTED result (today it opens the first).
+Design: selection is core state where results are core state
+(`SearchView`/`ContentSearchView` gain `selected: usize`; new Actions
+`SearchStep { delta }` or reuse MoveDown in a Search context/mode) —
+text inputs currently stopPropagation on all keys, so the shells must
+forward Down/Up/Enter from search inputs to the core (like they forward
+esc/ctrl+enter from the composer). Palette selection can ride
+`ViewModel.action_palette` similarly. Highlight class + scroll-into-view
+in the lists.
+
 ### Other queued work (in rough priority)
 
 - **Nested which-key groups**: `[groups]` labels exist for prefixes; the

@@ -233,8 +233,15 @@ Everything explicitly asked for, so no shell or rewrite loses them.
 - ✓ Mouse drag across lines = multiline comment (keyboard version =
   Visual mode, pending); inline threads under their rows with in-card
   reply; comments record the diff they were made on.
-- ◻ Directional expand up/down from the cursor (band splicing); today
-  `x` = more context, `X` = whole file.
+- ◻ `z` Expand group: `z u`/`z d` expand up/down from the focused row,
+  `z c` comment-on-file from the diff (interim: both expands may share
+  the more-context re-render until band splicing). Rule to uphold:
+  EVERY mouse affordance has a chord — audit found comment-on-file from
+  diff focus as the one gap.
+- ◻ Search inputs step results: with any search bar focused (`t` file
+  find, `F` content, `:` actions), Down/Up move a highlighted selection
+  through the results while typing continues, Enter opens the selected
+  result (not blindly the first).
 
 ### Panels & focus
 - ✓ Goto group: `g e` tree · `g d` diff · `g t` threads · `g m`
