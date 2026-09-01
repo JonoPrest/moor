@@ -123,6 +123,7 @@ module Shell = {
             stepper=?model.stepper
             chrome=model.chrome
             connection=model.connection
+            progress=model.progress
             dispatch
           />
           <Tabs

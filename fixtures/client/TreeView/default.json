@@ -12,11 +12,14 @@
           "changed_below": 1,
           "children": [
             {
+              "additions": 9,
               "change": "Modified",
+              "deletions": 1,
               "name": "lib.rs",
               "open": true,
               "path": "src/lib.rs",
               "repo_id": "01HF7YAT000000000000000002",
+              "threads": 2,
               "type": "File",
               "viewed": "ChangedSinceViewed"
             }
@@ -28,11 +31,14 @@
           "type": "Dir"
         },
         {
+          "additions": null,
           "change": null,
+          "deletions": null,
           "name": "README.md",
           "open": false,
           "path": "README.md",
           "repo_id": "01HF7YAT000000000000000002",
+          "threads": 0,
           "type": "File",
           "viewed": "Unviewed"
         }

@@ -107,6 +107,9 @@ module TreeNode = {
         change: option<ChangeKindKind.t>,
         viewed: ViewedState.t,
         open_: bool,
+        additions: option<int>,
+        deletions: option<int>,
+        threads: int,
       })
   let schema: S.t<t> = S.recursive(self =>
     S.union([
@@ -130,6 +133,9 @@ module TreeNode = {
           change: s.field("change", S.null(ChangeKindKind.schema)),
           viewed: s.field("viewed", ViewedState.schema),
           open_: s.field("open", S.bool),
+          additions: s.field("additions", S.null(S.int)),
+          deletions: s.field("deletions", S.null(S.int)),
+          threads: s.field("threads", S.int),
         })
       }),
     ])
@@ -168,7 +174,13 @@ module ContentSearchView = {
 
 module Progress = {
   @schema
-  type t = {viewed: int, @as("changed_since_viewed") changedSinceViewed: int, total: int}
+  type t = {
+    viewed: int,
+    @as("changed_since_viewed") changedSinceViewed: int,
+    total: int,
+    additions: int,
+    deletions: int,
+  }
 }
 
 module DiffRow = {
@@ -400,7 +412,7 @@ module ViewModel = {
   let empty: t = {
     prefs: {layout: Unified, ignoreWhitespace: false, contextLines: 3, sidebarWidth: 288},
     tree: {roots: [], breadcrumbs: [], search: None},
-    progress: {viewed: 0, changedSinceViewed: 0, total: 0},
+    progress: {viewed: 0, changedSinceViewed: 0, total: 0, additions: 0, deletions: 0},
     diff: None,
     threads: [],
     conversation: [],

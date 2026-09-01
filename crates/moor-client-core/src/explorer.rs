@@ -50,6 +50,12 @@ pub enum TreeNode {
         viewed: ViewedState,
         /// True for the file the viewport is on.
         open: bool,
+        /// Lines added/removed (UI-DESIGN §Layout), once the file's render
+        /// header is cached; `None` until then (or for binary files).
+        additions: Option<u32>,
+        deletions: Option<u32>,
+        /// Threads anchored to this file.
+        threads: u32,
     },
 }
 
@@ -87,6 +93,10 @@ pub struct Progress {
     pub viewed: u32,
     pub changed_since_viewed: u32,
     pub total: u32,
+    /// Lines added/removed across the changed files whose render headers
+    /// are cached (the header totals, UI-DESIGN §Layout).
+    pub additions: u32,
+    pub deletions: u32,
 }
 
 /// Client-local explorer state that is not derived: what is expanded and
@@ -109,6 +119,10 @@ pub(crate) struct ExplorerInputs<'a> {
     pub(crate) open_file: Option<&'a FileRef>,
     pub(crate) viewer: &'a Author,
     pub(crate) state: &'a ExplorerState,
+    /// `(repo, path)` → lines added/removed, from the cached render headers.
+    pub(crate) stats: &'a BTreeMap<(RepoId, String), (u32, u32)>,
+    /// `(repo, path)` → threads anchored to the file.
+    pub(crate) thread_counts: &'a BTreeMap<(RepoId, String), u32>,
     /// Diffing mode (UI-DESIGN §Layout): the tree lists only the changed
     /// files, every directory expanded; the full tree belongs to Browse.
     /// Search still spans the head trees either way.
@@ -160,9 +174,14 @@ pub(crate) fn progress(
     snapshot: &ReviewSnapshot,
     viewer: &Author,
     files: &[RenderKey],
+    stats: &BTreeMap<(RepoId, String), (u32, u32)>,
 ) -> Progress {
     let mut p = Progress::default();
     for f in files {
+        if let Some((a, d)) = stats.get(&(f.repo_id, f.path.as_str().to_owned())) {
+            p.additions += a;
+            p.deletions += d;
+        }
         let head = match &f.target {
             RenderTarget::Diff { change } => change.new_blob(),
             RenderTarget::Blob { oid } => Some(*oid),
@@ -302,6 +321,8 @@ fn nest(
             });
         } else {
             let change = change_of(inputs.files, repo_id, &leaf.path);
+            let key = (repo_id, leaf.path.as_str().to_owned());
+            let stats = inputs.stats.get(&key).copied();
             out.push(TreeNode::File {
                 name: rest.to_owned(),
                 repo_id,
@@ -316,6 +337,9 @@ fn nest(
                 open: inputs
                     .open_file
                     .is_some_and(|f| f.repo_id == repo_id && f.path == leaf.path),
+                additions: stats.map(|(a, _)| a),
+                deletions: stats.map(|(_, d)| d),
+                threads: inputs.thread_counts.get(&key).copied().unwrap_or(0),
                 path: leaf.path.clone(),
             });
         }

@@ -357,8 +357,40 @@
   .tree-header {
     @apply text-[11px] font-semibold tracking-wide text-muted uppercase;
   }
-  .tree-viewed {
-    @apply h-3 w-3;
+  .tree-list li {
+    @apply flex items-center gap-1.5;
+  }
+  .tree-name {
+    @apply min-w-0 flex-1 truncate;
+  }
+  .tree-stat-add {
+    @apply font-mono text-[11px];
+    color: var(--color-diff-add-fg);
+  }
+  .tree-stat-del {
+    @apply font-mono text-[11px];
+    color: var(--color-diff-remove-fg);
+  }
+  .tree-threads {
+    @apply inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold;
+    background: var(--color-accent);
+    color: var(--color-bg);
+  }
+  .tree-viewed-mark {
+    @apply text-xs text-muted;
+  }
+  .tree-viewed-done .tree-name {
+    @apply text-muted;
+  }
+  .chip-check {
+    @apply flex cursor-pointer items-center gap-1.5 rounded border border-border px-2 py-0.5 text-xs whitespace-nowrap select-none;
+  }
+  .chip-check[data-active] {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
+  .header-totals {
+    @apply text-xs whitespace-nowrap text-muted;
   }
   .tree-list li[data-focused],
   .review-item[data-focused],

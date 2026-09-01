@@ -138,7 +138,7 @@ describe("HintBar", () => {
       <HintBar
         hints=[hint]
         connection={Subscribed({})}
-        progress={{viewed: 2, changedSinceViewed: 0, total: 5}}
+        progress={{viewed: 2, changedSinceViewed: 0, total: 5, additions: 0, deletions: 0}}
       />,
     )
     expect(Screen.getByText("] f"))->toBeTruthy
@@ -154,7 +154,7 @@ describe("HintBar", () => {
         hints=[hint]
         pendingKeys="g"
         connection={Subscribed({})}
-        progress={{viewed: 0, changedSinceViewed: 0, total: 0}}
+        progress={{viewed: 0, changedSinceViewed: 0, total: 0, additions: 0, deletions: 0}}
       />,
     )
     expect(Element.querySelector(container, ".hint-bar-pending"))->not_->toBeNull
@@ -602,19 +602,24 @@ describe("Tabs", () => {
   })
 })
 
-describe("Tree (viewed)", () => {
-  test("the per-file checkbox marks and unmarks viewed without moving focus", () => {
+describe("Tree (rows)", () => {
+  test("rows show line stats and thread badges, never a checkbox", () => {
     let dispatch = fn()
     let tree = Fixtures.parse(View.TreeView.schema, "client", "TreeView", "default")
     let {container} = render(<Tree tree focus={Tree({index: 0})} dispatch />)
-    let boxes = Element.querySelectorAll(container, "input.tree-viewed")
-    // lib.rs (changed since viewed) and README.md (unviewed)
-    expect(Array.length(boxes))->toBe(2)
-    FireEvent.click(boxes->Array.getUnsafe(0))
+    // The design has no checkbox in the tree (`v` toggles viewed).
+    expect(Element.querySelectorAll(container, "input")->Array.length)->toBe(0)
+    // lib.rs carries +9 −1 and a 2-thread badge (from the fixture).
+    expect(Screen.getByText("+9"))->toBeTruthy
+    expect(Screen.getByText("−1"))->toBeTruthy
+    let badge =
+      Element.querySelector(container, ".tree-threads")->Nullable.toOption->Option.getExn
+    expect(Element.textContent(badge))->toBe("2")
+    // Clicking a file opens it.
+    FireEvent.click(Screen.getByText("lib.rs"))
     let calls = mock(dispatch).calls
-    expect(Array.length(calls))->toBe(1)
-    switch calls->Array.getUnsafe(0)->Array.getUnsafe(0) {
-    | Action.MarkViewed({file}) => expect(file.path)->toBe("src/lib.rs")
+    switch calls->Array.getUnsafe(Array.length(calls) - 1)->Array.getUnsafe(0) {
+    | Action.Viewport({file}) => expect(file.path)->toBe("src/lib.rs")
     | _ => expect(false)->toBe(true)
     }
   })

@@ -350,6 +350,9 @@ enum_fixture!(
                 change: Some(ChangeKindKind::Modified),
                 viewed: ViewedState::ChangedSinceViewed,
                 open: true,
+                additions: Some(9),
+                deletions: Some(1),
+                threads: 2,
             }],
         },
         TreeNode::File {
@@ -359,6 +362,9 @@ enum_fixture!(
             change: None,
             viewed: ViewedState::Unviewed,
             open: false,
+            additions: None,
+            deletions: None,
+            threads: 0,
         },
     ]
 );
@@ -406,6 +412,8 @@ struct_fixture!(
         viewed: 3,
         changed_since_viewed: 1,
         total: 12,
+        additions: 64,
+        deletions: 12,
     }
 );
 struct_fixture!(

@@ -1,8 +1,9 @@
-// What the open review diffs, like a compare header (UI-DESIGN §Layout):
-// title · scope control · `base → head` chips · layout + whitespace
-// toggles · connection dot. A working-tree head shows the checked-out
-// branch from the resolved targets when the daemon has reported one.
-// Every control's tooltip comes from the keymap chrome, never hand-written.
+// What the open review diffs, laid out exactly as the design canvas'
+// Main artboard (UI-DESIGN §Layout): title · scope segmented control ·
+// `base → head` chips · `+ working tree` check · (right) Unified|Split ·
+// hide-whitespace check · totals · connection dot. A working-tree head
+// shows the checked-out branch from the resolved targets. Every
+// control's tooltip comes from the keymap chrome, never hand-written.
 
 module Seg = {
   /// One segment of a joined segmented control.
@@ -21,24 +22,21 @@ module Seg = {
   }
 }
 
-module Toggle = {
+module Check = {
+  /// A checkbox chip (design: `+ working tree`, `hide whitespace`).
   @react.component
-  let make = (~label: string, ~active: bool, ~title: option<string>, ~onClick: unit => unit) => {
+  let make = (~label: string, ~checked: bool, ~title: option<string>, ~onToggle: unit => unit) => {
     let el =
-      <button
-        type_="button"
-        className="btn toggle"
-        ?title
-        ariaPressed={active ? #"true" : #"false"}
-        onClick={_ => onClick()}>
+      <label className="chip-check" ?title>
+        <input type_="checkbox" checked onChange={_ => onToggle()} />
         {React.string(label)}
-      </button>
-    active ? Attrs.withData(el, [("data-active", "true")]) : el
+      </label>
+    checked ? Attrs.withData(el, [("data-active", "true")]) : el
   }
 }
 
-// The scope control (UI-DESIGN §Diff scope): All changes (± working
-// tree) vs By commit, with the step position while stepping.
+// The scope control (UI-DESIGN §Diff scope): All changes vs By commit,
+// with the step position while stepping.
 module ScopeControl = {
   @react.component
   let make = (
@@ -76,14 +74,6 @@ module ScopeControl = {
           onClick={() => dispatch(SetScope({scope: ByCommit({})}))}
         />
       </span>
-      {allish
-        ? <Toggle
-            label="+ working tree"
-            active={scope == All({})}
-            title={Chrome.tip(chrome, ScopeWorktree)}
-            onClick={() => dispatch(SetScope({scope: scope == All({}) ? Committed({}) : All({})}))}
-          />
-        : React.null}
       {switch position {
       | Some(text) => <span className="scope-position"> {React.string(text)} </span>
       | None => React.null
@@ -103,6 +93,7 @@ let make = (
   ~stepper: option<View.CommitStepper.t>=?,
   ~chrome: array<View.Hint.t>=[],
   ~connection: View.ConnectionView.t=View.ConnectionView.Disconnected({}),
+  ~progress: View.Progress.t=View.ViewModel.empty.progress,
   ~dispatch: Action.t => unit=_ => (),
 ) =>
   switch openReview->Option.flatMap(id => reviews->Array.find(r => r.id == id)) {
@@ -122,6 +113,10 @@ let make = (
         | _ => RefSpecText.print(t.head)
         }
       let many = Array.length(review.targets) > 1
+      let allish = switch scope {
+      | All(_) | Committed(_) => true
+      | Commit(_) | Worktree(_) => false
+      }
       let conn = switch connection {
       | Disconnected(_) => "disconnected"
       | Connecting(_) => "connecting"
@@ -145,6 +140,15 @@ let make = (
           </span>
         )
         ->React.array}
+        {allish
+          ? <Check
+              label="+ working tree"
+              checked={scope == All({})}
+              title={Chrome.tip(chrome, ScopeWorktree)}
+              onToggle={() =>
+                dispatch(SetScope({scope: scope == All({}) ? Committed({}) : All({})}))}
+            />
+          : React.null}
         <span className="review-header-toggles">
           <span className="segmented" role="group" ariaLabel="diff layout">
             <Seg
@@ -160,11 +164,11 @@ let make = (
               onClick={() => dispatch(SetLayout({layout: Split}))}
             />
           </span>
-          <Toggle
+          <Check
             label="hide whitespace"
-            active=prefs.ignoreWhitespace
+            checked=prefs.ignoreWhitespace
             title={Chrome.tip(chrome, ToggleWhitespace)}
-            onClick={() =>
+            onToggle={() =>
               dispatch(
                 SetRenderOpts({
                   ignoreWhitespace: !prefs.ignoreWhitespace,
@@ -172,6 +176,12 @@ let make = (
                 }),
               )}
           />
+          <span className="header-totals">
+            {React.string(Int.toString(progress.total) ++ " files · ")}
+            <span className="stat-add"> {React.string("+" ++ Int.toString(progress.additions))} </span>
+            {React.string(" ")}
+            <span className="stat-del"> {React.string("−" ++ Int.toString(progress.deletions))} </span>
+          </span>
           <span className={"conn-dot conn-" ++ conn} title=conn />
         </span>
       </header>

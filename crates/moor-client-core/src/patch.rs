@@ -256,6 +256,8 @@ mod tests {
                 viewed: 1,
                 changed_since_viewed: 2,
                 total: 3,
+                additions: 4,
+                deletions: 5,
             },
             connection: ConnectionView::Subscribed,
             ..ViewModel::default()

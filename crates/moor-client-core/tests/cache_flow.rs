@@ -1409,7 +1409,10 @@ fn explorer_is_derived_from_head_trees_and_never_sends() {
         moor_client_core::Progress {
             viewed: 0,
             changed_since_viewed: 0,
-            total: 2
+            total: 2,
+            // Header totals: a.rs and b.rs each render +1 −1.
+            additions: 2,
+            deletions: 2,
         }
     );
 

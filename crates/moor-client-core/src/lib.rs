@@ -672,6 +672,42 @@ impl ClientCore {
                 } else {
                     &open.files
                 };
+                // Per-file line stats from the cached render headers, and
+                // thread counts per file, for tree rows and header totals.
+                let mut stats: std::collections::BTreeMap<(RepoId, String), (u32, u32)> =
+                    std::collections::BTreeMap::new();
+                for k in &open.files {
+                    if let Some(CacheValue::Header { header }) = self
+                        .content
+                        .cache
+                        .peek(&CacheKey::Header { render: k.clone() })
+                        && let moor_protocol::RenderContent::Text {
+                            additions,
+                            deletions,
+                            ..
+                        } = header.content
+                    {
+                        stats.insert(
+                            (k.repo_id, k.path.as_str().to_owned()),
+                            (additions, deletions),
+                        );
+                    }
+                }
+                let mut thread_counts: std::collections::BTreeMap<(RepoId, String), u32> =
+                    std::collections::BTreeMap::new();
+                for th in &open.snapshot.threads {
+                    if let Some(root) = open.snapshot.comments.iter().find(|c| c.id == th.root) {
+                        match &root.anchor {
+                            Anchor::File { repo_id, path, .. }
+                            | Anchor::Lines { repo_id, path, .. } => {
+                                *thread_counts
+                                    .entry((*repo_id, path.as_str().to_owned()))
+                                    .or_insert(0) += 1;
+                            }
+                            Anchor::Review => {}
+                        }
+                    }
+                }
                 let inputs = explorer::ExplorerInputs {
                     snapshot: &open.snapshot,
                     repo_names: &repo_names,
@@ -680,13 +716,15 @@ impl ClientCore {
                     open_file: open_file.as_ref(),
                     viewer: &self.config.author,
                     state: &self.explorer,
+                    stats: &stats,
+                    thread_counts: &thread_counts,
                     // Diffing tabs list only the changed files; the full
                     // tree belongs to Browse (UI-DESIGN §Layout).
                     changed_only: self.view.tab != Tab::Browse,
                 };
                 (
                     explorer::build(&inputs),
-                    explorer::progress(&open.snapshot, &self.config.author, &open.files),
+                    explorer::progress(&open.snapshot, &self.config.author, &open.files, &stats),
                 )
             }
             (None, _) | (Some(_), None) => (TreeView::default(), Progress::default()),
