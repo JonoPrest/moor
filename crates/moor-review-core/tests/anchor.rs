@@ -267,12 +267,24 @@ fn apply_edits(
         };
         (std::cmp::Reverse(at), rank)
     });
-    // One edit per index: a second edit at the same index would act on
-    // content the first already shifted, so its protect check (against
-    // original line numbers) would be unsound — e.g. two deletes at 5
-    // eating a protected context line (see the proptest regressions).
-    sorted.dedup_by_key(|e| match e {
-        Edit::Replace { at } | Edit::Insert { at, .. } | Edit::Delete { at, .. } => *at,
+    // Keep only pairwise-disjoint edits (processed bottom-up): an edit
+    // whose original range reaches into an already-applied higher edit's
+    // position would act on shifted content, making the original-line
+    // protect checks unsound — e.g. Delete@6 then Delete@5x2 eating a
+    // protected context line (see the proptest regressions).
+    let mut floor = u32::MAX;
+    sorted.retain(|e| {
+        let (at, reach) = match e {
+            Edit::Insert { at, .. } => (*at, *at),
+            Edit::Replace { at } => (*at, at + 1),
+            Edit::Delete { at, count } => (*at, at + count),
+        };
+        if reach <= floor {
+            floor = at;
+            true
+        } else {
+            false
+        }
     });
     for e in sorted {
         match e {
