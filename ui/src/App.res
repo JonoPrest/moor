@@ -110,13 +110,28 @@ module Shell = {
     }
     <main className="app-shell">
       <div className="app-body">
-        <aside className="app-left" style=sidebarStyle>
-          <div className="app-left-tree"> left </div>
-          {switch model.stepper {
-          | Some(stepper) => <Stepper stepper focus=model.focus dispatch />
-          | None => React.null
-          }}
-        </aside>
+        {model.prefs.sidebarHidden
+          ? <button
+              type_="button"
+              className="sidebar-rail"
+              title=?{Chrome.tip(model.chrome, ToggleSidebar)}
+              onClick={_ => dispatch(ToggleSidebar({}))}>
+              {React.string("⟩")}
+            </button>
+          : <aside className="app-left" style=sidebarStyle>
+              <div className="app-left-tree"> left </div>
+              {switch model.stepper {
+              | Some(stepper) => <Stepper stepper focus=model.focus dispatch />
+              | None => React.null
+              }}
+              <button
+                type_="button"
+                className="sidebar-collapse"
+                title=?{Chrome.tip(model.chrome, ToggleSidebar)}
+                onClick={_ => dispatch(ToggleSidebar({}))}>
+                {React.string("⟨ hide")}
+              </button>
+            </aside>}
         <div className="app-center">
           <ReviewHeader
             reviews=model.reviews

@@ -21,6 +21,7 @@ module ViewPrefs = {
     @as("ignore_whitespace") ignoreWhitespace: bool,
     @as("context_lines") contextLines: int,
     @as("sidebar_width") sidebarWidth: int,
+    @as("sidebar_hidden") sidebarHidden: bool,
   }
 }
 
@@ -320,6 +321,7 @@ module Command = {
     | SidebarShrink
     | SidebarGrow
     | SidebarReset
+    | ToggleSidebar
     | Submit
     | Connect
     | Disconnect
@@ -411,7 +413,13 @@ module ViewModel = {
 
   /// The model before any patch arrives.
   let empty: t = {
-    prefs: {layout: Unified, ignoreWhitespace: false, contextLines: 3, sidebarWidth: 288},
+    prefs: {
+      layout: Unified,
+      ignoreWhitespace: false,
+      contextLines: 3,
+      sidebarWidth: 288,
+      sidebarHidden: false,
+    },
     tree: {roots: [], breadcrumbs: [], search: None},
     progress: {viewed: 0, changedSinceViewed: 0, total: 0, additions: 0, deletions: 0},
     diff: None,

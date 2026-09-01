@@ -159,6 +159,16 @@
   .app-left > .panel {
     @apply max-h-80 shrink-0 overflow-auto border-t border-border;
   }
+  .sidebar-collapse {
+    @apply cursor-pointer border-t border-border bg-panel px-2 py-0.5 text-left text-[11px] text-muted;
+  }
+  .sidebar-collapse:hover,
+  .sidebar-rail:hover {
+    color: var(--color-accent);
+  }
+  .sidebar-rail {
+    @apply cursor-pointer border-r border-border bg-panel px-1 text-xs text-muted;
+  }
   .app-center {
     @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden;
   }

@@ -72,6 +72,7 @@ pub enum Command {
     SidebarShrink,
     SidebarGrow,
     SidebarReset,
+    ToggleSidebar,
     /// Submit the open composer. The editor lives in the host, which
     /// handles the chord itself; the binding exists so hints, help and
     /// tooltips can derive it.
@@ -429,6 +430,7 @@ impl Keymap {
             b(X::Global, keys!("g <"), C::SidebarShrink, false),
             b(X::Global, keys!("g >"), C::SidebarGrow, false),
             b(X::Global, keys!("g ="), C::SidebarReset, false),
+            b(X::Global, keys!("g b"), C::ToggleSidebar, false),
             b(X::Global, keys!("esc"), C::Back, false),
             b(X::Global, keys!("ctrl+shift+c"), C::Connect, false),
             b(X::Global, keys!("ctrl+shift+d"), C::Disconnect, false),
@@ -747,6 +749,7 @@ pub fn label(command: Command) -> &'static str {
         Command::SidebarShrink => "shrink sidebar",
         Command::SidebarGrow => "grow sidebar",
         Command::SidebarReset => "reset sidebar",
+        Command::ToggleSidebar => "toggle sidebar",
         Command::Submit => "submit",
         Command::Connect => "connect",
         Command::Disconnect => "disconnect",

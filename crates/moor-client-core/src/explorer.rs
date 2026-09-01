@@ -257,7 +257,13 @@ pub(crate) fn build(inputs: &ExplorerInputs<'_>) -> TreeView {
                     .map_or_else(|| repo_id.to_string(), |(_, n)| n.clone()),
                 repo_id,
                 path: None,
-                expanded: inputs.changed_only || inputs.state.expanded.contains(&(repo_id, None)),
+                expanded: if inputs.changed_only {
+                    // Diffing mode defaults dirs open; the toggle set then
+                    // records the *collapsed* ones.
+                    !inputs.state.expanded.contains(&(repo_id, None))
+                } else {
+                    inputs.state.expanded.contains(&(repo_id, None))
+                },
                 changed_below,
                 children,
             }
@@ -310,11 +316,13 @@ fn nest(
             out.push(TreeNode::Dir {
                 name: child_dir.to_owned(),
                 repo_id,
-                expanded: inputs.changed_only
-                    || inputs
+                expanded: {
+                    let marked = inputs
                         .state
                         .expanded
-                        .contains(&(repo_id, Some(child_path.clone()))),
+                        .contains(&(repo_id, Some(child_path.clone())));
+                    if inputs.changed_only { !marked } else { marked }
+                },
                 path: Some(child_path),
                 changed_below,
                 children,

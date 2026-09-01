@@ -57,6 +57,7 @@ type t =
   | @as("CommentFile") CommentFile({file: View.FileRef.t})
   | @as("SetTab") SetTab({tab: View.Tab.t})
   | @as("SetSidebar") SetSidebar({width: int})
+  | @as("ToggleSidebar") ToggleSidebar({})
   | @as("SetRenderOpts")
   SetRenderOpts({@as("ignore_whitespace") ignoreWhitespace: bool, @as("context_lines") contextLines: int})
   | @as("MarkViewed") MarkViewed({file: View.FileRef.t})

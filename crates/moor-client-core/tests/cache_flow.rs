@@ -1430,13 +1430,12 @@ fn explorer_is_derived_from_head_trees_and_never_sends() {
         }))
         .unwrap();
     assert!(requests(&effects).is_empty() && loads(&effects).is_empty());
-    // Dirs are always expanded in diffing mode, so the toggle is a no-op
-    // for the derived tree (collapsing is a Browse affair).
-    assert!(rendered(&effects).is_empty());
+    // Diffing mode defaults dirs open; the toggle collapses them.
+    assert_eq!(rendered(&effects), vec![ViewSection::Tree]);
     let moor_client_core::TreeNode::Dir { expanded, .. } = &core.view().tree.roots[0] else {
         panic!("root is a dir");
     };
-    assert!(expanded);
+    assert!(!expanded);
     let effects = core
         .handle(Input::User(Action::FileSearch {
             query: Some("brs".into()),

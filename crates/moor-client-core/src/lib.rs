@@ -225,6 +225,8 @@ pub enum Action {
     SetSidebar {
         width: u32,
     },
+    /// Hide/show the left sidebar (persisted).
+    ToggleSidebar,
     /// Change the render options; re-keys every render, so the open
     /// review's headers are fetched again.
     SetRenderOpts {
@@ -1413,6 +1415,13 @@ impl ClientCore {
                 }
                 self.view.tab = tab;
                 Ok(vec![render(&[ViewSection::Focus])])
+            }
+            Action::ToggleSidebar => {
+                let prefs = ViewPrefs {
+                    sidebar_hidden: !self.view.prefs.sidebar_hidden,
+                    ..self.view.prefs
+                };
+                Ok(self.apply_prefs(prefs, true))
             }
             Action::SetSidebar { width } => {
                 let prefs = ViewPrefs {

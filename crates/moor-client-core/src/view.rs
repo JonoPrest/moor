@@ -173,6 +173,9 @@ pub struct ViewPrefs {
     /// prefs stored before the field existed still load.
     #[serde(default = "default_sidebar")]
     pub sidebar_width: u32,
+    /// Whole sidebar hidden (`g b`).
+    #[serde(default)]
+    pub sidebar_hidden: bool,
 }
 
 /// Sidebar width bounds (px) for the keyboard resize commands.
@@ -206,6 +209,7 @@ impl Default for ViewPrefs {
             ignore_whitespace: opts.ignore_whitespace,
             context_lines: opts.context_lines,
             sidebar_width: SIDEBAR_DEFAULT,
+            sidebar_hidden: false,
         }
     }
 }

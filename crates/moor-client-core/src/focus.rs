@@ -358,6 +358,7 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 | Command::SidebarShrink
                 | Command::SidebarGrow
                 | Command::SidebarReset
+                | Command::ToggleSidebar
                 | Command::Submit
                 | Command::Connect
                 | Command::Disconnect
@@ -678,6 +679,7 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
         Command::SidebarReset => Ok(Action::SetSidebar {
             width: SIDEBAR_DEFAULT,
         }),
+        Command::ToggleSidebar => Ok(Action::ToggleSidebar),
         // The composer lives in the host, which handles the submit chord
         // itself; the binding exists for hints and tooltips only.
         Command::Submit => Err(nothing()),

@@ -261,6 +261,7 @@ struct_fixture!(
         ignore_whitespace: true,
         context_lines: 5,
         sidebar_width: 288,
+        sidebar_hidden: false,
     }
 );
 unit_enum_fixture!(Layout, "Layout");
@@ -675,6 +676,7 @@ enum_fixture!(
             tab: Tab::Conversation,
         },
         Action::SetSidebar { width: 320 },
+        Action::ToggleSidebar,
         Action::MarkViewed { file: file_ref()? },
         Action::UnmarkViewed { file: file_ref()? },
         Action::ListCommits {
