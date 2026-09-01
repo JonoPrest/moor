@@ -106,7 +106,7 @@ pub fn default_file() -> String {
             let _ = writeln!(out, "{} = [{list}]", config_name(command));
         }
     }
-    out.push_str("\n[groups]\n\"<leader>\" = \"Leader\"\n\"g\" = \"Go\"\n");
+    out.push_str("\n[groups]\n\"<leader>\" = \"Leader\"\n\"g\" = \"Goto\"\n");
     out
 }
 

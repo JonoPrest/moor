@@ -641,7 +641,7 @@ impl Keymap {
             leader,
             groups: vec![
                 (KeySeq::single(leader), "Leader".to_owned()),
-                (keys!("g"), "Go".to_owned()),
+                (keys!("g"), "Goto".to_owned()),
             ],
         }
     }

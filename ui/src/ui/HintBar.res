@@ -7,6 +7,7 @@
 let make = (
   ~hints: array<View.Hint.t>,
   ~pendingKeys: string="",
+  ~pendingLabel: option<string>=None,
   ~mode: View.Mode.t=View.Mode.Normal,
   ~leader: string="",
   ~focusName: string="",
@@ -42,6 +43,10 @@ let make = (
     {pending
       ? <span className="pending-keys">
           <UI.Kbd keys=pendingKeys />
+          {switch pendingLabel {
+          | Some(label) => <span className="pending-label"> {React.string(" " ++ label)} </span>
+          | None => React.null
+          }}
         </span>
       : React.null}
     {hints

@@ -235,6 +235,7 @@ module Shell = {
       <HintBar
         hints=model.hints
         pendingKeys=model.pendingKeys
+        pendingLabel=model.pendingLabel
         mode=model.mode
         leader=model.leader
         focusName={switch model.focus {

@@ -676,6 +676,10 @@
   .mode-focus {
     @apply border border-border text-muted;
   }
+  .pending-label {
+    @apply font-semibold;
+    color: var(--color-accent);
+  }
   /* Pending leader (UI-DESIGN: the zellij-style group bar). */
   .hint-bar-pending {
     border-top-color: var(--color-accent);
