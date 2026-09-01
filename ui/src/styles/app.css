@@ -551,7 +551,7 @@
     @apply w-full rounded border border-border bg-bg px-2 py-1 text-sm;
   }
   .palette-overlay {
-    @apply fixed inset-0 flex justify-center pt-24;
+    @apply z-40 fixed inset-0 flex justify-center pt-24;
     background: color-mix(in oklch, var(--color-fg) 30%, transparent);
   }
   .palette {
@@ -587,7 +587,7 @@
     @apply px-2 text-xs text-muted italic;
   }
   .help-overlay {
-    @apply fixed inset-0 flex items-center justify-center;
+    @apply fixed inset-0 z-40 flex items-center justify-center;
     background: color-mix(in oklch, var(--color-fg) 30%, transparent);
   }
   .help-panel {
