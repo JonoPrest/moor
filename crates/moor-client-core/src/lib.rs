@@ -894,6 +894,11 @@ impl ClientCore {
             self.view.chrome = chrome;
             sections.push(ViewSection::Hints);
         }
+        let leader = self.keymap.leader().to_string();
+        if leader != self.view.leader {
+            self.view.leader = leader;
+            sections.push(ViewSection::Hints);
+        }
         let help = self.help_open.then(|| self.keymap.help(focus.context()));
         if help != self.view.help {
             self.view.help = help;

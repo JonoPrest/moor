@@ -263,6 +263,8 @@ pub struct ViewModel {
     /// The pending leader sequence in text form (`"g"`), empty when none.
     /// The hint bar shows it as the mode indicator.
     pub pending_keys: String,
+    /// The leader chord in text form (`"space"`), for the footer chip.
+    pub leader: String,
     /// One hint per bound command, for button tooltips (derived from the
     /// keymap, never hand-written).
     pub chrome: Vec<Hint>,

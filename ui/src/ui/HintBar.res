@@ -8,6 +8,7 @@ let make = (
   ~hints: array<View.Hint.t>,
   ~pendingKeys: string="",
   ~mode: View.Mode.t=View.Mode.Normal,
+  ~leader: string="",
   ~connection: View.ConnectionView.t,
   ~progress: View.Progress.t,
 ) => {
@@ -24,6 +25,11 @@ let make = (
     | Normal => React.null
     }}
     <span className={"conn conn-" ++ conn}> {React.string(conn)} </span>
+    {leader != "" && !pending
+      ? <span className="leader-chip" title={"leader: " ++ leader}>
+          <UI.Kbd keys=leader /> {React.string(" leader")}
+        </span>
+      : React.null}
     <span className="progress">
       {React.string(
         Int.toString(progress.viewed) ++ "/" ++ Int.toString(progress.total) ++ " viewed",

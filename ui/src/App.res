@@ -226,6 +226,7 @@ module Shell = {
         hints=model.hints
         pendingKeys=model.pendingKeys
         mode=model.mode
+        leader=model.leader
         connection=model.connection
         progress=model.progress
       />

@@ -668,6 +668,7 @@ expression: core.view()
     }
   ],
   "pending_keys": "",
+  "leader": "space",
   "chrome": [
     {
       "keys": "?",

@@ -817,6 +817,7 @@ enum_fixture!(
             pending: "g".into(),
             pending_label: Some("Go".into()),
             mode: Mode::Normal,
+            leader: "space".into(),
             chrome: vec![local::<Hint>()?],
         },
         ViewPatch::Help {
@@ -846,6 +847,7 @@ struct_fixture!(
         hints: vec![local::<Hint>()?],
         pending_keys: String::new(),
         pending_label: None,
+        leader: "space".into(),
         chrome: vec![local::<Hint>()?],
         help: None,
         connection: ConnectionView::Subscribed,

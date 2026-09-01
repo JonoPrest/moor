@@ -70,6 +70,7 @@ pub enum ViewPatch {
         pending: String,
         pending_label: Option<String>,
         mode: Mode,
+        leader: String,
         chrome: Vec<Hint>,
     },
     Help {
@@ -153,6 +154,7 @@ impl ViewModel {
                 pending: self.pending_keys.clone(),
                 pending_label: self.pending_label.clone(),
                 mode: self.mode,
+                leader: self.leader.clone(),
                 chrome: self.chrome.clone(),
             },
             ViewSection::Help => ViewPatch::Help {
@@ -226,12 +228,14 @@ impl ViewModel {
                 pending,
                 pending_label,
                 mode,
+                leader,
                 chrome,
             } => {
                 self.hints = hints;
                 self.pending_keys = pending;
                 self.pending_label = pending_label;
                 self.mode = mode;
+                self.leader = leader;
                 self.chrome = chrome;
             }
             ViewPatch::Help { help } => self.help = help,

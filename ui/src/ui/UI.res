@@ -53,8 +53,16 @@ module Button = {
 }
 
 module Kbd = {
+  /// `space` renders as the ␣ glyph everywhere a key is shown.
   @react.component
-  let make = (~keys: string) => <kbd> {React.string(keys)} </kbd>
+  let make = (~keys: string) => {
+    let text =
+      keys
+      ->String.split(" ")
+      ->Array.map(tok => tok == "space" ? "␣" : tok)
+      ->Array.join(" ")
+    <kbd> {React.string(text)} </kbd>
+  }
 }
 
 module Empty = {

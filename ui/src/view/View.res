@@ -403,6 +403,7 @@ module ViewModel = {
     hints: array<Hint.t>,
     @as("pending_keys") pendingKeys: string,
     @as("pending_label") pendingLabel: @s.null option<string>,
+    leader: string,
     chrome: array<Hint.t>,
     help: @s.null option<HelpView.t>,
     connection: ConnectionView.t,
@@ -442,6 +443,7 @@ module ViewModel = {
     hints: [],
     pendingKeys: "",
     pendingLabel: None,
+    leader: "space",
     chrome: [],
     help: None,
     connection: Disconnected({}),
@@ -490,6 +492,7 @@ module ViewPatch = {
         pending: string,
         @as("pending_label") pendingLabel: @s.null option<string>,
         mode: Mode.t,
+        leader: string,
         chrome: array<Hint.t>,
       })
     | @as("Help") Help({help: @s.null option<HelpView.t>})
@@ -520,12 +523,13 @@ module ViewPatch = {
     | CommitStepper({stepper}) => {...model, stepper}
     | Progress({progress}) => {...model, progress}
     | Focus({focus, tab}) => {...model, focus, tab}
-    | Hints({hints, pending, pendingLabel, mode, chrome}) => {
+    | Hints({hints, pending, pendingLabel, mode, leader, chrome}) => {
         ...model,
         hints,
         pendingKeys: pending,
         pendingLabel,
         mode,
+        leader,
         chrome,
       }
     | Help({help}) => {...model, help}
