@@ -679,6 +679,8 @@ enum_fixture!(
         },
         Action::SetSidebar { width: 320 },
         Action::ToggleSidebar,
+        Action::CollapseParent,
+        Action::CollapseAll,
         Action::MarkViewed { file: file_ref()? },
         Action::UnmarkViewed { file: file_ref()? },
         Action::ListCommits {

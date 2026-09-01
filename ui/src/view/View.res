@@ -328,6 +328,8 @@ module Command = {
     | SidebarReset
     | ToggleSidebar
     | Submit
+    | CollapseParent
+    | CollapseAll
     | Connect
     | Disconnect
     | Commits

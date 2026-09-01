@@ -124,6 +124,11 @@ pub enum Command {
     ContentSearch,
     /// Open the actions palette (`:`): every command by name.
     ActionPalette,
+    /// Collapse the focused tree node's parent dir (neo-tree `C`); on an
+    /// open dir, the dir itself. Focus follows.
+    CollapseParent,
+    /// Collapse every dir of the tree.
+    CollapseAll,
     /// Re-list workspaces and reviews.
     Refresh,
 }
@@ -564,6 +569,8 @@ impl Keymap {
             b(X::Tree, keys!("n"), C::NextHunk, false),
             b(X::Tree, keys!("p"), C::PrevHunk, false),
             b(X::Tree, keys!("c"), C::Commits, false),
+            b(X::Tree, keys!("C"), C::CollapseParent, false),
+            b(X::Tree, keys!("z"), C::CollapseAll, false),
             // Diff
             b(X::Diff, keys!("j"), C::MoveDown, true),
             b(X::Diff, keys!("k"), C::MoveUp, true),
@@ -981,6 +988,8 @@ pub fn label(command: Command) -> &'static str {
         Command::ExpandContext => "expand context",
         Command::ContentSearch => "find in files",
         Command::ActionPalette => "actions",
+        Command::CollapseParent => "collapse parent",
+        Command::CollapseAll => "collapse all",
     }
 }
 
@@ -1033,6 +1042,8 @@ pub fn modes_of(command: Command) -> &'static [Mode] {
         | Command::ExpandContext
         | Command::ContentSearch
         | Command::ActionPalette
+        | Command::CollapseParent
+        | Command::CollapseAll
         | Command::Refresh => &[M::Normal],
     }
 }

@@ -227,6 +227,11 @@ pub enum Action {
     },
     /// Hide/show the left sidebar (persisted).
     ToggleSidebar,
+    /// Collapse the focused tree node's parent dir (neo-tree style);
+    /// focus moves to it.
+    CollapseParent,
+    /// Collapse every dir of the tree.
+    CollapseAll,
     /// Change the render options; re-keys every render, so the open
     /// review's headers are fetched again.
     SetRenderOpts {
@@ -1430,6 +1435,94 @@ impl ClientCore {
                 }
                 self.view.tab = tab;
                 Ok(vec![render(&[ViewSection::Focus])])
+            }
+            Action::CollapseParent => {
+                if self.view.review.is_none() {
+                    return Err(CoreError::NoOpenReview);
+                }
+                let Focus::Tree { index } = self.view.focus else {
+                    return Ok(Vec::new());
+                };
+                // The dir to collapse: the focused open dir itself, else
+                // the node's parent (repo root when at the top level).
+                let target: Option<(RepoId, Option<RepoPath>)> = {
+                    let visible = focus::visible_nodes(&self.view);
+                    visible.get(index).map(|node| match node {
+                        explorer::TreeNode::Dir {
+                            repo_id,
+                            path,
+                            expanded: true,
+                            ..
+                        } => (*repo_id, path.clone()),
+                        explorer::TreeNode::Dir { repo_id, path, .. } => {
+                            let parent = path
+                                .as_ref()
+                                .and_then(|p| p.as_str().rsplit_once('/'))
+                                .and_then(|(dir, _)| RepoPath::new(dir).ok());
+                            (*repo_id, parent)
+                        }
+                        explorer::TreeNode::File { repo_id, path, .. } => {
+                            let parent = path
+                                .as_str()
+                                .rsplit_once('/')
+                                .and_then(|(dir, _)| RepoPath::new(dir).ok());
+                            (*repo_id, parent)
+                        }
+                    })
+                };
+                let Some((repo_id, path)) = target else {
+                    return Ok(Vec::new());
+                };
+                // Focus follows the collapsed dir: its visible index is
+                // unchanged (only its descendants, all after it, vanish).
+                let new_index = focus::visible_nodes(&self.view).iter().position(|n| {
+                    matches!(n, explorer::TreeNode::Dir { repo_id: r, path: p, .. }
+                        if *r == repo_id && *p == path)
+                });
+                let key = (repo_id, path);
+                if self.view.tab == Tab::Browse {
+                    self.explorer.expanded.remove(&key);
+                } else {
+                    self.explorer.collapsed.insert(key);
+                }
+                if let Some(i) = new_index {
+                    self.view.focus = Focus::Tree { index: i };
+                }
+                // Tree and focus are derived after this returns.
+                Ok(Vec::new())
+            }
+            Action::CollapseAll => {
+                if self.view.review.is_none() {
+                    return Err(CoreError::NoOpenReview);
+                }
+                if self.view.tab == Tab::Browse {
+                    self.explorer.expanded.clear();
+                } else {
+                    fn dirs(
+                        nodes: &[explorer::TreeNode],
+                        out: &mut Vec<(RepoId, Option<RepoPath>)>,
+                    ) {
+                        for n in nodes {
+                            if let explorer::TreeNode::Dir {
+                                repo_id,
+                                path,
+                                children,
+                                ..
+                            } = n
+                            {
+                                out.push((*repo_id, path.clone()));
+                                dirs(children, out);
+                            }
+                        }
+                    }
+                    let mut keys = Vec::new();
+                    dirs(&self.view.tree.roots, &mut keys);
+                    self.explorer.collapsed.extend(keys);
+                }
+                if matches!(self.view.focus, Focus::Tree { .. }) {
+                    self.view.focus = Focus::Tree { index: 0 };
+                }
+                Ok(Vec::new())
             }
             Action::ToggleSidebar => {
                 let prefs = ViewPrefs {

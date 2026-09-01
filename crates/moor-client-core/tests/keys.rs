@@ -742,13 +742,13 @@ fn sequences_resolve_and_expire() {
     assert_eq!(core.pending_chords().len(), 1);
     // A key outside the group (esc included) cancels the sequence
     // silently and re-renders the hints.
-    let effects = core.handle(Input::Key(KeyChord::char('z'))).unwrap();
+    let effects = core.handle(Input::Key(KeyChord::char('q'))).unwrap();
     assert!(core.pending_chords().is_empty());
     assert_eq!(rendered(&effects), vec![ViewSection::Hints]);
     // A single unbound key is still a typed error.
     assert_eq!(
-        core.handle(Input::Key(KeyChord::char('z'))),
-        Err(CoreError::UnboundKey("z".into()))
+        core.handle(Input::Key(KeyChord::char('q'))),
+        Err(CoreError::UnboundKey("q".into()))
     );
     // At an edge, movement is a typed no-op.
     assert_eq!(

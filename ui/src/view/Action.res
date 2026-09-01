@@ -58,6 +58,8 @@ type t =
   | @as("SetTab") SetTab({tab: View.Tab.t})
   | @as("SetSidebar") SetSidebar({width: int})
   | @as("ToggleSidebar") ToggleSidebar({})
+  | @as("CollapseParent") CollapseParent({})
+  | @as("CollapseAll") CollapseAll({})
   | @as("SetRenderOpts")
   SetRenderOpts({@as("ignore_whitespace") ignoreWhitespace: bool, @as("context_lines") contextLines: int})
   | @as("MarkViewed") MarkViewed({file: View.FileRef.t})

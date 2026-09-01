@@ -830,6 +830,16 @@ expression: core.view()
       "label": "commits"
     },
     {
+      "keys": "C",
+      "command": "CollapseParent",
+      "label": "collapse parent"
+    },
+    {
+      "keys": "z",
+      "command": "CollapseAll",
+      "label": "collapse all"
+    },
+    {
       "keys": "ctrl+d",
       "command": "PageDown",
       "label": "page down"

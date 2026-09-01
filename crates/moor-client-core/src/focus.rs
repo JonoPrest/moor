@@ -359,6 +359,8 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 | Command::SidebarGrow
                 | Command::SidebarReset
                 | Command::ToggleSidebar
+                | Command::CollapseParent
+                | Command::CollapseAll
                 | Command::Submit
                 | Command::Connect
                 | Command::Disconnect
@@ -681,6 +683,16 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
             width: SIDEBAR_DEFAULT,
         }),
         Command::ToggleSidebar => Ok(Action::ToggleSidebar),
+        Command::CollapseParent => match focus {
+            Focus::Tree { .. } => Ok(Action::CollapseParent),
+            Focus::ReviewList { .. }
+            | Focus::Diff { .. }
+            | Focus::Thread { .. }
+            | Focus::Composer
+            | Focus::CommitStepper { .. }
+            | Focus::Help => Err(nothing()),
+        },
+        Command::CollapseAll => Ok(Action::CollapseAll),
         // The composer lives in the host, which handles the submit chord
         // itself; the binding exists for hints and tooltips only.
         Command::Submit => Err(nothing()),
