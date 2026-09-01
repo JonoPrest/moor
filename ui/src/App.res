@@ -94,7 +94,12 @@ module Shell = {
     }, [model.focus])
     let dispatch = core.dispatch
     let left = if Array.length(model.tree.roots) > 0 {
-      <Tree tree=model.tree focus=model.focus dispatch />
+      let home =
+        model.openReview
+        ->Option.flatMap(id => model.reviews->Array.find(r => r.id == id))
+        ->Option.flatMap(r => model.workspaces->Array.find(w => w.id == r.workspaceId))
+        ->Option.map(w => w.name)
+      <Tree tree=model.tree focus=model.focus ?home dispatch />
     } else {
       <ReviewList
         reviews=model.reviews workspaces=model.workspaces connection=model.connection focus=model.focus dispatch

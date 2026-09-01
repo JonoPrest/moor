@@ -16,18 +16,28 @@ let rec flatten = (nodes: array<TreeNode.t>, depth: int, out: array<(TreeNode.t,
   })
 
 @react.component
-let make = (~tree: TreeView.t, ~focus: Focus.t, ~dispatch: Action.t => unit) => {
+let make = (~tree: TreeView.t, ~focus: Focus.t, ~home: option<string>=?, ~dispatch: Action.t => unit) => {
   let rows = []
   flatten(tree.roots, 0, rows)
   let focusedIndex = switch focus {
   | Tree({index}) => Some(index)
   | _ => None
   }
+  // A stable header: the workspace name as a home button (back to the
+  // review list), never the open file's breadcrumbs.
   <nav className="tree panel" ariaLabel="files">
     <header className="panel-header tree-header">
-      {React.string(
-        Array.length(tree.breadcrumbs) == 0 ? "Files" : tree.breadcrumbs->Array.join(" / "),
-      )}
+      {switch home {
+      | Some(name) =>
+        <button
+          type_="button"
+          className="tree-home"
+          title="back to reviews (esc esc)"
+          onClick={_ => dispatch(CloseReview({}))}>
+          {React.string("⌂ " ++ name)}
+        </button>
+      | None => React.string("Files")
+      }}
     </header>
     <ul className="tree-list" role="tree">
       {rows

@@ -416,6 +416,13 @@
   .tree-header {
     @apply text-[11px] font-semibold tracking-wide text-muted uppercase;
   }
+  .tree-home {
+    @apply cursor-pointer text-[11px] font-semibold tracking-wide uppercase;
+    color: var(--color-fg);
+  }
+  .tree-home:hover {
+    color: var(--color-accent);
+  }
   .tree-list li {
     @apply flex items-center gap-1.5;
   }
