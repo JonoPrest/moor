@@ -14,6 +14,7 @@ let lineOf = (row: Render.Row.t): option<(Domain.Side.t, int)> =>
   }
 
 @val @scope(("navigator", "clipboard")) external writeText: string => unit = "writeText"
+@send external scrollIntoView: (Dom.element, {"block": string}) => unit = "scrollIntoView"
 
 type drag = {side: Domain.Side.t, start: int, current: int}
 
@@ -64,13 +65,26 @@ let make = (
     </span>
   | Binary(_) => React.null
   }
+  // Clicking a file in the tree opens it; scroll its section into view.
+  let sectionRef = React.useRef(Nullable.null)
+  let wasOpen = React.useRef(false)
+  React.useEffect1(() => {
+    if isOpen && !wasOpen.current {
+      switch sectionRef.current->Nullable.toOption {
+      | Some(el) => el->scrollIntoView({"block": "start"})
+      | None => ()
+      }
+    }
+    wasOpen.current = isOpen
+    None
+  }, [isOpen])
   let inDrag = (row: Render.Row.t) =>
     switch (drag, lineOf(row)) {
     | (Some({side, start, current}), Some((s, line))) if s == side =>
       line >= Math.Int.min(start, current) && line <= Math.Int.max(start, current)
     | _ => false
     }
-  <section className="file-diff" ariaLabel=diff.file.path>
+  <section className="file-diff" ariaLabel=diff.file.path ref={ReactDOM.Ref.domRef(sectionRef)}>
     <header className="file-diff-header">
       <button
         type_="button"
