@@ -219,6 +219,11 @@
   .new-review-target {
     @apply my-1 flex gap-1;
   }
+  .original-banner {
+    @apply border-b px-3 py-1 text-xs;
+    border-color: var(--color-accent);
+    background: color-mix(in oklch, var(--color-accent) 12%, var(--color-panel));
+  }
   .diff-collapsed {
     @apply px-3 py-2 text-sm text-muted;
   }

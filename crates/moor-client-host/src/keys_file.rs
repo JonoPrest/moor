@@ -83,10 +83,11 @@ pub fn parse(text: &str) -> Result<Overrides, KeysFileError> {
             context: context_name.clone(),
         })?;
         for (command_name, spec) in entries {
-            let command = command_of(command_name).ok_or_else(|| KeysFileError::UnknownCommand {
-                context: context_name.clone(),
-                command: command_name.clone(),
-            })?;
+            let command =
+                command_of(command_name).ok_or_else(|| KeysFileError::UnknownCommand {
+                    context: context_name.clone(),
+                    command: command_name.clone(),
+                })?;
             let (keys_text, primary) = match spec {
                 toml::Value::String(s) => (s.clone(), false),
                 toml::Value::Table(t) => {
@@ -183,14 +184,19 @@ mod tests {
         let err = parse("[nowhere]\nOpen = \"o\"\n").unwrap_err();
         assert!(matches!(err, KeysFileError::UnknownContext(c) if c == "nowhere"));
         let err = parse("[diff]\nFrobnicate = \"o\"\n").unwrap_err();
-        assert!(matches!(err, KeysFileError::UnknownCommand { command, .. } if command == "Frobnicate"));
+        assert!(
+            matches!(err, KeysFileError::UnknownCommand { command, .. } if command == "Frobnicate")
+        );
         let err = parse("[diff]\nOpen = \"ctrl+bogus+x\"\n").unwrap_err();
         assert!(matches!(err, KeysFileError::BadKeys { .. }));
         let err = parse("[diff]\nOpen = 3\n").unwrap_err();
         assert!(matches!(err, KeysFileError::BadValue { .. }));
         let err = parse("[diff]\nOpen = { keys = \"o\", typo = true }\n").unwrap_err();
         assert!(matches!(err, KeysFileError::BadValue { .. }));
-        assert!(parse("[[diff]]\n").is_err(), "arrays of tables are not contexts");
+        assert!(
+            parse("[[diff]]\n").is_err(),
+            "arrays of tables are not contexts"
+        );
     }
 
     #[test]

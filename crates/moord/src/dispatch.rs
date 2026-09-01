@@ -110,6 +110,7 @@ pub async fn single(
         | Request::Shutdown
         | Request::OpenReview { .. }
         | Request::FileRender { .. }
+        | Request::ChangeRender { .. }
         | Request::BlobRender { .. } => Err(DaemonError::Core(CoreError::Invalid {
             reason: "request routed to the wrong handler".into(),
         })),

@@ -232,6 +232,11 @@ pub enum Action {
     SetScope {
         scope: ScopeChoice,
     },
+    /// Open the diff a comment was made on, read-only (UI-DESIGN
+    /// §Comments: jump-to-context). `Esc`/`Back` closes it.
+    OpenOriginalDiff {
+        thread_id: ThreadId,
+    },
 }
 
 /// What the user asked the scope to become. `ByCommit` enters commit
@@ -308,6 +313,8 @@ pub enum CoreError {
     NoStepper,
     #[error("no thread {0}")]
     UnknownThread(ThreadId),
+    #[error("thread {0} has no recorded original diff")]
+    NoOriginalDiff(ThreadId),
     #[error("{0:?} indexes past the end of its list")]
     FocusOutOfRange(Focus),
     #[error("{0} is not bound in this context")]
@@ -640,6 +647,16 @@ impl ClientCore {
             }
             None => (None, Vec::new()),
         };
+        let diff = match (&self.view.review, diff) {
+            (Some(open), Some(mut d))
+                if open.original.is_some()
+                    && open.open_file.as_ref().map(|f| &f.render) == open.original.as_ref() =>
+            {
+                d.original = true;
+                Some(d)
+            }
+            (_, d) => d,
+        };
         if diff != self.view.diff {
             self.view.diff = diff;
             sections.push(ViewSection::Diff);
@@ -809,6 +826,7 @@ impl ClientCore {
                 let scope = open.scope;
                 open.files.clear();
                 open.open_file = None;
+                open.original = None;
                 if let Connection::Subscribed { .. } = self.connection {
                     effects.push(self.request(
                         Request::ListFiles { review_id, scope },
@@ -835,6 +853,7 @@ impl ClientCore {
         open.scoped_targets.clear();
         open.files.clear();
         open.open_file = None;
+        open.original = None;
         // The stepper cursor mirrors the scope.
         if let Some(stepper) = &mut self.stepper {
             stepper.selected = match scope {
@@ -877,6 +896,53 @@ impl ClientCore {
             repo_id,
             oid: c.oid,
         })
+    }
+
+    /// Open the render a thread's root comment recorded as its context,
+    /// read-only. The render is not part of the review's file list; the
+    /// content plumbing treats `open.original` as an honorary member.
+    fn open_original(&mut self, thread_id: ThreadId) -> Result<Vec<Effect>, CoreError> {
+        self.require_subscribed()?;
+        let Some(open) = &self.view.review else {
+            return Err(CoreError::NoOpenReview);
+        };
+        let review_id = open.snapshot.review.id;
+        let root = open
+            .snapshot
+            .threads
+            .iter()
+            .find(|t| t.id == thread_id)
+            .and_then(|t| open.snapshot.comments.iter().find(|c| c.id == t.root))
+            .ok_or(CoreError::UnknownThread(thread_id))?;
+        let change = root
+            .context
+            .clone()
+            .ok_or(CoreError::NoOriginalDiff(thread_id))?;
+        let (repo_id, path) = match &root.anchor {
+            Anchor::File { repo_id, path, .. } | Anchor::Lines { repo_id, path, .. } => {
+                (*repo_id, path.clone())
+            }
+            Anchor::Review => return Err(CoreError::NoOriginalDiff(thread_id)),
+        };
+        let key = RenderKey {
+            repo_id,
+            path,
+            target: RenderTarget::Diff { change },
+            opts: self.content.config.render_opts,
+        };
+        if let Some(open) = &mut self.view.review {
+            open.original = Some(key.clone());
+            open.open_file = Some(crate::view::OpenFile {
+                render: key.clone(),
+                first_row: 0,
+                last_row: PAGE_ROWS - 1,
+            });
+        }
+        self.view.focus = Focus::Diff { row: 0 };
+        let mut effects = Vec::new();
+        self.want_original(review_id, &key, &mut effects);
+        effects.push(render(&[ViewSection::Focus, ViewSection::Diff]));
+        Ok(effects)
     }
 
     fn wrong_state(&self, input: InputKind) -> CoreError {
@@ -1110,6 +1176,7 @@ impl ClientCore {
                 };
                 Ok(self.apply_scope(wire))
             }
+            Action::OpenOriginalDiff { thread_id } => self.open_original(thread_id),
             Action::DraftOpened { anchor } => {
                 if self.view.review.is_none() {
                     return Err(CoreError::NoOpenReview);

@@ -75,6 +75,7 @@ module OpenReview = {
     @as("open_file") openFile: @s.null option<OpenFile.t>,
     scope: Domain.DiffScope.t,
     @as("scoped_targets") scopedTargets: array<Domain.ResolvedTarget.t>,
+    original: @s.null option<RenderKey.t>,
   }
 }
 
@@ -176,6 +177,7 @@ module DiffView = {
     rows: array<DiffRow.t>,
     missing: array<Render.chunkIndex>,
     @as("file_threads") fileThreads: array<threadId>,
+    original: bool,
   }
 }
 
@@ -215,6 +217,7 @@ module ThreadView = {
     pending: bool,
     suggestion: bool,
     comments: array<CommentView.t>,
+    context: @s.null option<Domain.ChangeKind.t>,
   }
 }
 

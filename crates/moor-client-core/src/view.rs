@@ -94,6 +94,11 @@ pub struct OpenReview {
     /// Which diff of the review is on screen (UI-DESIGN §Diff scope).
     #[serde(default)]
     pub scope: DiffScope,
+    /// A comment's recorded original diff is open read-only (UI-DESIGN
+    /// §Comments: jump-to-context); `open_file.render` equals this while
+    /// the mode is on.
+    #[serde(default)]
+    pub original: Option<RenderKey>,
     /// What `scope` resolved to, from the last `Files` answer; empty until
     /// answered (and always empty for `All`, whose targets are the
     /// snapshot's).
@@ -112,6 +117,7 @@ impl OpenReview {
             open_file: None,
             scope: DiffScope::All,
             scoped_targets: Vec::new(),
+            original: None,
         }
     }
 

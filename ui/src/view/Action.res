@@ -56,4 +56,5 @@ type t =
   | @as("ListCommits") ListCommits({@as("repo_id") repoId: repoId})
   | @as("StepCommit") StepCommit({selected: @s.null option<int>})
   | @as("SetScope") SetScope({scope: ScopeChoice.t})
+  | @as("OpenOriginalDiff") OpenOriginalDiff({@as("thread_id") threadId: threadId})
 @@warning("+27")

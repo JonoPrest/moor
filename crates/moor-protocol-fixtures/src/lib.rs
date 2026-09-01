@@ -1312,6 +1312,13 @@ enum_fixture!(
             first_chunk: ChunkIndex::new(2),
             scope: DiffScope::Committed
         },
+        Request::ChangeRender {
+            repo_id: repo_id(),
+            path: path("src/lib.rs")?,
+            change: modified(),
+            opts: RenderOpts::default(),
+            first_chunk: ChunkIndex::FIRST
+        },
         Request::BlobRender {
             repo_id: repo_id(),
             path: path("src/lib.rs")?,

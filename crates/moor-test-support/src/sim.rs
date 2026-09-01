@@ -378,6 +378,7 @@ impl Sim {
                     | Request::ListCommits { .. }
                     | Request::TreeSnapshot { .. }
                     | Request::FileRender { .. }
+                    | Request::ChangeRender { .. }
                     | Request::BlobRender { .. }
                     | Request::RenderChunk { .. }
                     | Request::Subscribe { .. }
@@ -461,6 +462,7 @@ impl Sim {
             | Request::ListCommits { .. }
             | Request::TreeSnapshot { .. }
             | Request::FileRender { .. }
+            | Request::ChangeRender { .. }
             | Request::BlobRender { .. }
             | Request::RenderChunk { .. }
             | Request::Unsubscribe { .. }

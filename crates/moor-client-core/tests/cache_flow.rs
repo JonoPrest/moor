@@ -465,6 +465,7 @@ fn daemon_answers(core: &mut ClientCore, effects: &[Effect]) -> Vec<Effect> {
             }),
             Request::TreeSnapshot { .. }
             | Request::FileRender { .. }
+            | Request::ChangeRender { .. }
             | Request::ListWorkspaces
             | Request::ListReviews { .. }
             | Request::GetReview { .. }
@@ -611,6 +612,7 @@ fn viewport_requests_only_the_window_and_bounds_in_flight() {
             Request::RenderChunk { index, .. } => Some(index.get()),
             Request::TreeSnapshot { .. }
             | Request::FileRender { .. }
+            | Request::ChangeRender { .. }
             | Request::ListWorkspaces
             | Request::ListReviews { .. }
             | Request::GetReview { .. }
@@ -1083,6 +1085,7 @@ fn restart_serves_the_previous_review_from_disk_without_content_requests() {
                 }
                 Request::ListFiles { .. } => files_id = Some(id),
                 Request::FileRender { .. }
+                | Request::ChangeRender { .. }
                 | Request::RenderChunk { .. }
                 | Request::ListWorkspaces
                 | Request::ListReviews { .. }
@@ -1194,6 +1197,7 @@ fn restart_serves_the_previous_review_from_disk_without_content_requests() {
             Request::RenderChunk { index, .. } => index.get(),
             Request::TreeSnapshot { .. }
             | Request::FileRender { .. }
+            | Request::ChangeRender { .. }
             | Request::ListWorkspaces
             | Request::ListReviews { .. }
             | Request::GetReview { .. }
@@ -1687,6 +1691,7 @@ fn comments_are_placed_on_rows_by_anchor_and_listed_as_threads() {
             }),
             Request::TreeSnapshot { .. }
             | Request::FileRender { .. }
+            | Request::ChangeRender { .. }
             | Request::ListWorkspaces
             | Request::ListReviews { .. }
             | Request::GetReview { .. }
@@ -2032,4 +2037,99 @@ fn scope_switching_refetches_files_and_steps_commits() {
         resolved(1, 2).into_iter().collect::<Vec<_>>()
     );
     assert_eq!(core.view().stepper.as_ref().unwrap().selected, None);
+}
+
+#[test]
+fn jump_to_original_diff_renders_the_recorded_change_read_only() {
+    use moor_client_core::resolve_command;
+    let mut core = subscribed(local());
+    open_streamed(&mut core);
+    // A comment made on an older diff of a.rs: its context names blobs that
+    // are not the review's current change.
+    let old_change = ChangeKind::Modified {
+        old: blob_oid(3),
+        new: blob_oid(4),
+    };
+    let mut comment = comment_at(
+        1,
+        lines_anchor("a.rs", moor_protocol::Side::Head, 4, 2, 2),
+        moor_protocol::CommentState::Live,
+    );
+    comment.context = Some(old_change.clone());
+    let thread_id = comment.thread_id;
+    core.handle(Input::Server(foreign_event(
+        2,
+        EventBody::CommentCreated { comment },
+    )))
+    .unwrap();
+    assert_eq!(
+        core.view().threads[0].context,
+        Some(old_change.clone()),
+        "the thread view carries the recorded context"
+    );
+    // Jump: the daemon is asked to render the recorded change directly.
+    let effects = core
+        .handle(Input::User(Action::OpenOriginalDiff { thread_id }))
+        .unwrap();
+    let (id, request) = requests(&effects)
+        .into_iter()
+        .find(|(_, r)| matches!(r, Request::ChangeRender { .. }))
+        .expect("a ChangeRender request");
+    assert_eq!(
+        request,
+        Request::ChangeRender {
+            repo_id: repo_id(),
+            path: path("a.rs"),
+            change: old_change.clone(),
+            opts: RenderOpts::default(),
+            first_chunk: ChunkIndex::FIRST,
+        }
+    );
+    assert!(matches!(
+        core.view().focus,
+        moor_client_core::Focus::Diff { row: 0 }
+    ));
+    // The stream answers with the original render's header and rows.
+    let original_header = FileRenderHeader {
+        target: RenderTarget::Diff {
+            change: old_change.clone(),
+        },
+        ..header("a.rs", 100, 1)
+    };
+    item(
+        &mut core,
+        id,
+        StreamItem::Header {
+            header: original_header,
+        },
+    );
+    item(
+        &mut core,
+        id,
+        StreamItem::Chunk {
+            repo_id: repo_id(),
+            path: path("a.rs"),
+            chunk: chunk(0),
+        },
+    );
+    let diff = core.view().diff.as_ref().expect("the original diff shows");
+    assert!(diff.original, "marked as the jump-to-context view");
+    assert_eq!(diff.file.path, path("a.rs"));
+    assert!(!diff.rows.is_empty());
+    // The original render never joins the review's file list or progress.
+    assert_eq!(core.view().progress.total, 2);
+    // Back closes the original view and clears the mode.
+    let action = resolve_command(&core, moor_client_core::Command::Back).unwrap();
+    assert_eq!(action, Action::CloseFile);
+    core.handle(Input::User(action)).unwrap();
+    assert!(core.view().diff.is_none());
+    // Reopening the file normally shows the current diff again.
+    core.handle(Input::User(Action::Viewport {
+        file: file_ref("a.rs"),
+        first_row: 0,
+        last_row: 59,
+    }))
+    .unwrap();
+    let diff = core.view().diff.as_ref().unwrap();
+    assert!(!diff.original);
 }

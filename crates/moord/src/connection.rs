@@ -300,6 +300,23 @@ impl Connection {
                 self.finish_stream(id, r);
                 return;
             }
+            Request::ChangeRender {
+                repo_id,
+                path,
+                change,
+                opts,
+                first_chunk,
+            } => {
+                let r = self
+                    .daemon
+                    .read(move |core| core.render_change(repo_id, &path, change, opts))
+                    .await
+                    .map(|(header, rendered)| {
+                        stream_render(&self.outbox, id, header, &rendered, first_chunk);
+                    });
+                self.finish_stream(id, r);
+                return;
+            }
             Request::BlobRender {
                 repo_id,
                 path,

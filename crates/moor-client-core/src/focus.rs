@@ -157,6 +157,11 @@ pub fn clamp(view: &ViewModel, focus: Focus) -> Focus {
                     }
                 }
             }
+            // A file is open but its header has not landed: the diff pane
+            // is still the place to be (jump-to-context opens this way).
+            None if view.review.as_ref().is_some_and(|r| r.open_file.is_some()) => {
+                Focus::Diff { row }
+            }
             None => fallback,
         },
         Focus::ReviewList { .. }
@@ -449,6 +454,12 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
             }
             Focus::Thread { index } => {
                 let t = view.threads.get(index).ok_or_else(nothing)?;
+                // An outdated thread's location is gone from the current
+                // diff: open the diff it was made on instead (UI-DESIGN
+                // §Comments).
+                if t.outdated && t.context.is_some() {
+                    return Ok(Action::OpenOriginalDiff { thread_id: t.id });
+                }
                 let (file, row) = match &t.place {
                     ThreadPlace::Lines { file, end, .. } => (file, end - 1),
                     ThreadPlace::File { file } => (file, 0),

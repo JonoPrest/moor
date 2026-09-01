@@ -154,6 +154,14 @@ module Request = {
         @as("first_chunk") firstChunk: Render.chunkIndex,
         scope: DiffScope.t,
       })
+    | @as("ChangeRender")
+    ChangeRender({
+        @as("repo_id") repoId: repoId,
+        path: string,
+        change: Domain.ChangeKind.t,
+        opts: RenderOpts.t,
+        @as("first_chunk") firstChunk: Render.chunkIndex,
+      })
     | @as("BlobRender")
     BlobRender({
         @as("repo_id") repoId: repoId,

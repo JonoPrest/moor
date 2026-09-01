@@ -315,6 +315,7 @@ struct_fixture!(
         open_file: Some(local::<OpenFile>()?),
         scope: DiffScope::All,
         scoped_targets: Vec::new(),
+        original: None,
     }
 );
 unit_enum_fixture!(ViewedState, "ViewedState");
@@ -417,6 +418,7 @@ struct_fixture!(
         rows: vec![local::<DiffRow>()?],
         missing: vec![ChunkIndex::new(1)],
         file_threads: vec![thread_id()?],
+        original: false,
     }
 );
 enum_fixture!(
@@ -450,6 +452,7 @@ struct_fixture!(
         pending: true,
         suggestion: true,
         comments: vec![local::<CommentView>()?],
+        context: proto::<Comment>()?.context,
     }
 );
 struct_fixture!(CommentView, "CommentView", {
@@ -653,6 +656,9 @@ enum_fixture!(
         Action::StepCommit { selected: Some(0) },
         Action::SetScope {
             scope: ScopeChoice::ByCommit
+        },
+        Action::OpenOriginalDiff {
+            thread_id: thread_id()?
         },
     ]
 );

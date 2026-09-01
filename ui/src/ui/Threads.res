@@ -24,6 +24,7 @@ module Item = {
     ~focused: bool,
     ~onSelect: unit => unit,
     ~onApply: unit => unit,
+    ~onOriginal: unit => unit,
   ) => {
     let flags = [
       thread.resolved ? "resolved" : "",
@@ -61,6 +62,11 @@ module Item = {
         {thread.suggestion
           ? <UI.Button label="Apply suggestion (a)" kind=Primary onClick=onApply />
           : React.null}
+        {switch (thread.outdated, thread.context) {
+        | (true, Some(_)) =>
+          <UI.Button label="Open original diff (enter)" kind=Ghost onClick=onOriginal />
+        | (true, None) | (false, _) => React.null
+        }}
       </li>,
       focused,
     )
@@ -91,8 +97,9 @@ let make = (
               focused={focusedIndex == Some(indexOffset + i)}
               onSelect={() => {
                 dispatch(SetFocus({focus: Focus.Thread({index: indexOffset + i})}))
-                switch t.place {
-                | Lines({file, start}) =>
+                switch (t.outdated, t.context, t.place) {
+                | (true, Some(_), _) => dispatch(OpenOriginalDiff({threadId: t.id}))
+                | (_, _, Lines({file, start})) =>
                   dispatch(
                     Viewport({
                       file,
@@ -100,11 +107,12 @@ let make = (
                       lastRow: start + 30,
                     }),
                   )
-                | File({file}) => dispatch(Viewport({file, firstRow: 0, lastRow: 59}))
-                | Review(_) => ()
+                | (_, _, File({file})) => dispatch(Viewport({file, firstRow: 0, lastRow: 59}))
+                | (_, _, Review(_)) => ()
                 }
               }}
               onApply={() => dispatch(ApplySuggestion({commentId: t.root}))}
+              onOriginal={() => dispatch(OpenOriginalDiff({threadId: t.id}))}
             />
           )
           ->React.array}

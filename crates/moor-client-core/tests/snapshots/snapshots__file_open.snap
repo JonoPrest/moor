@@ -219,7 +219,8 @@ expression: core.view()
     "missing": [
       1
     ],
-    "file_threads": []
+    "file_threads": [],
+    "original": false
   },
   "threads": [
     {
@@ -259,7 +260,8 @@ expression: core.view()
           "body": "Is `new` the right name?",
           "pending": false
         }
-      ]
+      ],
+      "context": null
     },
     {
       "id": "00000001YJ0000000000000002",
@@ -291,7 +293,8 @@ expression: core.view()
           "body": "Looks good overall.",
           "pending": false
         }
-      ]
+      ],
+      "context": null
     }
   ],
   "conversation": [
@@ -325,7 +328,8 @@ expression: core.view()
           "body": "Looks good overall.",
           "pending": false
         }
-      ]
+      ],
+      "context": null
     }
   ],
   "stepper": null,
@@ -812,6 +816,7 @@ expression: core.view()
     "scope": {
       "type": "All"
     },
+    "original": null,
     "scoped_targets": []
   },
   "draft": null,

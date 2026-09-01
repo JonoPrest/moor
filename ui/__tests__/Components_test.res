@@ -203,6 +203,48 @@ describe("Threads", () => {
   })
 })
 
+describe("Jump to original diff", () => {
+  test("an outdated thread with context offers the original diff", () => {
+    let dispatch = fn()
+    let thread = Fixtures.parse(View.ThreadView.schema, "client", "ThreadView", "default")
+    let outdated = {
+      ...thread,
+      outdated: true,
+      suggestion: false,
+      context: Some(Fixtures.parse(Domain.ChangeKind.schema, "protocol", "ChangeKind", "Modified")),
+    }
+    let _ = render(
+      <Threads title="Threads" threads=[outdated] focus={Thread({index: 0})} indexOffset=0 dispatch />,
+    )
+    FireEvent.click(Screen.getByText("Open original diff (enter)"))
+    expect(dispatch)->toHaveBeenCalledWith(Action.OpenOriginalDiff({threadId: outdated.id}))
+    // Clicking the row itself also jumps to the original, not the moved-on diff.
+    let calls = mock(dispatch).calls
+    let jumped =
+      calls->Array.every(args =>
+        switch args->Array.getUnsafe(0) {
+        | Action.Viewport(_) => false
+        | _ => true
+        }
+      )
+    expect(jumped)->toBe(true)
+  })
+
+  test("the original diff shows the read-only banner", () => {
+    let dispatch = fn()
+    let base = Fixtures.parse(View.DiffView.schema, "client", "DiffView", "default")
+    let {container} = render(
+      <DiffView diff={...base, original: true} layout=Unified focus={Diff({row: 0})} dispatch />,
+    )
+    expect(Element.querySelector(container, ".original-banner"))->not_->toBeNull
+    cleanup()
+    let {container} = render(
+      <DiffView diff=base layout=Unified focus={Diff({row: 0})} dispatch />,
+    )
+    expect(Element.querySelector(container, ".original-banner"))->toBeNull
+  })
+})
+
 describe("DiffView (viewed)", () => {
   test("collapses a viewed file until the reader asks to see it", () => {
     let dispatch = fn()

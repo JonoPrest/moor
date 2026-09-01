@@ -9,9 +9,9 @@
 //! good anchor and flagged; deleted ones are not placed at all.
 
 use moor_protocol::{
-    Anchor, Author, BlobOid, ChunkIndex, Comment, CommentId, CommentKind, CommentState, CommitInfo,
-    CommitOid, FileRenderHeader, RenderChunk, RenderContent, RenderTarget, RepoId, ReviewSnapshot,
-    Row, Side, Thread, ThreadId, ThreadResolution, Timestamp,
+    Anchor, Author, BlobOid, ChangeKind, ChunkIndex, Comment, CommentId, CommentKind, CommentState,
+    CommitInfo, CommitOid, FileRenderHeader, RenderChunk, RenderContent, RenderTarget, RepoId,
+    ReviewSnapshot, Row, Side, Thread, ThreadId, ThreadResolution, Timestamp,
 };
 use serde::{Deserialize, Serialize};
 use strum::EnumDiscriminants;
@@ -61,6 +61,10 @@ pub struct ThreadView {
     pub suggestion: bool,
     /// Root then replies, oldest first; deleted comments are omitted.
     pub comments: Vec<CommentView>,
+    /// The file diff the root comment was made on, when recorded — the
+    /// target of jump-to-original-diff (UI-DESIGN §Comments).
+    #[serde(default)]
+    pub context: Option<ChangeKind>,
 }
 
 /// One comment as the thread panel shows it.
@@ -103,6 +107,10 @@ pub struct DiffView {
     pub missing: Vec<ChunkIndex>,
     /// Threads anchored to the whole file (shown above the rows).
     pub file_threads: Vec<ThreadId>,
+    /// This is a comment's recorded original diff, opened read-only
+    /// (UI-DESIGN §Comments); the UI shows the jump-to-context banner.
+    #[serde(default)]
+    pub original: bool,
 }
 
 /// One commit of the stepper, with what the commit panel shows.
@@ -200,6 +208,7 @@ fn thread_view(snapshot: &ReviewSnapshot, t: &Thread, pending: &PendingIds) -> O
                 pending: pending.comments.contains(&c.id),
             })
             .collect(),
+        context: root.context.clone(),
     })
 }
 
@@ -426,6 +435,7 @@ pub(crate) fn diff_view(
             rows: Vec::new(),
             missing: Vec::new(),
             file_threads,
+            original: false,
         });
     };
     if chunk_rows == 0 || chunk_count == 0 || total_rows == 0 {
@@ -473,6 +483,7 @@ pub(crate) fn diff_view(
         rows,
         missing,
         file_threads,
+        original: false,
     })
 }
 
@@ -494,6 +505,7 @@ fn empty(
         rows: Vec::new(),
         missing: Vec::new(),
         file_threads,
+        original: false,
     }
 }
 

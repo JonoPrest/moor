@@ -61,6 +61,13 @@ let make = (~diff: DiffView.t, ~layout: Layout.t, ~focus: Focus.t, ~dispatch: Ac
   }
   <section className="diff-panel panel" role="grid" ariaLabel=title>
     <header className="panel-header"> {React.string(title)} </header>
+    {diff.original
+      ? <div className="original-banner" role="status">
+          {React.string("Viewing the diff this comment was made on — read-only. ")}
+          <UI.Kbd keys="esc" />
+          {React.string(" back to the current diff")}
+        </div>
+      : React.null}
     {diff.fileThreads->Array.length > 0
       ? <div className="file-threads">
           {React.string(Int.toString(Array.length(diff.fileThreads)) ++ " file-level thread(s)")}

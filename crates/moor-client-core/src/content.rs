@@ -359,23 +359,37 @@ impl ClientCore {
                     render,
                     first_chunk,
                     stop_after,
-                } => (
-                    Request::FileRender {
-                        review_id,
-                        repo_id: render.repo_id,
-                        path: render.path.clone(),
-                        opts,
-                        first_chunk,
-                        scope: self
-                            .view
-                            .review
-                            .as_ref()
-                            .filter(|r| r.snapshot.review.id == review_id)
-                            .map(|r| r.scope)
-                            .unwrap_or_default(),
-                    },
-                    InFlight::FileRender { render, stop_after },
-                ),
+                } => {
+                    let open = self
+                        .view
+                        .review
+                        .as_ref()
+                        .filter(|r| r.snapshot.review.id == review_id);
+                    // A comment's recorded original diff is not in the
+                    // review's file list; the daemon renders the change
+                    // directly.
+                    let original = open.is_some_and(|r| r.original.as_ref() == Some(&render));
+                    let request = match (&render.target, original) {
+                        (RenderTarget::Diff { change }, true) => Request::ChangeRender {
+                            repo_id: render.repo_id,
+                            path: render.path.clone(),
+                            change: change.clone(),
+                            opts,
+                            first_chunk,
+                        },
+                        (RenderTarget::Diff { .. } | RenderTarget::Blob { .. }, _) => {
+                            Request::FileRender {
+                                review_id,
+                                repo_id: render.repo_id,
+                                path: render.path.clone(),
+                                opts,
+                                first_chunk,
+                                scope: open.map(|r| r.scope).unwrap_or_default(),
+                            }
+                        }
+                    };
+                    (request, InFlight::FileRender { render, stop_after })
+                }
                 Fetch::Chunk { render, index } => (
                     Request::RenderChunk {
                         repo_id: render.repo_id,
@@ -495,6 +509,7 @@ impl ClientCore {
             (CacheKey::Header { render }, CacheValue::Header { header }) => {
                 if let Some(open) = &mut self.view.review
                     && !open.files.contains(&render)
+                    && open.original.as_ref() != Some(&render)
                 {
                     open.files.push(render.clone());
                 }
@@ -691,6 +706,7 @@ impl ClientCore {
         open.files.clone_from(&renders);
         if let Some(f) = &open.open_file
             && !renders.contains(&f.render)
+            && open.original.as_ref() != Some(&f.render)
         {
             open.open_file = None;
         }
@@ -717,17 +733,20 @@ impl ClientCore {
 
     /// Keep only pins the open review (and its open file) still needs.
     fn retain_review_pins(&mut self) -> Vec<Evicted> {
-        let (trees, files, open_file) = match &self.view.review {
+        let (trees, files, open_file, original) = match &self.view.review {
             Some(r) => (
                 r.trees.clone(),
                 r.files.clone(),
                 r.open_file.as_ref().map(|f| f.render.clone()),
+                r.original.clone(),
             ),
-            None => (Vec::new(), Vec::new(), None),
+            None => (Vec::new(), Vec::new(), None, None),
         };
         self.content.cache.retain_pins(|k| match k {
             CacheKey::Tree { root } => trees.contains(root),
-            CacheKey::Header { render } => files.contains(render),
+            CacheKey::Header { render } => {
+                files.contains(render) || original.as_ref() == Some(render)
+            }
             CacheKey::Chunk { render, .. } => open_file.as_ref() == Some(render),
         })
     }
@@ -737,6 +756,33 @@ impl ClientCore {
         self.prune_queue(|_| false);
         let evicted = self.content.cache.clear_pins();
         self.content.write_through(evicted, effects);
+    }
+
+    /// Pin and fetch a comment's original render as the open file.
+    pub(crate) fn want_original(
+        &mut self,
+        review_id: ReviewId,
+        render: &RenderKey,
+        effects: &mut Vec<Effect>,
+    ) {
+        let evicted = self.retain_review_pins();
+        self.content.write_through(evicted, effects);
+        self.content.cache.pin(CacheKey::Header {
+            render: render.clone(),
+        });
+        if header_of(&self.content.cache, render).is_some() {
+            self.want_viewport_chunks(render, effects);
+        } else {
+            self.want(
+                Fetch::Render {
+                    review_id,
+                    render: render.clone(),
+                    first_chunk: ChunkIndex::FIRST,
+                    stop_after: ChunkIndex::new(PREFETCH_RADIUS),
+                },
+                effects,
+            );
+        }
     }
 
     // ---- viewport -------------------------------------------------------
@@ -751,12 +797,21 @@ impl ClientCore {
             return Err(CoreError::NoOpenReview);
         };
         let review_id = open.snapshot.review.id;
-        let Some(render) = open
-            .files
-            .iter()
-            .find(|r| r.repo_id == file.repo_id && r.path == file.path)
-            .cloned()
-        else {
+        let original = open
+            .original
+            .as_ref()
+            .filter(|r| {
+                open.open_file.as_ref().is_some_and(|f| f.render == **r)
+                    && r.repo_id == file.repo_id
+                    && r.path == file.path
+            })
+            .cloned();
+        let Some(render) = original.or_else(|| {
+            open.files
+                .iter()
+                .find(|r| r.repo_id == file.repo_id && r.path == file.path)
+                .cloned()
+        }) else {
             return Err(CoreError::UnknownFile(file));
         };
         let (first_row, last_row) = (first_row.min(last_row), first_row.max(last_row));
@@ -825,6 +880,7 @@ impl ClientCore {
         if open.open_file.take().is_none() {
             return Err(CoreError::NoOpenFile);
         }
+        open.original = None;
         let mut effects = Vec::new();
         self.prune_queue(|f| !matches!(f, Fetch::Chunk { .. }));
         let evicted = self.retain_review_pins();

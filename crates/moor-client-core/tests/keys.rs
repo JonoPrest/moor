@@ -638,6 +638,57 @@ fn every_action_is_reachable_from_a_binding() {
         }))
         .unwrap();
     states.push(with_search);
+    // A thread whose root is outdated with a recorded context: `enter`
+    // jumps to the original diff (OpenOriginalDiff).
+    let mut with_outdated = ready();
+    let anchor = Anchor::Lines {
+        repo_id: repo_id(),
+        path: path("src/a.rs"),
+        side: moor_protocol::Side::Head,
+        blob_oid: blob(4),
+        lines: moor_protocol::LineRange::single(moor_protocol::LineNo::new(2).unwrap()),
+        context_hash: moor_protocol::ContextHash::new(0),
+    };
+    let outdated = moor_protocol::Comment {
+        state: CommentState::Outdated {
+            last_good_anchor: anchor.clone(),
+        },
+        context: Some(ChangeKind::Modified {
+            old: blob(3),
+            new: blob(4),
+        }),
+        anchor,
+        ..comment(12, Anchor::Review)
+    };
+    let outdated_thread = outdated.thread_id;
+    with_outdated
+        .handle(Input::Server(ServerMsg::Event {
+            event: moor_protocol::Event {
+                seq: Seq::new(3),
+                ts: Timestamp::from_millis(0),
+                author: Author::Human {
+                    name: "other".into(),
+                    machine: "host".into(),
+                },
+                client_id: ClientId::from_parts(9, 9),
+                client_seq: moor_protocol::ClientSeq::new(1),
+                body: moor_protocol::EventBody::CommentCreated { comment: outdated },
+            },
+        }))
+        .unwrap();
+    let index = with_outdated
+        .view()
+        .threads
+        .iter()
+        .position(|t| t.id == outdated_thread)
+        .unwrap();
+    with_outdated
+        .handle(Input::User(Action::SetFocus {
+            focus: Focus::Thread { index },
+        }))
+        .unwrap();
+    assert!(with_outdated.view().threads[index].outdated);
+    states.push(with_outdated);
     states.push(base);
     for state in &states {
         for cmd in Command::iter() {

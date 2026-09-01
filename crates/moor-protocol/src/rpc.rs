@@ -274,6 +274,16 @@ pub enum Request {
         #[serde(default)]
         scope: DiffScope,
     },
+    /// Streamed: header, then chunks starting at `first_chunk` — for an
+    /// arbitrary change (a comment's recorded context), not the review's
+    /// current diff of the path.
+    ChangeRender {
+        repo_id: RepoId,
+        path: RepoPath,
+        change: ChangeKind,
+        opts: RenderOpts,
+        first_chunk: ChunkIndex,
+    },
     /// Streamed: header, then chunks starting at `first_chunk`.
     BlobRender {
         repo_id: RepoId,
@@ -311,6 +321,7 @@ impl Request {
         match self {
             Request::OpenReview { .. }
             | Request::FileRender { .. }
+            | Request::ChangeRender { .. }
             | Request::BlobRender { .. } => ResponseShape::Stream,
             Request::ListWorkspaces
             | Request::ListReviews { .. }
