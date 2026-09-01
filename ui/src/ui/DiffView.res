@@ -60,7 +60,15 @@ let make = (~diff: DiffView.t, ~layout: Layout.t, ~focus: Focus.t, ~dispatch: Ac
   | Text(_) => React.null
   }
   <section className="diff-panel panel" role="grid" ariaLabel=title>
-    <header className="panel-header"> {React.string(title)} </header>
+    <header className="panel-header">
+      {React.string(title)}
+      <UI.Button
+        label="expand file"
+        kind=Ghost
+        title="show the whole file as context"
+        onClick={() => dispatch(ExpandContext({file: diff.file, full: true}))}
+      />
+    </header>
     {diff.original
       ? <div className="original-banner" role="status">
           {React.string("Viewing the diff this comment was made on — read-only. ")}
@@ -109,6 +117,7 @@ let make = (~diff: DiffView.t, ~layout: Layout.t, ~focus: Focus.t, ~dispatch: Ac
               focused
               threads={Array.length(r.threads)}
               onClick={() => dispatch(SetFocus({focus: Focus.Diff({row: item.index})}))}
+              onExpand={() => dispatch(ExpandContext({file: diff.file, full: false}))}
             />
           | None =>
             Attrs.focused(

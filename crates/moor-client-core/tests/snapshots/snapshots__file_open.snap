@@ -558,6 +558,11 @@ expression: core.view()
       "label": "comment"
     },
     {
+      "keys": "x",
+      "command": "ExpandContext",
+      "label": "expand context"
+    },
+    {
       "keys": "r",
       "command": "Reply",
       "label": "reply"

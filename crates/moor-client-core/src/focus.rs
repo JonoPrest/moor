@@ -365,7 +365,8 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 | Command::Refresh
                 | Command::ScopeAll
                 | Command::ScopeByCommit
-                | Command::ScopeWorktree => false,
+                | Command::ScopeWorktree
+                | Command::ExpandContext => false,
             };
             let found = if forward {
                 rows.iter().find(|r| r.index > row && wanted(r))
@@ -681,6 +682,16 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
         Command::Connect => Ok(Action::Connect),
         Command::Disconnect => Ok(Action::Disconnect),
         Command::Refresh => Ok(Action::ListWorkspaces),
+        Command::ExpandContext => {
+            let Focus::Diff { .. } = focus else {
+                return Err(nothing());
+            };
+            let diff = view.diff.as_ref().ok_or(NoTarget::NoOpenFile)?;
+            Ok(Action::ExpandContext {
+                file: diff.file.clone(),
+                full: false,
+            })
+        }
         Command::ScopeAll => {
             if view.review.is_none() {
                 return Err(NoTarget::NoOpenReview);

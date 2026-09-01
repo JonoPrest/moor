@@ -344,7 +344,6 @@ impl ClientCore {
             let key = fetch.key();
             self.content.pending.insert(key.clone(), Pending::Requested);
             self.content.in_flight += 1;
-            let opts = self.content.config.render_opts;
             let (request, waiting) = match fetch {
                 Fetch::Tree {
                     repo_id,
@@ -374,7 +373,7 @@ impl ClientCore {
                             repo_id: render.repo_id,
                             path: render.path.clone(),
                             change: change.clone(),
-                            opts,
+                            opts: render.opts,
                             first_chunk,
                         },
                         (RenderTarget::Diff { .. } | RenderTarget::Blob { .. }, _) => {
@@ -382,7 +381,7 @@ impl ClientCore {
                                 review_id,
                                 repo_id: render.repo_id,
                                 path: render.path.clone(),
-                                opts,
+                                opts: render.opts,
                                 first_chunk,
                                 scope: open.map(|r| r.scope).unwrap_or_default(),
                             }
@@ -395,7 +394,7 @@ impl ClientCore {
                         repo_id: render.repo_id,
                         path: render.path.clone(),
                         target: render.target.clone(),
-                        opts,
+                        opts: render.opts,
                         index,
                     },
                     InFlight::RenderChunk { key },
@@ -758,8 +757,9 @@ impl ClientCore {
         self.content.write_through(evicted, effects);
     }
 
-    /// Pin and fetch a comment's original render as the open file.
-    pub(crate) fn want_original(
+    /// Pin and fetch a render that just became the open file (a comment's
+    /// original diff, or a context expansion's re-key).
+    pub(crate) fn want_open_render(
         &mut self,
         review_id: ReviewId,
         render: &RenderKey,

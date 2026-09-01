@@ -305,6 +305,7 @@ module Command = {
     | ScopeAll
     | ScopeByCommit
     | ScopeWorktree
+    | ExpandContext
 }
 
 /// A key sequence in its text form (`"g g"`, `"ctrl+p"`).

@@ -203,6 +203,22 @@ describe("Threads", () => {
   })
 })
 
+describe("Context expanders", () => {
+  test("an expander row click and the expand-file button dispatch ExpandContext", () => {
+    let dispatch = fn()
+    let base = Fixtures.parse(View.DiffView.schema, "client", "DiffView", "default")
+    let _ = render(<DiffView diff=base layout=Unified focus={Diff({row: 0})} dispatch />)
+    FireEvent.click(Screen.getByText("expand file"))
+    expect(dispatch)->toHaveBeenLastCalledWith(Action.ExpandContext({file: base.file, full: true}))
+    cleanup()
+    let row = Fixtures.parse(Render.Row.schema, "protocol", "Row", "Expander")
+    let expand = fn()
+    let _ = render(<Row row layout=Unified index=0 focused=false threads=0 onExpand={() => expand()} />)
+    FireEvent.click(Screen.getByTextRe(%re("/more lines/")))
+    expect(expand)->toHaveBeenCalled
+  })
+})
+
 describe("Jump to original diff", () => {
   test("an outdated thread with context offers the original diff", () => {
     let dispatch = fn()

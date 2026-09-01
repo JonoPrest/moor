@@ -86,6 +86,9 @@ pub enum Command {
     ScopeByCommit,
     /// Toggle the `+ working tree` part of the all-changes scope.
     ScopeWorktree,
+    /// Re-render the focused file with more context (UI-DESIGN
+    /// §expanders).
+    ExpandContext,
     /// Re-list workspaces and reviews.
     Refresh,
 }
@@ -465,6 +468,7 @@ impl Keymap {
             b(X::Diff, keys!("[ c"), C::PrevComment, false),
             b(X::Diff, keys!("c"), C::Comment, true),
             b(X::Diff, keys!("v"), C::ToggleViewed, true),
+            b(X::Diff, keys!("x"), C::ExpandContext, false),
             b(X::Diff, keys!("enter"), C::Open, false),
             // Thread
             b(X::Thread, keys!("j"), C::MoveDown, true),
@@ -745,6 +749,7 @@ pub fn label(command: Command) -> &'static str {
         Command::ScopeAll => "all changes",
         Command::ScopeByCommit => "by commit",
         Command::ScopeWorktree => "worktree",
+        Command::ExpandContext => "expand context",
     }
 }
 
@@ -859,7 +864,7 @@ mod tests {
     fn overrides_replace_unbind_and_surface_conflicts() {
         let overrides: Overrides = serde_json::from_str(
             r#"{"bindings":[
-                {"context":"Diff","command":"Comment","keys":"x","primary":true},
+                {"context":"Diff","command":"Comment","keys":"y","primary":true},
                 {"context":"Diff","command":"NextHunk","keys":null},
                 {"context":"Diff","command":"PrevHunk","keys":"j"}
             ]}"#,
@@ -867,7 +872,7 @@ mod tests {
         .unwrap();
         let map = Keymap::with_overrides(&overrides);
         assert_eq!(
-            map.lookup(Context::Diff, &[KeyChord::char('x')]),
+            map.lookup(Context::Diff, &[KeyChord::char('y')]),
             Lookup::Command(Command::Comment)
         );
         assert_eq!(

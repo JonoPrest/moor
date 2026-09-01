@@ -237,7 +237,18 @@ pub enum Action {
     OpenOriginalDiff {
         thread_id: ThreadId,
     },
+    /// Re-render one file with more context (UI-DESIGN §Diff rendering:
+    /// expanders): +20 lines per step, or the whole file when `full`.
+    ExpandContext {
+        file: FileRef,
+        full: bool,
+    },
 }
+
+/// How much one `ExpandContext` step adds to a file's context lines.
+pub const EXPAND_STEP: u32 = 20;
+/// `context_lines` treated as "show the whole file".
+pub const FULL_CONTEXT: u32 = 1_000_000;
 
 /// What the user asked the scope to become. `ByCommit` enters commit
 /// stepping (fetching the commit list first when needed); the rest map to
@@ -940,8 +951,54 @@ impl ClientCore {
         }
         self.view.focus = Focus::Diff { row: 0 };
         let mut effects = Vec::new();
-        self.want_original(review_id, &key, &mut effects);
+        self.want_open_render(review_id, &key, &mut effects);
         effects.push(render(&[ViewSection::Focus, ViewSection::Diff]));
+        Ok(effects)
+    }
+
+    /// Re-key one file's render with more context and refetch it. The
+    /// expansion is per-file and transient: a scope or render-option
+    /// change rebuilds the file list at the default context.
+    fn expand_context(&mut self, file: &FileRef, full: bool) -> Result<Vec<Effect>, CoreError> {
+        self.require_subscribed()?;
+        let Some(open) = &mut self.view.review else {
+            return Err(CoreError::NoOpenReview);
+        };
+        let review_id = open.snapshot.review.id;
+        let Some(i) = open
+            .files
+            .iter()
+            .position(|k| k.repo_id == file.repo_id && k.path == file.path)
+        else {
+            return Err(CoreError::UnknownFile(file.clone()));
+        };
+        let old = open.files[i].clone();
+        let context_lines = if full {
+            FULL_CONTEXT
+        } else {
+            old.opts.context_lines.saturating_add(EXPAND_STEP)
+        };
+        if context_lines == old.opts.context_lines {
+            return Ok(Vec::new());
+        }
+        let key = RenderKey {
+            opts: moor_protocol::RenderOpts {
+                context_lines,
+                ..old.opts
+            },
+            ..old.clone()
+        };
+        open.files[i] = key.clone();
+        // Keep viewing the file over the same rows; the render's row count
+        // grows, so the window is re-evaluated when the header lands.
+        if let Some(f) = &mut open.open_file
+            && f.render == old
+        {
+            f.render = key.clone();
+        }
+        let mut effects = Vec::new();
+        self.want_open_render(review_id, &key, &mut effects);
+        effects.push(render(&[ViewSection::Diff]));
         Ok(effects)
     }
 
@@ -1177,6 +1234,7 @@ impl ClientCore {
                 Ok(self.apply_scope(wire))
             }
             Action::OpenOriginalDiff { thread_id } => self.open_original(thread_id),
+            Action::ExpandContext { file, full } => self.expand_context(&file, full),
             Action::DraftOpened { anchor } => {
                 if self.view.review.is_none() {
                     return Err(CoreError::NoOpenReview);

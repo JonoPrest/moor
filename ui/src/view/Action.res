@@ -57,4 +57,5 @@ type t =
   | @as("StepCommit") StepCommit({selected: @s.null option<int>})
   | @as("SetScope") SetScope({scope: ScopeChoice.t})
   | @as("OpenOriginalDiff") OpenOriginalDiff({@as("thread_id") threadId: threadId})
+  | @as("ExpandContext") ExpandContext({file: View.FileRef.t, full: bool})
 @@warning("+27")

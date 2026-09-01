@@ -100,6 +100,7 @@ let make = (
   ~focused: bool,
   ~threads: int,
   ~onClick: unit => unit=() => (),
+  ~onExpand: unit => unit=() => (),
 ) => {
   let base = "row " ++ rowClassName(row)
   let className = switch layout {
@@ -123,8 +124,8 @@ let make = (
       | Down => "↓"
       | Both => "↕"
       }
-      <div className="cell-hunk">
-        {React.string(arrow ++ " " ++ Int.toString(hidden) ++ " more lines")}
+      <div className="cell-hunk" onClick={_ => onExpand()}>
+        {React.string(arrow ++ " " ++ Int.toString(hidden) ++ " more lines — expand")}
       </div>
     }
   | (Context({right}), Unified) => <CellView cell=right side="right" />

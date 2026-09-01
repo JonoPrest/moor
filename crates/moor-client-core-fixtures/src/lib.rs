@@ -660,6 +660,10 @@ enum_fixture!(
         Action::OpenOriginalDiff {
             thread_id: thread_id()?
         },
+        Action::ExpandContext {
+            file: file_ref()?,
+            full: false
+        },
     ]
 );
 enum_fixture!(

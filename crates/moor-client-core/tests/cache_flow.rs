@@ -2133,3 +2133,76 @@ fn jump_to_original_diff_renders_the_recorded_change_read_only() {
     let diff = core.view().diff.as_ref().unwrap();
     assert!(!diff.original);
 }
+
+#[test]
+fn expand_context_rekeys_one_file_and_refetches_it() {
+    let mut core = subscribed(local());
+    open_streamed(&mut core);
+    core.handle(Input::User(Action::Viewport {
+        file: file_ref("a.rs"),
+        first_row: 0,
+        last_row: 59,
+    }))
+    .unwrap();
+    let effects = core
+        .handle(Input::User(Action::ExpandContext {
+            file: file_ref("a.rs"),
+            full: false,
+        }))
+        .unwrap();
+    let (_, request) = requests(&effects)
+        .into_iter()
+        .find(|(_, r)| matches!(r, Request::FileRender { .. }))
+        .expect("a re-render request");
+    let Request::FileRender { opts, path, .. } = request else {
+        unreachable!()
+    };
+    assert_eq!(path, self::path("a.rs"));
+    assert_eq!(
+        opts.context_lines,
+        RenderOpts::default().context_lines + moor_client_core::EXPAND_STEP
+    );
+    // Only a.rs was re-keyed; b.rs keeps the default opts.
+    let of = |core: &ClientCore, p: &str| -> u32 {
+        core.view()
+            .review
+            .as_ref()
+            .unwrap()
+            .files
+            .iter()
+            .find(|k| k.path == crate::path(p))
+            .unwrap()
+            .opts
+            .context_lines
+    };
+    assert_eq!(of(&core, "a.rs"), RenderOpts::default().context_lines + 20);
+    assert_eq!(of(&core, "b.rs"), RenderOpts::default().context_lines);
+    // A second step grows again; full jumps to the whole file.
+    core.handle(Input::User(Action::ExpandContext {
+        file: file_ref("a.rs"),
+        full: false,
+    }))
+    .unwrap();
+    assert_eq!(of(&core, "a.rs"), RenderOpts::default().context_lines + 40);
+    core.handle(Input::User(Action::ExpandContext {
+        file: file_ref("a.rs"),
+        full: true,
+    }))
+    .unwrap();
+    assert_eq!(of(&core, "a.rs"), moor_client_core::FULL_CONTEXT);
+    // The open file follows the re-keyed render.
+    let f = open_render(&core);
+    assert_eq!(f.opts.context_lines, moor_client_core::FULL_CONTEXT);
+}
+
+fn open_render(core: &ClientCore) -> RenderKey {
+    core.view()
+        .review
+        .as_ref()
+        .unwrap()
+        .open_file
+        .as_ref()
+        .unwrap()
+        .render
+        .clone()
+}
