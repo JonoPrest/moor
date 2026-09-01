@@ -154,7 +154,7 @@ module SearchHit = {
 
 module SearchView = {
   @schema
-  type t = {query: string, hits: array<SearchHit.t>}
+  type t = {query: string, hits: array<SearchHit.t>, selected: int}
 }
 
 module TreeView = {
@@ -181,6 +181,7 @@ module ContentSearchView = {
     hits: array<Domain.ContentHit.t>,
     truncated: bool,
     pending: bool,
+    selected: int,
   }
 }
 

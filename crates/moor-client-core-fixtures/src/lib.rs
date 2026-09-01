@@ -316,6 +316,7 @@ struct_fixture!(
         hits: vec![proto::<ContentHit>()?],
         truncated: false,
         pending: false,
+        selected: 0,
     }
 );
 struct_fixture!(FileRef, "FileRef", file_ref()?);
@@ -386,6 +387,7 @@ struct_fixture!(
     SearchView {
         query: "sli".into(),
         hits: vec![local::<SearchHit>()?],
+        selected: 0,
     }
 );
 struct_fixture!(
@@ -717,6 +719,7 @@ enum_fixture!(
         },
         Action::EnterVisual,
         Action::LeaveVisual,
+        Action::SearchStep { delta: 1 },
     ]
 );
 enum_fixture!(

@@ -241,10 +241,13 @@ Everything explicitly asked for, so no shell or rewrite loses them.
   the more-context re-render until band splicing). Rule to uphold:
   EVERY mouse affordance has a chord — audit found comment-on-file from
   diff focus as the one gap.
-- ◻ Search inputs step results: with any search bar focused (`t` file
+- ✓ Search inputs step results: with any search bar focused (`t` file
   find, `F` content, `:` actions), Down/Up move a highlighted selection
   through the results while typing continues, Enter opens the selected
-  result (not blindly the first).
+  result (not blindly the first). File-find and content selection are
+  core state (`Action::SearchStep`); the actions list filters UI-side so
+  its selection lives there. A chord that opens a text input (`t`/`F`/
+  `:`) is preventDefault-ed so it never types itself into the input.
 
 ### Panels & focus
 - ✓ Goto group: `g e` tree · `g d` diff · `g t` threads · `g m`

@@ -221,6 +221,9 @@ pub struct ContentSearchView {
     pub truncated: bool,
     /// A query is on its way to the daemon.
     pub pending: bool,
+    /// The highlighted hit (Down/Up step it; Enter opens it).
+    #[serde(default)]
+    pub selected: usize,
 }
 
 /// Everything the UI needs, kept identical across hosts.

@@ -74,6 +74,9 @@ pub struct SearchHit {
 pub struct SearchView {
     pub query: String,
     pub hits: Vec<SearchHit>,
+    /// The highlighted hit (Down/Up step it; Enter opens it).
+    #[serde(default)]
+    pub selected: usize,
 }
 
 /// The explorer as rendered: one root per repo (§5.6).
@@ -108,6 +111,8 @@ pub(crate) struct ExplorerState {
     /// Diffing-mode dirs the user closed (diffing defaults open).
     pub(crate) collapsed: BTreeSet<(RepoId, Option<RepoPath>)>,
     pub(crate) search: Option<String>,
+    /// The highlighted search hit (clamped to the hit list on derive).
+    pub(crate) search_selected: usize,
 }
 
 /// Inputs the tree is derived from.
@@ -280,9 +285,16 @@ pub(crate) fn build(inputs: &ExplorerInputs<'_>) -> TreeView {
             .chain(f.path.components().map(str::to_owned))
             .collect()
     });
-    let search = inputs.state.search.as_ref().map(|q| SearchView {
-        query: q.clone(),
-        hits: search(inputs, q),
+    let search = inputs.state.search.as_ref().map(|q| {
+        let hits = search(inputs, q);
+        SearchView {
+            query: q.clone(),
+            selected: inputs
+                .state
+                .search_selected
+                .min(hits.len().saturating_sub(1)),
+            hits,
+        }
     });
     TreeView {
         roots,

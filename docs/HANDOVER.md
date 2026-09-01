@@ -1,6 +1,18 @@
 # Handover notes
 
-## 2026-09-01 (later): Visual mode SHIPPED — next up: `z` Expand group
+## 2026-09-01 (later): Visual mode, z Expand group, search stepping SHIPPED
+
+Search-result stepping is in too: `SearchView.selected` /
+`ContentSearchView.selected` are core state stepped by the host-only
+`Action::SearchStep { delta }` (shells forward Down/Up from the inputs;
+Enter opens the selected hit); the actions palette's selection is UI
+state since its filtered list is UI-side. Found and fixed en route: the
+App key handler now preventDefaults printable chars, because the chord
+that opens a text input (`t`/`F`/`:`) used to also type itself into the
+autofocused input (queries like "Fhandover"). All three flows verified
+headlessly. Note for future browser testing: `moor --port …` keeps ONE
+client core per process, so state persists across page loads — restart
+the server between Playwright runs.
 
 The `z` Expand group is also in (Commands ExpandUp/ExpandDown/
 CommentOnFile bound `z u`/`z d`/`z c` in Diff, group label "Expand";

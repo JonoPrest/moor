@@ -299,6 +299,11 @@ pub enum Action {
     EnterVisual,
     /// Leave Visual mode without commenting (`esc`, `V` again).
     LeaveVisual,
+    /// Step the highlighted result of the open search (file find, content
+    /// search) while the input keeps focus; the shell forwards Down/Up.
+    SearchStep {
+        delta: i32,
+    },
 }
 
 /// How much one `ExpandContext` step adds to a file's context lines.
@@ -1381,6 +1386,7 @@ impl ClientCore {
                     return Err(CoreError::NoOpenReview);
                 }
                 self.explorer.search = query;
+                self.explorer.search_selected = 0;
                 Ok(Vec::new())
             }
             Action::SetLayout { layout } => {
@@ -1705,6 +1711,7 @@ impl ClientCore {
                             hits: Vec::new(),
                             truncated: false,
                             pending: ask,
+                            selected: 0,
                         });
                         let mut effects = Vec::new();
                         if ask {
@@ -1754,6 +1761,30 @@ impl ClientCore {
                     )));
                 }
                 Ok(Vec::new())
+            }
+            Action::SearchStep { delta } => {
+                let step = |sel: usize, len: usize| -> usize {
+                    if len == 0 {
+                        return 0;
+                    }
+                    let max = i64::try_from(len - 1).unwrap_or(i64::MAX);
+                    let cur = i64::try_from(sel).unwrap_or(i64::MAX).min(max);
+                    usize::try_from((cur + i64::from(delta)).clamp(0, max)).unwrap_or(0)
+                };
+                if self.explorer.search.is_some() {
+                    let len = self.view.tree.search.as_ref().map_or(0, |s| s.hits.len());
+                    self.explorer.search_selected = step(self.explorer.search_selected, len);
+                    // The tree (and its search view) is derived after this
+                    // returns.
+                    Ok(Vec::new())
+                } else if let Some(cs) = &mut self.view.content_search {
+                    cs.selected = step(cs.selected, cs.hits.len());
+                    Ok(vec![render(&[ViewSection::Search])])
+                } else {
+                    Err(CoreError::NoTarget(focus::NoTarget::Nothing(
+                        Command::MoveDown,
+                    )))
+                }
             }
             Action::SetBrowseRef { repo_id, ref_spec } => {
                 if self.view.review.is_none() {

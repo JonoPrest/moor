@@ -48,7 +48,11 @@ let onKeyDown = (core: Core.t, ev: KeyEvent.t) => {
     }) {
     | Some(chord) => {
         let search = key == "p" && (KeyEvent.ctrlKey(ev) || KeyEvent.metaKey(ev))
-        if swallowed->Array.includes(key) || search {
+        // Printable chars are swallowed too: a chord that opens a text
+        // input (`t`, `F`, `:`) must not also type itself into it once
+        // the input autofocuses.
+        let printable = String.length(key) == 1 && !KeyEvent.ctrlKey(ev) && !KeyEvent.metaKey(ev)
+        if swallowed->Array.includes(key) || search || printable {
           KeyEvent.preventDefault(ev)
         }
         core.key(chord)

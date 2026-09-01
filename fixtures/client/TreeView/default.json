@@ -65,6 +65,7 @@
         ]
       }
     ],
-    "query": "sli"
+    "query": "sli",
+    "selected": 0
   }
 }

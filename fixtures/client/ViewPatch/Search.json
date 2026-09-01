@@ -12,6 +12,7 @@
     ],
     "pending": false,
     "query": "todo",
+    "selected": 0,
     "truncated": false
   },
   "type": "Search"

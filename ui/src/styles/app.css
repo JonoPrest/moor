@@ -438,6 +438,12 @@
   .search-hit {
     @apply cursor-pointer px-2 py-0.5 text-[13px] select-none;
   }
+  /* The stepped-to search result (Down/Up in any search input). */
+  .search-hit.selected {
+    background: var(--color-diff-hunk-bg);
+    outline: 1px solid var(--color-focus);
+    outline-offset: -1px;
+  }
   .tree-header {
     @apply text-[11px] font-semibold tracking-wide text-muted uppercase;
   }

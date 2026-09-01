@@ -363,6 +363,7 @@ fn every_action_is_reachable_from_a_binding() {
         ActionKind::RunCommand,   // the actions palette picks the command
         ActionKind::CommentLines, // mouse drag across lines
         ActionKind::CommentFile,  // the file header's comment button
+        ActionKind::SearchStep,   // search inputs forward Down/Up
     ]
     .into_iter()
     .collect();
@@ -911,6 +912,43 @@ fn help_and_hints_follow_focus_and_help_is_never_empty() {
 }
 
 #[test]
+fn search_step_moves_the_highlighted_hit() {
+    let mut core = ready();
+    // File find: two hits for "rs"; Down steps, the selection clamps.
+    core.handle(Input::User(Action::FileSearch {
+        query: Some("rs".into()),
+    }))
+    .unwrap();
+    let hits = core.view().tree.search.as_ref().unwrap().hits.len();
+    assert!(hits >= 2, "expected 2+ hits, got {hits}");
+    assert_eq!(core.view().tree.search.as_ref().unwrap().selected, 0);
+    core.handle(Input::User(Action::SearchStep { delta: 1 }))
+        .unwrap();
+    assert_eq!(core.view().tree.search.as_ref().unwrap().selected, 1);
+    core.handle(Input::User(Action::SearchStep { delta: 100 }))
+        .unwrap();
+    assert_eq!(core.view().tree.search.as_ref().unwrap().selected, hits - 1);
+    core.handle(Input::User(Action::SearchStep { delta: -100 }))
+        .unwrap();
+    assert_eq!(core.view().tree.search.as_ref().unwrap().selected, 0);
+    // A new query resets the selection.
+    core.handle(Input::User(Action::SearchStep { delta: 1 }))
+        .unwrap();
+    core.handle(Input::User(Action::FileSearch {
+        query: Some("a".into()),
+    }))
+    .unwrap();
+    assert_eq!(core.view().tree.search.as_ref().unwrap().selected, 0);
+    // No search open: stepping is rejected and changes nothing.
+    core.handle(Input::User(Action::FileSearch { query: None }))
+        .unwrap();
+    assert!(
+        core.handle(Input::User(Action::SearchStep { delta: 1 }))
+            .is_err()
+    );
+}
+
+#[test]
 fn visual_mode_extends_a_selection_and_comments_on_it() {
     use moor_client_core::{Mode, VisualView};
     let mut core = ready();
@@ -958,4 +996,42 @@ fn visual_mode_extends_a_selection_and_comments_on_it() {
     assert_eq!(core.view().mode, Mode::Normal);
     assert_eq!(core.view().visual, None);
     assert!(core.view().draft.is_none());
+}
+
+#[test]
+fn search_step_moves_the_content_search_selection() {
+    let mut core = ready();
+    let effects = core
+        .handle(Input::User(Action::ContentSearch {
+            query: Some("l1".into()),
+            all_files: false,
+        }))
+        .unwrap();
+    let id = effects
+        .iter()
+        .find_map(|e| match e {
+            Effect::Send(ClientMsg::Request { id, .. }) => Some(*id),
+            _ => None,
+        })
+        .unwrap();
+    let hit = |line: u32| moor_protocol::ContentHit {
+        repo_id: repo_id(),
+        path: path("src/a.rs"),
+        line: moor_protocol::LineNo::new(line).unwrap(),
+        text: "l1".into(),
+    };
+    core.handle(Input::Server(ServerMsg::Response {
+        id,
+        response: moor_protocol::Response::Search {
+            hits: vec![hit(1), hit(2), hit(3)],
+            truncated: false,
+        },
+    }))
+    .unwrap();
+    assert_eq!(core.view().content_search.as_ref().unwrap().selected, 0);
+    let effects = core
+        .handle(Input::User(Action::SearchStep { delta: 1 }))
+        .unwrap();
+    assert_eq!(core.view().content_search.as_ref().unwrap().selected, 1);
+    assert_eq!(rendered(&effects), vec![ViewSection::Search]);
 }

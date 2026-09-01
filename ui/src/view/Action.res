@@ -78,4 +78,5 @@ type t =
   | @as("RunCommand") RunCommand({command: View.Command.t})
   | @as("EnterVisual") EnterVisual({})
   | @as("LeaveVisual") LeaveVisual({})
+  | @as("SearchStep") SearchStep({delta: int})
 @@warning("+27")
