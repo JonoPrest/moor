@@ -617,11 +617,8 @@ impl ClientCore {
             Input::Stored { key, value } => self.stored(key, value)?,
             Input::Tick(ms) => {
                 self.now = self.now.max(ms);
-                if !self.chords.is_empty()
-                    && self.now.saturating_sub(self.chord_started) >= SEQ_TIMEOUT_MS
-                {
-                    self.chords.clear();
-                }
+                // A pending sequence never expires on the clock (vim-like):
+                // it waits until the user continues or cancels.
                 Vec::new()
             }
             Input::Key(chord) => self.key(chord)?,
@@ -949,9 +946,15 @@ impl ClientCore {
                 self.user(action)
             }
             Lookup::None => {
+                let was_pending = !self.chords.is_empty();
                 self.chords.clear();
                 if context == Context::Composer {
                     // Text for the host's editor, not a command.
+                    Ok(Vec::new())
+                } else if was_pending {
+                    // A key outside the pending group (esc included) just
+                    // cancels the sequence, vim-like; the which-key popup
+                    // closes on the derive.
                     Ok(Vec::new())
                 } else {
                     let seq =

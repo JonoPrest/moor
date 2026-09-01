@@ -736,17 +736,20 @@ fn sequences_resolve_and_expire() {
     assert_eq!(core.view().pending_keys, "");
     assert_eq!(core.view().focus, Focus::Tree { index: 0 });
     assert!(core.pending_chords().is_empty());
-    // A stale prefix expires on the clock.
+    // A pending prefix never expires on the clock (vim-like): it waits.
     core.handle(Input::Key(KeyChord::char('g'))).unwrap();
     core.handle(Input::Tick(100 + SEQ_TIMEOUT_MS)).unwrap();
+    assert_eq!(core.pending_chords().len(), 1);
+    // A key outside the group (esc included) cancels the sequence
+    // silently and re-renders the hints.
+    let effects = core.handle(Input::Key(KeyChord::char('z'))).unwrap();
     assert!(core.pending_chords().is_empty());
-    // Unbound keys are typed errors and clear any prefix.
-    core.handle(Input::Key(KeyChord::char('g'))).unwrap();
+    assert_eq!(rendered(&effects), vec![ViewSection::Hints]);
+    // A single unbound key is still a typed error.
     assert_eq!(
         core.handle(Input::Key(KeyChord::char('z'))),
-        Err(CoreError::UnboundKey("g z".into()))
+        Err(CoreError::UnboundKey("z".into()))
     );
-    assert!(core.pending_chords().is_empty());
     // At an edge, movement is a typed no-op.
     assert_eq!(
         core.handle(Input::Key(KeyChord::char('k'))),
