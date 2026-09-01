@@ -16,7 +16,9 @@ use crate::diff::{CommitStepper, DiffView, ThreadView};
 use crate::explorer::{Progress, TreeView};
 use crate::focus::Focus;
 use crate::keymap::{HelpView, Hint, Mode};
-use crate::view::{ConnectionView, ContentSearchView, Draft, Tab, ViewDelta, ViewModel, ViewPrefs};
+use crate::view::{
+    ConnectionView, ContentSearchView, Draft, Tab, ViewDelta, ViewModel, ViewPrefs, VisualView,
+};
 
 /// The part of the view one section owns.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumDiscriminants)]
@@ -48,6 +50,9 @@ pub enum ViewPatch {
         diff: Option<DiffView>,
         diffs: Vec<DiffView>,
         prefs: ViewPrefs,
+        /// The Visual-mode line selection, when it is on.
+        #[serde(default)]
+        visual: Option<VisualView>,
     },
     Threads {
         threads: Vec<ThreadView>,
@@ -132,6 +137,7 @@ impl ViewModel {
                 diff: self.diff.clone(),
                 diffs: self.diffs.clone(),
                 prefs: self.prefs,
+                visual: self.visual,
             },
             ViewSection::Threads => ViewPatch::Threads {
                 threads: self.threads.clone(),
@@ -210,10 +216,16 @@ impl ViewModel {
                 self.browse_ref = browse_ref;
             }
             ViewPatch::Tree { tree } => self.tree = tree,
-            ViewPatch::Diff { diff, diffs, prefs } => {
+            ViewPatch::Diff {
+                diff,
+                diffs,
+                prefs,
+                visual,
+            } => {
                 self.diff = diff;
                 self.diffs = diffs;
                 self.prefs = prefs;
+                self.visual = visual;
             }
             ViewPatch::Threads { threads } => self.threads = threads,
             ViewPatch::Conversation { conversation } => self.conversation = conversation,

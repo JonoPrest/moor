@@ -80,6 +80,8 @@ pub fn default_file() -> String {
             let in_mode = |ctx: moor_client_core::Context| match mode {
                 Mode::Insert => ctx == moor_client_core::Context::Composer,
                 Mode::Normal => ctx != moor_client_core::Context::Composer,
+                // Visual reuses the Diff-context rows (keymap `with_config`).
+                Mode::Visual => ctx == moor_client_core::Context::Diff,
             };
             let leader_text = map.leader().to_string();
             let mut seqs: Vec<String> = Vec::new();
@@ -190,7 +192,7 @@ pub fn schema_json() -> String {
         }
     });
     // schemars validates the value as a schema; pretty for humans.
-    let schema = schemars::Schema::try_from(root).map(|s| s.to_value());
+    let schema = schemars::Schema::try_from(root).map(schemars::Schema::to_value);
     serde_json::to_string_pretty(&schema.unwrap_or_else(|_| json!({}))).unwrap_or_default()
 }
 

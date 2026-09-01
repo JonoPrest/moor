@@ -199,6 +199,15 @@ impl Default for ViewPrefs {
     }
 }
 
+/// The Visual-mode line selection (UI-DESIGN: modal keys): row indices of
+/// the open file, ordered, both ends inclusive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VisualView {
+    pub start: u32,
+    pub end: u32,
+}
+
 /// The content-search palette (UI-DESIGN §Search): query, scope toggle
 /// and the daemon's hits.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -283,6 +292,9 @@ pub struct ViewModel {
     /// The actions palette (`:`) while open; its entries are `chrome`.
     #[serde(default)]
     pub action_palette: bool,
+    /// Rows of the open file selected in Visual mode (`V`), when it is on.
+    #[serde(default)]
+    pub visual: Option<VisualView>,
     pub review: Option<OpenReview>,
     pub draft: Option<Draft>,
     /// A working-tree refresh arrived while `draft` was open and is being

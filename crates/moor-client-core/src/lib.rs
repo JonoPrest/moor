@@ -70,7 +70,7 @@ pub use keymap::{
 pub use patch::{ViewPatch, ViewPatchKind};
 pub use view::{
     ConnectionView, ConnectionViewKind, ContentSearchView, Draft, Layout, OpenFile, OpenReview,
-    PendingEvent, Tab, ViewDelta, ViewModel, ViewPrefs,
+    PendingEvent, Tab, ViewDelta, ViewModel, ViewPrefs, VisualView,
 };
 
 pub use moor_protocol as protocol;
@@ -294,6 +294,11 @@ pub enum Action {
     RunCommand {
         command: Command,
     },
+    /// Enter Visual line selection at the focused diff row (`V`); motions
+    /// extend it, `Comment` opens a draft on it, `Back` leaves.
+    EnterVisual,
+    /// Leave Visual mode without commenting (`esc`, `V` again).
+    LeaveVisual,
 }
 
 /// How much one `ExpandContext` step adds to a file's context lines.
@@ -528,6 +533,9 @@ pub struct ClientCore {
     file_collapse: std::collections::BTreeMap<(RepoId, RepoPath), bool>,
     /// The Browse tab's custom ref, when one is picked (UI-DESIGN §Browse).
     browse: Option<Browse>,
+    /// Visual mode (UI-DESIGN: modal keys): the diff row `V` was pressed
+    /// on; the other end of the selection is the focused row.
+    visual_anchor: Option<u32>,
 }
 
 /// Browsing one repo at an arbitrary ref.
@@ -580,6 +588,7 @@ impl ClientCore {
             by_commit_pending: false,
             file_collapse: std::collections::BTreeMap::new(),
             browse: None,
+            visual_anchor: None,
         }
     }
 
@@ -602,6 +611,12 @@ impl ClientCore {
     #[must_use]
     pub fn pending_chords(&self) -> &[KeyChord] {
         &self.chords
+    }
+
+    /// The Visual-mode anchor row (where `V` was pressed), while it is on.
+    #[must_use]
+    pub fn visual_anchor(&self) -> Option<u32> {
+        self.visual_anchor
     }
 
     /// Mutations awaiting the daemon, oldest first.
@@ -872,6 +887,18 @@ impl ClientCore {
             self.view.focus = focus;
             sections.push(ViewSection::Focus);
         }
+        // The Visual selection spans the anchor and the focused row.
+        let visual = match (self.visual_anchor, focus) {
+            (Some(anchor), Focus::Diff { row }) => Some(crate::view::VisualView {
+                start: anchor.min(row),
+                end: anchor.max(row),
+            }),
+            _ => None,
+        };
+        if visual != self.view.visual {
+            self.view.visual = visual;
+            sections.push(ViewSection::Diff);
+        }
         // The hint bar is the mode indicator (UI-DESIGN): the focused
         // context's primary keys, or the pending group's keys while a
         // leader sequence is in progress.
@@ -890,9 +917,12 @@ impl ClientCore {
             self.view.pending_label = pending_label;
             sections.push(ViewSection::Hints);
         }
-        // Vim-style mode indicator: Insert while a text editor owns keys.
+        // Vim-style mode indicator: Insert while a text editor owns keys,
+        // Visual while a line selection is on.
         let mode = if focus.context() == keymap::Context::Composer {
             keymap::Mode::Insert
+        } else if self.visual_anchor.is_some() {
+            keymap::Mode::Visual
         } else {
             keymap::Mode::Normal
         };
@@ -1323,7 +1353,10 @@ impl ClientCore {
                 first_row,
                 last_row,
             } => self.viewport(file, first_row, last_row),
-            Action::CloseFile => self.close_file(),
+            Action::CloseFile => {
+                self.visual_anchor = None;
+                self.close_file()
+            }
             Action::ToggleDir { repo_id, path } => {
                 if self.view.review.is_none() {
                     return Err(CoreError::NoOpenReview);
@@ -1419,6 +1452,7 @@ impl ClientCore {
                     // Placeholder; the daemon hashes the context itself.
                     context_hash: moor_protocol::ContextHash::new(0),
                 };
+                self.visual_anchor = None;
                 self.view.draft = Some(Draft {
                     anchor,
                     reply_to: None,
@@ -1447,6 +1481,7 @@ impl ClientCore {
                     path: file.path,
                     blob_oid: blob,
                 };
+                self.visual_anchor = None;
                 self.view.draft = Some(Draft {
                     anchor,
                     reply_to: None,
@@ -1699,6 +1734,27 @@ impl ClientCore {
                 let action = focus::resolve(self, command)?;
                 self.user(action)
             }
+            Action::EnterVisual => {
+                if self.view.review.is_none() {
+                    return Err(CoreError::NoOpenReview);
+                }
+                let Focus::Diff { row } = self.view.focus else {
+                    return Err(CoreError::NoTarget(focus::NoTarget::Nothing(
+                        Command::VisualMode,
+                    )));
+                };
+                self.visual_anchor = Some(row);
+                // The selection and mode are derived after this returns.
+                Ok(Vec::new())
+            }
+            Action::LeaveVisual => {
+                if self.visual_anchor.take().is_none() {
+                    return Err(CoreError::NoTarget(focus::NoTarget::Nothing(
+                        Command::VisualMode,
+                    )));
+                }
+                Ok(Vec::new())
+            }
             Action::SetBrowseRef { repo_id, ref_spec } => {
                 if self.view.review.is_none() {
                     return Err(CoreError::NoOpenReview);
@@ -1733,6 +1789,7 @@ impl ClientCore {
                 if self.view.draft.is_some() {
                     return Err(CoreError::DraftAlreadyOpen);
                 }
+                self.visual_anchor = None;
                 self.view.draft = Some(Draft {
                     anchor,
                     reply_to: None,
@@ -1848,6 +1905,7 @@ impl ClientCore {
                 };
                 let mut effects = self.mutate(mutation)?;
                 self.view.draft = None;
+                self.visual_anchor = None;
                 self.leave();
                 effects.extend(self.drain_deferred());
                 Ok(effects)
@@ -1924,6 +1982,7 @@ impl ClientCore {
                     return Err(CoreError::NoDraft);
                 }
                 self.view.draft = None;
+                self.visual_anchor = None;
                 self.leave();
                 Ok(self.drain_deferred())
             }
@@ -2122,6 +2181,7 @@ impl ClientCore {
         self.help_open = false;
         self.by_commit_pending = false;
         self.browse = None;
+        self.visual_anchor = None;
         self.view.content_search = None;
         self.view.action_palette = false;
         self.review_closed(effects);

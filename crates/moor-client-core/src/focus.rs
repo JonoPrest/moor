@@ -317,25 +317,39 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
             focus: with_index(focus, target),
         })
     };
+    let in_visual = core.visual_anchor().is_some() && matches!(focus, Focus::Diff { .. });
     match command {
         // In the diff the edges continue into the adjacent file — the
         // stacked view is one long document. A folded file is one stop:
-        // any vertical motion leaves it immediately.
+        // any vertical motion leaves it immediately. Visual mode stays in
+        // the file: the selection can only span the open file's rows.
         Command::MoveDown => match focus {
+            Focus::Diff { .. } if in_visual => step(1),
             Focus::Diff { .. } if open_file_collapsed(core) => adjacent_file(core, true),
             Focus::Diff { .. } => match step(1) {
                 Err(NoTarget::AtEdge) => adjacent_file(core, true),
                 r => r,
             },
-            _ => step(1),
+            Focus::ReviewList { .. }
+            | Focus::Tree { .. }
+            | Focus::Thread { .. }
+            | Focus::Composer
+            | Focus::CommitStepper { .. }
+            | Focus::Help => step(1),
         },
         Command::MoveUp => match focus {
+            Focus::Diff { .. } if in_visual => step(-1),
             Focus::Diff { .. } if open_file_collapsed(core) => adjacent_file(core, false),
             Focus::Diff { .. } => match step(-1) {
                 Err(NoTarget::AtEdge) => adjacent_file(core, false),
                 r => r,
             },
-            _ => step(-1),
+            Focus::ReviewList { .. }
+            | Focus::Tree { .. }
+            | Focus::Thread { .. }
+            | Focus::Composer
+            | Focus::CommitStepper { .. }
+            | Focus::Help => step(-1),
         },
         Command::PageDown => step(i64::from(PAGE_ROWS)),
         Command::PageUp => step(-i64::from(PAGE_ROWS)),
@@ -445,7 +459,8 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 | Command::ScopeWorktree
                 | Command::ExpandContext
                 | Command::ContentSearch
-                | Command::ActionPalette => false,
+                | Command::ActionPalette
+                | Command::VisualMode => false,
             };
             // A folded open file contributes no in-file stops.
             let found = if collapsed_of(view, render) {
@@ -622,6 +637,9 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
             Focus::Composer | Focus::Help => Err(nothing()),
         },
         Command::Back => {
+            if in_visual {
+                return Ok(Action::LeaveVisual);
+            }
             if view.tree.search.is_some() {
                 return Ok(Action::FileSearch { query: None });
             }
@@ -694,6 +712,48 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 ViewedState::ChangedSinceViewed | ViewedState::Unviewed => {
                     Action::MarkViewed { file }
                 }
+            })
+        }
+        Command::Comment if in_visual => {
+            let (Some(anchor_row), Focus::Diff { row }) = (core.visual_anchor(), focus) else {
+                return Err(nothing());
+            };
+            let diff = view.diff.as_ref().ok_or(NoTarget::NoOpenFile)?;
+            let open = view.review.as_ref().ok_or(NoTarget::NoOpenReview)?;
+            let render = open
+                .open_file
+                .as_ref()
+                .map(|f| &f.render)
+                .ok_or(NoTarget::NoOpenFile)?;
+            let (lo, hi) = (anchor_row.min(row), anchor_row.max(row));
+            // The selection's lines on one side: head when any selected row
+            // has one, else base; rows with no line (headers) are skipped.
+            let rows = crate::diff::all_rows(core.cache(), &open.snapshot, render);
+            let mut head: Vec<u32> = Vec::new();
+            let mut base: Vec<u32> = Vec::new();
+            for r in rows.iter().filter(|r| r.index >= lo && r.index <= hi) {
+                match &r.row {
+                    Row::Context { right, .. } | Row::Modified { right, .. } => {
+                        head.push(right.line_no.get());
+                    }
+                    Row::Added { right } => head.push(right.line_no.get()),
+                    Row::Removed { left } => base.push(left.line_no.get()),
+                    Row::HunkHeader { .. } | Row::Expander { .. } | Row::WhitespaceOnly => {}
+                }
+            }
+            let (side, lines) = if head.is_empty() {
+                (Side::Base, base)
+            } else {
+                (Side::Head, head)
+            };
+            let (Some(start), Some(end)) = (lines.iter().min(), lines.iter().max()) else {
+                return Err(nothing());
+            };
+            Ok(Action::CommentLines {
+                file: diff.file.clone(),
+                side,
+                start_line: *start,
+                end_line: *end,
             })
         }
         Command::Comment => {
@@ -936,6 +996,30 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 (None, None) => return Err(NoTarget::NoOpenReview),
             };
             Ok(Action::ListCommits { repo_id })
+        }
+        Command::VisualMode => {
+            if in_visual {
+                return Ok(Action::LeaveVisual);
+            }
+            let Focus::Diff { row } = focus else {
+                return Err(nothing());
+            };
+            let diff = view.diff.as_ref().ok_or(NoTarget::NoOpenFile)?;
+            let open = view.review.as_ref().ok_or(NoTarget::NoOpenReview)?;
+            let target = open
+                .files
+                .iter()
+                .find(|k| k.repo_id == diff.file.repo_id && k.path == diff.file.path)
+                .map(|k| &k.target)
+                .ok_or_else(nothing)?;
+            // Only a commentable row starts a selection.
+            let r = diff
+                .rows
+                .iter()
+                .find(|r| r.index == row)
+                .ok_or_else(nothing)?;
+            line_anchor(&diff.file, target, &r.row).ok_or_else(nothing)?;
+            Ok(Action::EnterVisual)
         }
     }
 }

@@ -913,6 +913,11 @@ expression: core.view()
       "label": "expand full file"
     },
     {
+      "keys": "V",
+      "command": "VisualMode",
+      "label": "select lines"
+    },
+    {
       "keys": "r",
       "command": "Reply",
       "label": "reply"
@@ -992,6 +997,7 @@ expression: core.view()
   "browse_ref": null,
   "content_search": null,
   "action_palette": false,
+  "visual": null,
   "review": {
     "snapshot": {
       "review": {

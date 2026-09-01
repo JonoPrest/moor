@@ -26,7 +26,7 @@ where they differ.
   tooltips; the bare key is the source of truth.
 - **Fully modal, vim-style (supersedes the earlier "no modes" rule).**
   Modes: Normal (keys are commands), Insert (any text editor; only `esc`
-  and `ctrl+enter` are chords), Visual (line selection — stage 2). The
+  and `ctrl+enter` are chords), Visual (`V`: line selection). The
   hint bar shows the mode. The main flow stays flat single keys; `g` is
   the goto group; everything less common lives under a configurable
   `<leader>` (default `space`), with which-key style group labels: a
@@ -201,7 +201,10 @@ Everything explicitly asked for, so no shell or rewrite loses them.
   `␣ leader` · keys.
 - ✓ `?` help: restyled, scrolls with j/k/arrows, floats above sticky
   file headers.
-- ◻ Visual mode: `V` + `j`/`k` + `c` = keyboard multiline comment.
+- ✓ Visual mode: `V` on a diff row selects it; `j`/`k` (and motions)
+  extend the selection (within the file); `c` opens a comment draft on
+  the selected line range; `esc`/`V` leaves. VISUAL badge in the footer;
+  selection uses the drag highlight. keys.toml gains `[bindings.visual]`.
 
 ### File tree (neo-tree-style verbs, Tree context)
 - ✓ `y` — yank (copy) the focused file's repo-relative path to the
@@ -231,7 +234,7 @@ Everything explicitly asked for, so no shell or rewrite loses them.
 - ✓ Cross-file motions: j/k at a file's edges, n/p past the last
   hunk/comment, and `g f`/`g F` all continue through the stack.
 - ✓ Mouse drag across lines = multiline comment (keyboard version =
-  Visual mode, pending); inline threads under their rows with in-card
+  Visual mode, `V`); inline threads under their rows with in-card
   reply; comments record the diff they were made on.
 - ◻ `z` Expand group: `z u`/`z d` expand up/down from the focused row,
   `z c` comment-on-file from the diff (interim: both expands may share

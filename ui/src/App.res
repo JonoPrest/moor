@@ -182,6 +182,7 @@ module Shell = {
                         threads=model.threads
                         draft=model.draft
                         pendingRefresh=model.pendingRefresh
+                        visual=?model.visual
                         isOpen={switch model.diff {
                         | Some(open_) => open_.file == diff.file
                         | None => false

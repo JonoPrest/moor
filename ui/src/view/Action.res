@@ -76,4 +76,6 @@ type t =
   ContentSearch({query: @s.null option<string>, @as("all_files") allFiles: bool})
   | @as("ActionPalette") ActionPalette({@as("open") open_: bool})
   | @as("RunCommand") RunCommand({command: View.Command.t})
+  | @as("EnterVisual") EnterVisual({})
+  | @as("LeaveVisual") LeaveVisual({})
 @@warning("+27")

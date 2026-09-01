@@ -123,6 +123,7 @@ macro_rules! registry {
 
 registry!(
     ViewModel,
+    VisualView,
     ContentSearchView,
     ViewPrefs,
     Layout,
@@ -714,6 +715,8 @@ enum_fixture!(
         Action::RunCommand {
             command: Command::ToggleLayout
         },
+        Action::EnterVisual,
+        Action::LeaveVisual,
     ]
 );
 enum_fixture!(
@@ -798,6 +801,7 @@ enum_fixture!(
             diff: Some(local::<DiffView>()?),
             diffs: vec![local::<DiffView>()?],
             prefs: local::<ViewPrefs>()?,
+            visual: Some(local::<VisualView>()?),
         },
         ViewPatch::Threads {
             threads: vec![local::<ThreadView>()?],
@@ -832,6 +836,7 @@ enum_fixture!(
         },
     ]
 );
+struct_fixture!(VisualView, "VisualView", VisualView { start: 4, end: 6 });
 struct_fixture!(
     ViewModel,
     "ViewModel",
@@ -863,6 +868,7 @@ struct_fixture!(
         browse_ref: None,
         content_search: Some(local::<ContentSearchView>()?),
         action_palette: false,
+        visual: Some(local::<VisualView>()?),
         review: Some(local::<OpenReview>()?),
         draft: Some(local::<Draft>()?),
         pending_refresh: true,

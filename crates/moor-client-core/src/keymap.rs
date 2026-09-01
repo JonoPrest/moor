@@ -29,8 +29,8 @@ pub enum Context {
 
 /// Vim-style editing mode (UI-DESIGN: fully modal). `Normal` is keys as
 /// commands; `Insert` is any text editor (the composer, search boxes) —
-/// only `esc` and `ctrl+enter` stay chords there. Visual (line
-/// selection) arrives with stage 2.
+/// only `esc` and `ctrl+enter` stay chords there. `Visual` is line
+/// selection on the diff (`V`): motions extend it, `c` comments on it.
 #[derive(
     Debug,
     Clone,
@@ -55,6 +55,8 @@ pub enum Mode {
     Normal,
     #[serde(alias = "insert")]
     Insert,
+    #[serde(alias = "visual")]
+    Visual,
 }
 
 /// What a key means. Unit-only: targets come from the focus at resolution.
@@ -143,6 +145,8 @@ pub enum Command {
     FocusCommits,
     /// Re-list workspaces and reviews.
     Refresh,
+    /// Enter (or leave) Visual line selection on the diff (`V`).
+    VisualMode,
 }
 
 /// A named key that is not a character.
@@ -444,7 +448,7 @@ pub enum KeysError {
 
 /// The typed keys config (UI-DESIGN: modal keys): what `keys.toml`
 /// deserializes to and the host stores under [`Keymap::KEY`]. Action
-/// names are snake_case command names; sequences may use `<leader>`.
+/// names are `snake_case` command names; sequences may use `<leader>`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct KeysConfig {
@@ -609,6 +613,7 @@ impl Keymap {
             b(X::Diff, keys!("x"), C::ExpandContext, false),
             b(X::Diff, keys!("C"), C::ToggleFileCollapse, false),
             b(X::Diff, keys!("X"), C::ExpandFile, false),
+            b(X::Diff, keys!("V"), C::VisualMode, false),
             b(X::Diff, keys!("enter"), C::Open, false),
             // Thread
             b(X::Thread, keys!("j"), C::MoveDown, true),
@@ -697,10 +702,13 @@ impl Keymap {
                             .join(", "),
                     });
                 }
-                // The contexts this mode's bindings live in.
+                // The contexts this mode's bindings live in. Visual reuses
+                // the Diff-context rows (the mode is derived at resolution,
+                // not stored on bindings).
                 let in_mode = |ctx: Context| match mode {
                     Mode::Insert => ctx == Context::Composer,
                     Mode::Normal => ctx != Context::Composer,
+                    Mode::Visual => ctx == Context::Diff,
                 };
                 let mut contexts: Vec<(Context, bool)> = map
                     .bindings
@@ -1012,6 +1020,7 @@ pub fn label(command: Command) -> &'static str {
         Command::FocusDiff => "focus diff",
         Command::FocusThreads => "focus threads",
         Command::FocusCommits => "focus commits",
+        Command::VisualMode => "select lines",
     }
 }
 
@@ -1021,16 +1030,20 @@ pub fn label(command: Command) -> &'static str {
 pub fn modes_of(command: Command) -> &'static [Mode] {
     use Mode as M;
     match command {
-        // The composer owns these; everything else is Normal-only.
+        // The composer owns these; motions and Comment also run in Visual
+        // (they extend / resolve the line selection); the rest is
+        // Normal-only.
         Command::Submit => &[M::Insert],
-        Command::Back => &[M::Normal, M::Insert],
+        Command::Back => &[M::Normal, M::Insert, M::Visual],
         Command::MoveDown
         | Command::MoveUp
         | Command::PageDown
         | Command::PageUp
         | Command::GoTop
         | Command::GoBottom
-        | Command::NextHunk
+        | Command::Comment
+        | Command::VisualMode => &[M::Normal, M::Visual],
+        Command::NextHunk
         | Command::PrevHunk
         | Command::NextFile
         | Command::PrevFile
@@ -1039,7 +1052,6 @@ pub fn modes_of(command: Command) -> &'static [Mode] {
         | Command::Open
         | Command::NextPanel
         | Command::ToggleViewed
-        | Command::Comment
         | Command::Reply
         | Command::Delete
         | Command::ApplySuggestion

@@ -469,6 +469,25 @@ fn every_action_is_reachable_from_a_binding() {
         }))
         .unwrap();
     states.push(with_file);
+    // Visual mode on: `esc` (Back) and `V` resolve to LeaveVisual.
+    let mut with_visual = ready();
+    with_visual
+        .handle(Input::User(Action::Viewport {
+            file: moor_client_core::FileRef {
+                repo_id: repo_id(),
+                path: path("src/a.rs"),
+            },
+            first_row: 0,
+            last_row: 59,
+        }))
+        .unwrap();
+    with_visual
+        .handle(Input::User(Action::SetFocus {
+            focus: Focus::Diff { row: 4 },
+        }))
+        .unwrap();
+    press(&mut with_visual, "V").unwrap();
+    states.push(with_visual);
     let mut with_draft = ready();
     with_draft
         .handle(Input::User(Action::DraftOpened {
@@ -889,4 +908,54 @@ fn help_and_hints_follow_focus_and_help_is_never_empty() {
             ..
         }
     )));
+}
+
+#[test]
+fn visual_mode_extends_a_selection_and_comments_on_it() {
+    use moor_client_core::{Mode, VisualView};
+    let mut core = ready();
+    core.handle(Input::User(Action::Viewport {
+        file: moor_client_core::FileRef {
+            repo_id: repo_id(),
+            path: path("src/a.rs"),
+        },
+        first_row: 0,
+        last_row: 59,
+    }))
+    .unwrap();
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::Diff { row: 4 },
+    }))
+    .unwrap();
+    // `V` enters Visual on the focused row; motions extend the selection
+    // from the anchor.
+    press(&mut core, "V").unwrap();
+    assert_eq!(core.view().mode, Mode::Visual);
+    assert_eq!(core.view().visual, Some(VisualView { start: 4, end: 4 }));
+    press(&mut core, "j").unwrap();
+    assert_eq!(core.view().visual, Some(VisualView { start: 4, end: 5 }));
+    press(&mut core, "k k").unwrap();
+    assert_eq!(core.view().visual, Some(VisualView { start: 3, end: 4 }));
+    // `c` opens a draft anchored to the selected line range and clears the
+    // selection; the composer takes the keys (Insert).
+    press(&mut core, "c").unwrap();
+    assert_eq!(core.view().focus, Focus::Composer);
+    assert_eq!(core.view().mode, Mode::Insert);
+    assert_eq!(core.view().visual, None);
+    let draft = core.view().draft.clone().unwrap();
+    let Anchor::Lines { lines, .. } = draft.anchor else {
+        panic!(
+            "visual comment should anchor to lines, got {:?}",
+            draft.anchor
+        );
+    };
+    assert!(lines.start() <= lines.end());
+    // Discard; `V` then `esc` leaves Visual without a draft.
+    press(&mut core, "esc").unwrap();
+    press(&mut core, "V").unwrap();
+    assert_eq!(core.view().mode, Mode::Visual);
+    press(&mut core, "esc").unwrap();
+    assert_eq!(core.view().mode, Mode::Normal);
+    assert_eq!(core.view().visual, None);
+    assert!(core.view().draft.is_none());
 }

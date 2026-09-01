@@ -1,6 +1,31 @@
 # Handover notes
 
-## 2026-09-01 (evening): NEXT TASK — Visual mode (keyboard multiline comments)
+## 2026-09-01 (later): Visual mode SHIPPED — next up: `z` Expand group
+
+Visual mode below is built, tested and verified headlessly (Playwright
+against `moor --port 7788 .`: V badge, j/k extend, c opens the composer
+on the range, esc round-trips; zero console errors). Implementation
+followed the plan below almost exactly; deltas worth knowing:
+
+- Core state is `ClientCore.visual_anchor: Option<u32>` (not a struct);
+  the selection crosses the boundary as `ViewModel.visual:
+  Option<VisualView { start, end }>` riding the Diff patch.
+- `resolve` gates on an `in_visual` flag: motions stay within the open
+  file (no adjacent-file continuation), `c` maps the selected rows to
+  head lines (else base) and yields `Action::CommentLines`, `esc`/`V` →
+  `Action::LeaveVisual`. `V` only enters on a commentable row.
+- `visual_anchor` clears on comment open/submit/discard, CloseFile,
+  CloseReview.
+- `modes_of`: motions + Comment + VisualMode are `[Normal, Visual]`;
+  keymap/keys.toml `[bindings.visual]` maps to the Diff context rows.
+- This machine's clippy (1.97.1) flagged three pre-existing nits
+  (explorer.rs obfuscated_if_else, keymap doc_markdown, keys_file
+  redundant closure) — fixed in the same commit.
+
+`moor`/`moord` are NOT installed on this machine (`cargo install` them
+before demoing); Playwright lives in the session scratchpad `pw/`.
+
+## 2026-09-01 (evening): DONE — Visual mode (keyboard multiline comments)
 
 Everything below builds on the modal-keys system that landed today
 (space leader + persistent which-key, typed keys.toml + schemars schema

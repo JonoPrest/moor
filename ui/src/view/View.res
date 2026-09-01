@@ -16,7 +16,7 @@ module Tab = {
 
 module Mode = {
   @schema
-  type t = Normal | Insert
+  type t = Normal | Insert | Visual
 }
 
 module ViewPrefs = {
@@ -164,6 +164,13 @@ module TreeView = {
     breadcrumbs: array<string>,
     search: @s.null option<SearchView.t>,
   }
+}
+
+/// The Visual-mode line selection: row indices of the open file, ordered,
+/// both ends inclusive.
+module VisualView = {
+  @schema
+  type t = {start: int, @as("end") end_: int}
 }
 
 module ContentSearchView = {
@@ -344,6 +351,7 @@ module Command = {
     | ExpandContext
     | ContentSearch
     | ActionPalette
+    | VisualMode
 }
 
 /// A key sequence in its text form (`"g g"`, `"ctrl+p"`).
@@ -420,6 +428,7 @@ module ViewModel = {
     @as("browse_ref") browseRef: @s.null option<Domain.RefSpec.t>,
     @as("content_search") contentSearch: @s.null option<ContentSearchView.t>,
     @as("action_palette") actionPalette: bool,
+    visual: @s.null option<VisualView.t>,
     review: @s.null option<OpenReview.t>,
     draft: @s.null option<Draft.t>,
     @as("pending_refresh") pendingRefresh: bool,
@@ -459,6 +468,7 @@ module ViewModel = {
     browseRef: None,
     contentSearch: None,
     actionPalette: false,
+    visual: None,
     review: None,
     draft: None,
     pendingRefresh: false,
@@ -483,7 +493,12 @@ module ViewPatch = {
       })
     | @as("Tree") Tree({tree: TreeView.t})
     | @as("Diff")
-    Diff({diff: @s.null option<DiffView.t>, diffs: array<DiffView.t>, prefs: ViewPrefs.t})
+    Diff({
+        diff: @s.null option<DiffView.t>,
+        diffs: array<DiffView.t>,
+        prefs: ViewPrefs.t,
+        visual: @s.null option<VisualView.t>,
+      })
     | @as("Threads") Threads({threads: array<ThreadView.t>})
     | @as("Conversation") Conversation({conversation: array<ThreadView.t>})
     | @as("CommitStepper") CommitStepper({stepper: @s.null option<CommitStepper.t>})
@@ -520,7 +535,7 @@ module ViewPatch = {
         browseRef,
       }
     | Tree({tree}) => {...model, tree}
-    | Diff({diff, diffs, prefs}) => {...model, diff, diffs, prefs}
+    | Diff({diff, diffs, prefs, visual}) => {...model, diff, diffs, prefs, visual}
     | Threads({threads}) => {...model, threads}
     | Conversation({conversation}) => {...model, conversation}
     | CommitStepper({stepper}) => {...model, stepper}

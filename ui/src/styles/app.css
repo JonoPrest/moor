@@ -678,6 +678,10 @@
     background: var(--color-accent);
     color: var(--color-bg);
   }
+  .mode-visual {
+    background: var(--color-focus);
+    color: var(--color-bg);
+  }
   .mode-focus {
     @apply border border-border text-muted;
   }

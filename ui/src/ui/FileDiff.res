@@ -27,6 +27,7 @@ let make = (
   ~draft: option<Draft.t>,
   ~pendingRefresh: bool,
   ~isOpen: bool,
+  ~visual: option<VisualView.t>=?,
   ~dispatch: Action.t => unit,
 ) => {
   // Fold state is core-owned (`z a` toggles; motions skip folded files).
@@ -78,6 +79,12 @@ let make = (
     wasOpen.current = isOpen
     None
   }, [isOpen])
+  // Visual-mode selection (core-owned): only the open file's rows.
+  let inVisual = (index: int) =>
+    switch visual {
+    | Some({start, end_}) if isOpen => index >= start && index <= end_
+    | _ => false
+    }
   let inDrag = (row: Render.Row.t) =>
     switch (drag, lineOf(row)) {
     | (Some({side, start, current}), Some((s, line))) if s == side =>
@@ -145,7 +152,7 @@ let make = (
           {rows
           ->Array.map(r => {
             let focused = focusedRow == Some(r.index)
-            let selected = inDrag(r.row)
+            let selected = inDrag(r.row) || inVisual(r.index)
             let rowEl =
               <Row
                 row=r.row

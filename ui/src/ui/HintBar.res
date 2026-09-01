@@ -24,6 +24,7 @@ let make = (
   <footer className={"hint-bar" ++ (pending ? " hint-bar-pending" : "")} role="contentinfo">
     {switch mode {
     | Insert => <span className="mode-badge mode-insert"> {React.string("INSERT")} </span>
+    | Visual => <span className="mode-badge mode-visual"> {React.string("VISUAL")} </span>
     | Normal =>
       focusName == ""
         ? React.null

@@ -159,5 +159,9 @@
     "layout": "Split",
     "sidebar_hidden": false
   },
-  "type": "Diff"
+  "type": "Diff",
+  "visual": {
+    "end": 6,
+    "start": 4
+  }
 }

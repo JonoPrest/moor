@@ -215,11 +215,11 @@ pub(crate) fn build(inputs: &ExplorerInputs<'_>) -> TreeView {
             repos.entry(f.repo_id).or_default();
         }
     }
-    for t in inputs
-        .changed_only
-        .then_some(&[][..])
-        .unwrap_or(&inputs.trees)
-    {
+    for t in if inputs.changed_only {
+        &[][..]
+    } else {
+        &inputs.trees
+    } {
         let leaves = repos.entry(t.repo_id).or_default();
         for e in &t.entries {
             match &e.kind {

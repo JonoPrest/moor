@@ -683,6 +683,10 @@
       "query": "sli"
     }
   },
+  "visual": {
+    "end": 6,
+    "start": 4
+  },
   "workspaces": [
     {
       "id": "01HF7YAT000000000000000001",
