@@ -129,6 +129,14 @@ pub enum Command {
     CollapseParent,
     /// Collapse every dir of the tree.
     CollapseAll,
+    /// Focus the file tree panel.
+    FocusTree,
+    /// Focus the open diff.
+    FocusDiff,
+    /// Focus the thread list.
+    FocusThreads,
+    /// Focus the commits list.
+    FocusCommits,
     /// Re-list workspaces and reviews.
     Refresh,
 }
@@ -541,6 +549,10 @@ impl Keymap {
             l('h', C::ToggleWhitespace),
             l('b', C::ToggleSidebar),
             l('C', C::Commits),
+            l('e', C::FocusTree),
+            l('d', C::FocusDiff),
+            l('t', C::FocusThreads),
+            l('m', C::FocusCommits),
             b(X::Global, keys!("esc"), C::Back, false),
             b(X::Global, keys!("ctrl+shift+c"), C::Connect, false),
             b(X::Global, keys!("ctrl+shift+d"), C::Disconnect, false),
@@ -988,6 +1000,10 @@ pub fn label(command: Command) -> &'static str {
         Command::CopyPath => "copy path",
         Command::CollapseParent => "collapse parent",
         Command::CollapseAll => "collapse all",
+        Command::FocusTree => "focus tree",
+        Command::FocusDiff => "focus diff",
+        Command::FocusThreads => "focus threads",
+        Command::FocusCommits => "focus commits",
     }
 }
 
@@ -1040,6 +1056,10 @@ pub fn modes_of(command: Command) -> &'static [Mode] {
         | Command::CopyPath
         | Command::CollapseParent
         | Command::CollapseAll
+        | Command::FocusTree
+        | Command::FocusDiff
+        | Command::FocusThreads
+        | Command::FocusCommits
         | Command::Refresh => &[M::Normal],
     }
 }

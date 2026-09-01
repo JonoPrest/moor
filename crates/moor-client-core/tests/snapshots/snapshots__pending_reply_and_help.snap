@@ -760,6 +760,26 @@ expression: core.view()
       "label": "commits"
     },
     {
+      "keys": "space e",
+      "command": "FocusTree",
+      "label": "focus tree"
+    },
+    {
+      "keys": "space d",
+      "command": "FocusDiff",
+      "label": "focus diff"
+    },
+    {
+      "keys": "space t",
+      "command": "FocusThreads",
+      "label": "focus threads"
+    },
+    {
+      "keys": "space m",
+      "command": "FocusCommits",
+      "label": "focus commits"
+    },
+    {
       "keys": "esc",
       "command": "Back",
       "label": "back"
@@ -1074,6 +1094,34 @@ expression: core.view()
             "keys": "space C",
             "command": "Commits",
             "label": "commits",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "space e",
+            "command": "FocusTree",
+            "label": "focus tree",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "space d",
+            "command": "FocusDiff",
+            "label": "focus diff",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "space t",
+            "command": "FocusThreads",
+            "label": "focus threads",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "space m",
+            "command": "FocusCommits",
+            "label": "focus commits",
             "primary": false,
             "overridden": false
           },

@@ -327,6 +327,10 @@ module Command = {
     | CopyPath
     | CollapseParent
     | CollapseAll
+    | FocusTree
+    | FocusDiff
+    | FocusThreads
+    | FocusCommits
     | Connect
     | Disconnect
     | Commits

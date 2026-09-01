@@ -359,6 +359,10 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 | Command::ToggleSidebar
                 | Command::CollapseParent
                 | Command::CollapseAll
+                | Command::FocusTree
+                | Command::FocusDiff
+                | Command::FocusThreads
+                | Command::FocusCommits
                 | Command::Submit
                 | Command::Connect
                 | Command::Disconnect
@@ -686,6 +690,36 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
             | Focus::Help => Err(nothing()),
         },
         Command::CollapseAll => Ok(Action::CollapseAll),
+        Command::FocusTree => {
+            if view.review.is_some() {
+                Ok(Action::SetFocus {
+                    focus: Focus::Tree { index: 0 },
+                })
+            } else {
+                Err(NoTarget::NoOpenReview)
+            }
+        }
+        Command::FocusDiff => match &view.diff {
+            Some(d) => Ok(Action::SetFocus {
+                focus: Focus::Diff { row: d.first_row },
+            }),
+            None => Err(NoTarget::NoOpenFile),
+        },
+        Command::FocusThreads => {
+            if view.threads.is_empty() {
+                Err(nothing())
+            } else {
+                Ok(Action::SetFocus {
+                    focus: Focus::Thread { index: 0 },
+                })
+            }
+        }
+        Command::FocusCommits => match &view.stepper {
+            Some(_) => Ok(Action::SetFocus {
+                focus: Focus::CommitStepper { index: 0 },
+            }),
+            None => Err(NoTarget::Nothing(command)),
+        },
         // The composer lives in the host, which handles the submit chord
         // itself; the binding exists for hints and tooltips only.
         Command::Submit => Err(nothing()),

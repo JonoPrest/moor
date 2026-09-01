@@ -780,6 +780,26 @@ expression: core.view()
       "label": "commits"
     },
     {
+      "keys": "space e",
+      "command": "FocusTree",
+      "label": "focus tree"
+    },
+    {
+      "keys": "space d",
+      "command": "FocusDiff",
+      "label": "focus diff"
+    },
+    {
+      "keys": "space t",
+      "command": "FocusThreads",
+      "label": "focus threads"
+    },
+    {
+      "keys": "space m",
+      "command": "FocusCommits",
+      "label": "focus commits"
+    },
+    {
       "keys": "esc",
       "command": "Back",
       "label": "back"
