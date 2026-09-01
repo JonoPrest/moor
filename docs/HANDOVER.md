@@ -1,5 +1,114 @@
 # Handover notes
 
+## 2026-09-01 (evening): NEXT TASK — Visual mode (keyboard multiline comments)
+
+Everything below builds on the modal-keys system that landed today
+(space leader + persistent which-key, typed keys.toml + schemars schema
+via `moor keys init|schema|check`, per-panel focus `ge/gd/gt/gm`,
+tree verbs `y`/`c`/`C`/`z`, fold-aware cross-file motions with `C`
+fold / enter unfold / `X` expand-full, GitHub-style stacked diffs).
+All pushed; gates green. Read docs/UI-DESIGN.md (updated: "fully modal"
+supersedes the old no-modes rule).
+
+### Visual mode — the design (agreed with Jono)
+
+Enter with `V` on a diff row → Mode::Visual; `j`/`k` (and arrows)
+extend the line selection; `c` opens a multiline comment draft on the
+selected range; `Esc` (or any resolve) returns to Normal. The footer
+shows a VISUAL badge (the badge slot already renders INSERT). Rows in
+the selection highlight (the mouse-drag path already has
+`.row-drag-selected`).
+
+The plumbing that already exists — use it, don't rebuild:
+- `Mode { Normal, Insert }` + `modes_of(Command)` validity + per-mode
+  keys.toml tables + per-mode schema (crates/moor-client-core/src/keymap.rs).
+  Add `Visual` to the enum: serde alias "visual", schema/table emission
+  is derived, so `moor keys init` and the schema pick it up automatically.
+- `Action::CommentLines { file, side, start_line, end_line }` builds the
+  ranged anchor (lib.rs) — the mouse drag uses it; Visual's `c` should
+  resolve to exactly this.
+- The hint bar is mode-aware (`ViewModel.mode` rides the Hints patch);
+  which-key/pending machinery needs no changes.
+
+### Implementation plan
+
+1. **Core state** (moor-client-core):
+   - `keymap.rs`: `Mode::Visual` variant. `modes_of`: MoveDown/MoveUp/
+     PageDown/PageUp/GoTop/GoBottom/Comment/Back gain Visual; add a new
+     `Command::VisualMode` (Normal, bound `V` in Diff, label "select
+     lines").
+   - `lib.rs`: core field `visual: Option<VisualSel>` where
+     `VisualSel { anchor_row: u32 }` (the row where V was pressed; the
+     cursor row is `Focus::Diff { row }` as usual). New
+     `Action::EnterVisual`, `Action::LeaveVisual` (or fold both into one
+     toggle). derive(): `view.mode` becomes Visual while `visual` is
+     Some (it currently derives Insert-from-Composer; extend the match).
+     Leaving: Esc (Back in Visual resolves to LeaveVisual), any comment
+     submit/discard, CloseFile/CloseReview must clear it.
+   - Selection to the UI: simplest is `ViewModel.visual: Option<(u32, u32)>`
+     (ordered row range) riding the **Diff** patch; FileDiff marks rows
+     in range with the existing `.row-drag-selected` class (only for the
+     open file). Fixtures + View.res mirror (ViewPatch::Diff gains the
+     field — remember fixtures/client + ClientRegistry untouched, it's
+     inside the Diff patch).
+2. **Resolution** (`focus.rs::resolve`): lookup already takes context;
+   mode is derived from core state, so pass it in (either extend
+   `Keymap::lookup(mode, context, seq)` — bindings gain a `mode` field
+   defaulting Normal — or gate in `resolve`). The lighter path used so
+   far: bindings stay context-keyed; in Visual, `resolve` reinterprets:
+   MoveDown/Up = move cursor row (selection = anchor..=cursor),
+   `Comment` = CommentLines over the selection (side/lines via the same
+   row→(side,line) mapping the UI's `lineOf` uses — write it in core,
+   `diff.rs`, from the cached rows; skip rows with no line), `Back` =
+   LeaveVisual. Everything else falls through (or leaves Visual first).
+3. **Keys**: `V` → VisualMode → Action::EnterVisual (only in Diff focus,
+   only when a commentable row is focused). keys.toml: `[bindings.visual]`
+   section appears in `moor keys init` output automatically once
+   modes_of is updated.
+4. **UI** (small): FileDiff row class when inside `model.visual` range
+   and `isOpen`; VISUAL badge (`mode-badge` slot, add a `.mode-visual`
+   colour); nothing else.
+5. **Tests**: keys.rs — V enters, j extends, c yields a draft whose
+   anchor is Lines{start..end}, esc leaves; keymap.rs —
+   default_table_parses (auto), keys_file round-trip picks up
+   [bindings.visual]. Watch `every_action_is_reachable`: EnterVisual/
+   LeaveVisual likely host_only? No — reachable via V/esc; add to the
+   reached set naturally.
+
+Gotchas from today, for whoever picks this up:
+- ALWAYS `cd /Users/.../moor` (absolute) at the start of every shell
+  chain; cwd drift into ui/ or the ../moor-demo worktree burned hours.
+- Gate commits on real exit codes, not `| grep | tail` pipelines.
+- After core changes: `cargo install --path crates/moor-cli --force`,
+  `moor keys init --force` (regenerates the user's keys.toml +
+  keys.schema.json), restart the demo server with
+  `moor --port 7788 <dir>` and POST THE URL.
+- `INSTA_UPDATE=always cargo test -p moor-client-core` while iterating;
+  full workspace gates before the final push.
+
+### Other queued work (in rough priority)
+
+- **Nested which-key groups**: `[groups]` labels exist for prefixes; the
+  popup does not yet mark sub-groups (`+Diff` style) — derive "has
+  deeper continuations" in `Keymap::pending_hints`.
+- **Directional expanders** (`expand up`/`expand down` from the cursor):
+  needs render-side band splicing (今 `x` re-renders the whole file with
+  more context, `X` full). Protocol: per-band expand request or splice
+  BlobRender rows into the cached render.
+- **Conversation tab**: quote the anchored diff lines per thread + a
+  hide-resolved filter (UI-DESIGN §Comments).
+- **crates.io publish**: everything is packaged/verified (9 crates,
+  names free, LICENSE in). Blocked ONLY on verifying the email at
+  https://crates.io/settings/profile — then `cargo publish -p
+  moor-protocol -p moor-config -p moor-review-core -p moor-client-core
+  -p moord -p moor-client-host -p moor-client-web -p moor-mcp -p moor
+  --no-verify` from a clean tree.
+- **Tauri smoke run**: `pnpm --dir ui build && cargo run -p
+  moor-client-tauri` — the desktop shell embeds the same dist; check
+  the clipboard permission for the new copy-path button.
+- **Demo worktree cleanup** when done: `git worktree remove
+  ../moor-demo --force && git branch -D jp/demo-review`.
+
 ## 2026-09-01: UI-DESIGN build order COMPLETE (phases 1–3)
 
 All three phases of the agreed build order are built, tested and
