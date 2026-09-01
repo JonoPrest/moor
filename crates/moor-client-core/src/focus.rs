@@ -227,6 +227,50 @@ fn open_file(file: FileRef, around_row: u32) -> Action {
     }
 }
 
+/// Whether the stacked section for `render` is folded (skipped by motions).
+fn collapsed_of(view: &ViewModel, render: &crate::cache::RenderKey) -> bool {
+    view.diffs
+        .iter()
+        .find(|d| d.file.repo_id == render.repo_id && d.file.path == render.path)
+        .is_some_and(|d| d.collapsed)
+}
+
+/// The next/previous file relative to the open one. A folded file is
+/// still landed on (its header takes focus; `enter` unfolds); an open
+/// one lands at its start (forward) or last cached-total row (backward).
+fn adjacent_file(core: &ClientCore, forward: bool) -> Result<Action, NoTarget> {
+    let view = core.view();
+    let open = view.review.as_ref().ok_or(NoTarget::NoOpenReview)?;
+    let cur = open
+        .open_file
+        .as_ref()
+        .and_then(|f| open.files.iter().position(|k| *k == f.render))
+        .ok_or(NoTarget::NoOpenFile)?;
+    let i = if forward {
+        if cur + 1 >= open.files.len() {
+            return Err(NoTarget::AtEdge);
+        }
+        cur + 1
+    } else {
+        cur.checked_sub(1).ok_or(NoTarget::AtEdge)?
+    };
+    let k = &open.files[i];
+    let row = if forward || collapsed_of(view, k) {
+        0
+    } else {
+        crate::diff::total_rows_of(core.cache(), k)
+            .unwrap_or(1)
+            .saturating_sub(1)
+    };
+    Ok(open_file(
+        FileRef {
+            repo_id: k.repo_id,
+            path: k.path.clone(),
+        },
+        row,
+    ))
+}
+
 /// The action `command` means with the core in its current state.
 // One arm per command; splitting would hide the exhaustive match.
 #[allow(clippy::too_many_lines)]
@@ -265,8 +309,16 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
         })
     };
     match command {
-        Command::MoveDown => step(1),
-        Command::MoveUp => step(-1),
+        // In the diff, the edges continue into the adjacent file
+        // (skipping folded ones) — the stacked view is one long document.
+        Command::MoveDown => match (step(1), focus) {
+            (Err(NoTarget::AtEdge), Focus::Diff { .. }) => adjacent_file(core, true),
+            (r, _) => r,
+        },
+        Command::MoveUp => match (step(-1), focus) {
+            (Err(NoTarget::AtEdge), Focus::Diff { .. }) => adjacent_file(core, false),
+            (r, _) => r,
+        },
         Command::PageDown => step(i64::from(PAGE_ROWS)),
         Command::PageUp => step(-i64::from(PAGE_ROWS)),
         Command::GoTop => jump(false),
@@ -359,6 +411,8 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 | Command::ToggleSidebar
                 | Command::CollapseParent
                 | Command::CollapseAll
+                | Command::ToggleFileCollapse
+                | Command::ExpandFile
                 | Command::FocusTree
                 | Command::FocusDiff
                 | Command::FocusThreads
@@ -380,11 +434,56 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
             } else {
                 rows.iter().rev().find(|r| r.index < row && wanted(r))
             };
-            found
-                .map(|r| Action::SetFocus {
+            if let Some(r) = found {
+                return Ok(Action::SetFocus {
                     focus: Focus::Diff { row: r.index },
-                })
-                .ok_or(NoTarget::AtEdge)
+                });
+            }
+            // No further match in this file: scan onward through the
+            // stacked files (skipping folded ones) for the next one.
+            let cur = open
+                .files
+                .iter()
+                .position(|k| k == render)
+                .ok_or(NoTarget::AtEdge)?;
+            let mut i = cur;
+            loop {
+                i = if forward {
+                    if i + 1 >= open.files.len() {
+                        return Err(NoTarget::AtEdge);
+                    }
+                    i + 1
+                } else {
+                    i.checked_sub(1).ok_or(NoTarget::AtEdge)?
+                };
+                let k = &open.files[i];
+                // A folded file is one stop: its header takes focus.
+                if collapsed_of(view, k) {
+                    return Ok(open_file(
+                        FileRef {
+                            repo_id: k.repo_id,
+                            path: k.path.clone(),
+                        },
+                        0,
+                    ));
+                }
+                let rows = crate::diff::all_rows(core.cache(), &open.snapshot, k);
+                let hit = if forward {
+                    rows.iter().find(|r| wanted(r))
+                } else {
+                    rows.iter().rev().find(|r| wanted(r))
+                };
+                if let Some(r) = hit {
+                    let row = r.index;
+                    return Ok(open_file(
+                        FileRef {
+                            repo_id: k.repo_id,
+                            path: k.path.clone(),
+                        },
+                        row,
+                    ));
+                }
+            }
         }
         Command::NextFile | Command::PrevFile => {
             let Some(open) = &view.review else {
@@ -446,6 +545,18 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
             },
             Focus::Diff { row } => {
                 let diff = view.diff.as_ref().ok_or(NoTarget::NoOpenFile)?;
+                // On a folded file, enter unfolds (C folds it back).
+                if collapsed_of(
+                    view,
+                    view.review
+                        .as_ref()
+                        .and_then(|o| o.open_file.as_ref().map(|f| &f.render))
+                        .ok_or(NoTarget::NoOpenFile)?,
+                ) {
+                    return Ok(Action::ToggleFileCollapse {
+                        file: diff.file.clone(),
+                    });
+                }
                 let thread = diff
                     .rows
                     .iter()
@@ -690,6 +801,14 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
             | Focus::Help => Err(nothing()),
         },
         Command::CollapseAll => Ok(Action::CollapseAll),
+        Command::ToggleFileCollapse => {
+            let file = target_file(view, focus).ok_or_else(nothing)?;
+            Ok(Action::ToggleFileCollapse { file })
+        }
+        Command::ExpandFile => {
+            let file = target_file(view, focus).ok_or_else(nothing)?;
+            Ok(Action::ExpandContext { file, full: true })
+        }
         Command::FocusTree => {
             if view.review.is_some() {
                 Ok(Action::SetFocus {

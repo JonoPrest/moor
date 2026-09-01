@@ -206,6 +206,7 @@ module DiffView = {
     missing: array<Render.chunkIndex>,
     @as("file_threads") fileThreads: array<threadId>,
     original: bool,
+    collapsed: bool,
   }
 }
 
@@ -327,6 +328,8 @@ module Command = {
     | CopyPath
     | CollapseParent
     | CollapseAll
+    | ToggleFileCollapse
+    | ExpandFile
     | FocusTree
     | FocusDiff
     | FocusThreads

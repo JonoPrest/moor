@@ -107,6 +107,8 @@ pub struct DiffView {
     pub missing: Vec<ChunkIndex>,
     /// Threads anchored to the whole file (shown above the rows).
     pub file_threads: Vec<ThreadId>,
+    /// Folded in the stacked view (`z a`); motions skip collapsed files.
+    pub collapsed: bool,
     /// This is a comment's recorded original diff, opened read-only
     /// (UI-DESIGN §Comments); the UI shows the jump-to-context banner.
     #[serde(default)]
@@ -355,6 +357,19 @@ fn placements(snapshot: &ReviewSnapshot, render: &RenderKey) -> Vec<Placement> {
 /// Every cached row of `render` with its threads, for navigation that must
 /// see past the viewport (next hunk, next comment). Chunks not cached are
 /// simply absent.
+/// Total rows of a render whose header is cached.
+pub(crate) fn total_rows_of(cache: &ContentCache, render: &RenderKey) -> Option<u32> {
+    match cache.peek(&CacheKey::Header {
+        render: render.clone(),
+    })? {
+        CacheValue::Header { header } => match header.content {
+            RenderContent::Text { total_rows, .. } => Some(total_rows),
+            RenderContent::Binary => None,
+        },
+        CacheValue::Tree { .. } | CacheValue::Chunk { .. } => None,
+    }
+}
+
 pub(crate) fn all_rows(
     cache: &ContentCache,
     snapshot: &ReviewSnapshot,
@@ -435,6 +450,7 @@ pub(crate) fn diff_view(
             rows: Vec::new(),
             missing: Vec::new(),
             file_threads,
+            collapsed: false,
             original: false,
         });
     };
@@ -483,6 +499,7 @@ pub(crate) fn diff_view(
         rows,
         missing,
         file_threads,
+        collapsed: false,
         original: false,
     })
 }
@@ -505,6 +522,7 @@ fn empty(
         rows: Vec::new(),
         missing: Vec::new(),
         file_threads,
+        collapsed: false,
         original: false,
     }
 }

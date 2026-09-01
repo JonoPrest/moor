@@ -129,6 +129,10 @@ pub enum Command {
     CollapseParent,
     /// Collapse every dir of the tree.
     CollapseAll,
+    /// Fold/unfold the focused file's section in the stacked diff.
+    ToggleFileCollapse,
+    /// Re-render the focused file with the whole file as context.
+    ExpandFile,
     /// Focus the file tree panel.
     FocusTree,
     /// Focus the open diff.
@@ -603,6 +607,8 @@ impl Keymap {
             b(X::Diff, keys!("v"), C::ToggleViewed, true),
             b(X::Diff, keys!("y"), C::CopyPath, false),
             b(X::Diff, keys!("x"), C::ExpandContext, false),
+            b(X::Diff, keys!("C"), C::ToggleFileCollapse, false),
+            b(X::Diff, keys!("X"), C::ExpandFile, false),
             b(X::Diff, keys!("enter"), C::Open, false),
             // Thread
             b(X::Thread, keys!("j"), C::MoveDown, true),
@@ -1000,6 +1006,8 @@ pub fn label(command: Command) -> &'static str {
         Command::CopyPath => "copy path",
         Command::CollapseParent => "collapse parent",
         Command::CollapseAll => "collapse all",
+        Command::ToggleFileCollapse => "fold file",
+        Command::ExpandFile => "expand full file",
         Command::FocusTree => "focus tree",
         Command::FocusDiff => "focus diff",
         Command::FocusThreads => "focus threads",
@@ -1056,6 +1064,8 @@ pub fn modes_of(command: Command) -> &'static [Mode] {
         | Command::CopyPath
         | Command::CollapseParent
         | Command::CollapseAll
+        | Command::ToggleFileCollapse
+        | Command::ExpandFile
         | Command::FocusTree
         | Command::FocusDiff
         | Command::FocusThreads

@@ -219,6 +219,7 @@ expression: core.view()
       1
     ],
     "file_threads": [],
+    "collapsed": false,
     "original": false
   },
   "diffs": [
@@ -371,6 +372,7 @@ expression: core.view()
         1
       ],
       "file_threads": [],
+      "collapsed": false,
       "original": false
     },
     {
@@ -518,6 +520,7 @@ expression: core.view()
       ],
       "missing": [],
       "file_threads": [],
+      "collapsed": false,
       "original": false
     }
   ],
@@ -898,6 +901,16 @@ expression: core.view()
       "keys": "x",
       "command": "ExpandContext",
       "label": "expand context"
+    },
+    {
+      "keys": "C",
+      "command": "ToggleFileCollapse",
+      "label": "fold file"
+    },
+    {
+      "keys": "X",
+      "command": "ExpandFile",
+      "label": "expand full file"
     },
     {
       "keys": "r",

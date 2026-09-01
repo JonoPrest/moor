@@ -440,6 +440,7 @@ struct_fixture!(
         rows: vec![local::<DiffRow>()?],
         missing: vec![ChunkIndex::new(1)],
         file_threads: vec![thread_id()?],
+        collapsed: false,
         original: false,
     }
 );
@@ -680,6 +681,7 @@ enum_fixture!(
         Action::CopyPath {
             path: path("src/lib.rs")?,
         },
+        Action::ToggleFileCollapse { file: file_ref()? },
         Action::CollapseParent,
         Action::CollapseAll,
         Action::MarkViewed { file: file_ref()? },

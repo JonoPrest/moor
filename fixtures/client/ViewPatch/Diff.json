@@ -1,5 +1,6 @@
 {
   "diff": {
+    "collapsed": false,
     "content": {
       "additions": 12,
       "chunk_count": 3,
@@ -76,6 +77,7 @@
   },
   "diffs": [
     {
+      "collapsed": false,
       "content": {
         "additions": 12,
         "chunk_count": 3,

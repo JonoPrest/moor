@@ -228,6 +228,11 @@
   .file-diff-header {
     @apply sticky top-0 z-10 flex items-center gap-2 border-b border-border bg-panel px-2 py-1;
   }
+  /* A folded file holding the motion focus (enter unfolds). */
+  .file-diff-header[data-focused] {
+    outline: 1px solid var(--color-focus);
+    outline-offset: -1px;
+  }
   .file-chevron {
     @apply px-1;
   }

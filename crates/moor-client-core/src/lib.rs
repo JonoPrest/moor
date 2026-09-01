@@ -228,6 +228,10 @@ pub enum Action {
     },
     /// Hide/show the left sidebar (persisted).
     ToggleSidebar,
+    /// Fold/unfold one file's section in the stacked diff.
+    ToggleFileCollapse {
+        file: FileRef,
+    },
     /// Collapse the focused tree node's parent dir (neo-tree style);
     /// focus moves to it.
     CollapseParent,
@@ -519,6 +523,9 @@ pub struct ClientCore {
     focus_return: Option<Focus>,
     /// `SetScope { ByCommit }` is waiting for its `ListCommits` answer.
     by_commit_pending: bool,
+    /// Per-file fold overrides for the stacked view; unset files default
+    /// to folded-when-viewed.
+    file_collapse: std::collections::BTreeMap<(RepoId, RepoPath), bool>,
     /// The Browse tab's custom ref, when one is picked (UI-DESIGN §Browse).
     browse: Option<Browse>,
 }
@@ -571,6 +578,7 @@ impl ClientCore {
             help_open: false,
             focus_return: None,
             by_commit_pending: false,
+            file_collapse: std::collections::BTreeMap::new(),
             browse: None,
         }
     }
@@ -815,6 +823,17 @@ impl ClientCore {
                 .collect(),
             None => Vec::new(),
         };
+        let diffs: Vec<DiffView> = diffs
+            .into_iter()
+            .map(|mut d| {
+                d.collapsed = self
+                    .file_collapse
+                    .get(&(d.file.repo_id, d.file.path.clone()))
+                    .copied()
+                    .unwrap_or(d.viewed == explorer::ViewedState::Viewed);
+                d
+            })
+            .collect();
         if diff != self.view.diff || diffs != self.view.diffs {
             self.view.diff = diff;
             self.view.diffs = diffs;
@@ -1441,6 +1460,22 @@ impl ClientCore {
                 }
                 self.view.tab = tab;
                 Ok(vec![render(&[ViewSection::Focus])])
+            }
+            Action::ToggleFileCollapse { file } => {
+                if self.view.review.is_none() {
+                    return Err(CoreError::NoOpenReview);
+                }
+                let key = (file.repo_id, file.path.clone());
+                let effective = self.file_collapse.get(&key).copied().unwrap_or_else(|| {
+                    self.view
+                        .diffs
+                        .iter()
+                        .find(|d| d.file == file)
+                        .is_some_and(|d| d.viewed == explorer::ViewedState::Viewed)
+                });
+                self.file_collapse.insert(key, !effective);
+                // The stacked view is derived after this returns.
+                Ok(Vec::new())
             }
             Action::CollapseParent => {
                 if self.view.review.is_none() {

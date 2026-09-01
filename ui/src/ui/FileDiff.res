@@ -29,8 +29,8 @@ let make = (
   ~isOpen: bool,
   ~dispatch: Action.t => unit,
 ) => {
-  let (collapsedOverride, setCollapsed) = React.useState(() => None)
-  let collapsed = collapsedOverride->Option.getOr(diff.viewed == Viewed)
+  // Fold state is core-owned (`z a` toggles; motions skip folded files).
+  let collapsed = diff.collapsed
   let (drag, setDrag) = React.useState(() => None)
   // Patches are viewport-bounded (§6.3): accumulate every row this file
   // has ever shown so scrolling/loading only ever adds rows.
@@ -85,12 +85,12 @@ let make = (
     | _ => false
     }
   <section className="file-diff" ariaLabel=diff.file.path ref={ReactDOM.Ref.domRef(sectionRef)}>
-    <header className="file-diff-header">
+    {Attrs.focused(<header className="file-diff-header">
       <button
         type_="button"
         className="btn btn-ghost file-chevron"
         title={collapsed ? "expand file section" : "collapse file section"}
-        onClick={_ => setCollapsed(_ => Some(!collapsed))}>
+        onClick={_ => dispatch(ToggleFileCollapse({file: diff.file}))}>
         {React.string(collapsed ? "▸" : "▾")}
       </button>
       <span className="file-path mono"> {React.string(diff.file.path)} </span>
@@ -129,13 +129,12 @@ let make = (
                   ? UnmarkViewed({file: diff.file})
                   : MarkViewed({file: diff.file}),
               )
-              setCollapsed(_ => Some(diff.viewed != Viewed))
             }}
           />
           {React.string("Viewed")}
         </label>
       </span>
-    </header>
+    </header>, isOpen && collapsed)}
     {collapsed
       ? React.null
       : <div className="file-diff-body" onMouseLeave={_ => setDrag(_ => None)}>

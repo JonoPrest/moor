@@ -58,6 +58,7 @@ type t =
   | @as("SetTab") SetTab({tab: View.Tab.t})
   | @as("ToggleSidebar") ToggleSidebar({})
   | @as("CopyPath") CopyPath({path: string})
+  | @as("ToggleFileCollapse") ToggleFileCollapse({file: View.FileRef.t})
   | @as("CollapseParent") CollapseParent({})
   | @as("CollapseAll") CollapseAll({})
   | @as("SetRenderOpts")
