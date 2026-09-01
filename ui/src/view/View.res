@@ -25,7 +25,6 @@ module ViewPrefs = {
     layout: Layout.t,
     @as("ignore_whitespace") ignoreWhitespace: bool,
     @as("context_lines") contextLines: int,
-    @as("sidebar_width") sidebarWidth: int,
     @as("sidebar_hidden") sidebarHidden: bool,
   }
 }
@@ -323,11 +322,9 @@ module Command = {
     | TabFiles
     | TabConversation
     | TabBrowse
-    | SidebarShrink
-    | SidebarGrow
-    | SidebarReset
     | ToggleSidebar
     | Submit
+    | CopyPath
     | CollapseParent
     | CollapseAll
     | Connect
@@ -427,7 +424,6 @@ module ViewModel = {
       layout: Unified,
       ignoreWhitespace: false,
       contextLines: 3,
-      sidebarWidth: 288,
       sidebarHidden: false,
     },
     tree: {roots: [], breadcrumbs: [], search: None},

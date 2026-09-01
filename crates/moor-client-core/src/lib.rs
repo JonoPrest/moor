@@ -221,9 +221,10 @@ pub enum Action {
     SetTab {
         tab: Tab,
     },
-    /// Resize the left sidebar (clamped to the sidebar bounds; persisted).
-    SetSidebar {
-        width: u32,
+    /// The focused file's path was copied (the shell owns the clipboard;
+    /// the core treats this as a no-op so it stays binding-reachable).
+    CopyPath {
+        path: RepoPath,
     },
     /// Hide/show the left sidebar (persisted).
     ToggleSidebar,
@@ -1536,13 +1537,7 @@ impl ClientCore {
                 };
                 Ok(self.apply_prefs(prefs, true))
             }
-            Action::SetSidebar { width } => {
-                let prefs = ViewPrefs {
-                    sidebar_width: width.clamp(view::SIDEBAR_MIN, view::SIDEBAR_MAX),
-                    ..self.view.prefs
-                };
-                Ok(self.apply_prefs(prefs, true))
-            }
+            Action::CopyPath { path: _ } => Ok(Vec::new()),
             Action::MarkViewed { file } => self.mark_viewed(file, true),
             Action::UnmarkViewed { file } => self.mark_viewed(file, false),
             Action::ListCommits { repo_id } => {

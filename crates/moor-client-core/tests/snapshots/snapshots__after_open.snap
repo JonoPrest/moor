@@ -7,7 +7,6 @@ expression: core.view()
     "layout": "Unified",
     "ignore_whitespace": false,
     "context_lines": 3,
-    "sidebar_width": 288,
     "sidebar_hidden": false
   },
   "tree": {
@@ -771,24 +770,14 @@ expression: core.view()
       "label": "worktree"
     },
     {
-      "keys": "space <",
-      "command": "SidebarShrink",
-      "label": "shrink sidebar"
-    },
-    {
-      "keys": "space >",
-      "command": "SidebarGrow",
-      "label": "grow sidebar"
-    },
-    {
-      "keys": "space =",
-      "command": "SidebarReset",
-      "label": "reset sidebar"
-    },
-    {
       "keys": "space b",
       "command": "ToggleSidebar",
       "label": "toggle sidebar"
+    },
+    {
+      "keys": "space C",
+      "command": "Commits",
+      "label": "commits"
     },
     {
       "keys": "esc",
@@ -847,8 +836,13 @@ expression: core.view()
     },
     {
       "keys": "c",
-      "command": "Commits",
-      "label": "commits"
+      "command": "Comment",
+      "label": "comment"
+    },
+    {
+      "keys": "y",
+      "command": "CopyPath",
+      "label": "copy path"
     },
     {
       "keys": "C",
@@ -879,11 +873,6 @@ expression: core.view()
       "keys": "[ c",
       "command": "PrevComment",
       "label": "previous comment"
-    },
-    {
-      "keys": "c",
-      "command": "Comment",
-      "label": "comment"
     },
     {
       "keys": "x",

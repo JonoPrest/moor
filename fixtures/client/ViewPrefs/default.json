@@ -2,6 +2,5 @@
   "context_lines": 5,
   "ignore_whitespace": true,
   "layout": "Split",
-  "sidebar_hidden": false,
-  "sidebar_width": 288
+  "sidebar_hidden": false
 }

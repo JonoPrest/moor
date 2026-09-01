@@ -99,9 +99,6 @@ pub enum Command {
     TabConversation,
     /// Show the "Browse" tab.
     TabBrowse,
-    SidebarShrink,
-    SidebarGrow,
-    SidebarReset,
     ToggleSidebar,
     /// Submit the open composer. The editor lives in the host, which
     /// handles the chord itself; the binding exists so hints, help and
@@ -124,6 +121,9 @@ pub enum Command {
     ContentSearch,
     /// Open the actions palette (`:`): every command by name.
     ActionPalette,
+    /// Copy the focused file's repo-relative path to the clipboard (the
+    /// shell performs the copy; the core records the intent).
+    CopyPath,
     /// Collapse the focused tree node's parent dir (neo-tree `C`); on an
     /// open dir, the dir itself. Focus follows.
     CollapseParent,
@@ -539,10 +539,8 @@ impl Keymap {
             l('w', C::ScopeWorktree),
             l('s', C::ToggleLayout),
             l('h', C::ToggleWhitespace),
-            l('<', C::SidebarShrink),
-            l('>', C::SidebarGrow),
-            l('=', C::SidebarReset),
             l('b', C::ToggleSidebar),
+            l('C', C::Commits),
             b(X::Global, keys!("esc"), C::Back, false),
             b(X::Global, keys!("ctrl+shift+c"), C::Connect, false),
             b(X::Global, keys!("ctrl+shift+d"), C::Disconnect, false),
@@ -568,7 +566,8 @@ impl Keymap {
             b(X::Tree, keys!("[ f"), C::PrevFile, false),
             b(X::Tree, keys!("n"), C::NextHunk, false),
             b(X::Tree, keys!("p"), C::PrevHunk, false),
-            b(X::Tree, keys!("c"), C::Commits, false),
+            b(X::Tree, keys!("c"), C::Comment, true),
+            b(X::Tree, keys!("y"), C::CopyPath, false),
             b(X::Tree, keys!("C"), C::CollapseParent, false),
             b(X::Tree, keys!("z"), C::CollapseAll, false),
             // Diff
@@ -590,6 +589,7 @@ impl Keymap {
             b(X::Diff, keys!("[ c"), C::PrevComment, false),
             b(X::Diff, keys!("c"), C::Comment, true),
             b(X::Diff, keys!("v"), C::ToggleViewed, true),
+            b(X::Diff, keys!("y"), C::CopyPath, false),
             b(X::Diff, keys!("x"), C::ExpandContext, false),
             b(X::Diff, keys!("enter"), C::Open, false),
             // Thread
@@ -973,9 +973,6 @@ pub fn label(command: Command) -> &'static str {
         Command::TabFiles => "files changed",
         Command::TabConversation => "conversation",
         Command::TabBrowse => "browse",
-        Command::SidebarShrink => "shrink sidebar",
-        Command::SidebarGrow => "grow sidebar",
-        Command::SidebarReset => "reset sidebar",
         Command::ToggleSidebar => "toggle sidebar",
         Command::Submit => "submit",
         Command::Connect => "connect",
@@ -988,6 +985,7 @@ pub fn label(command: Command) -> &'static str {
         Command::ExpandContext => "expand context",
         Command::ContentSearch => "find in files",
         Command::ActionPalette => "actions",
+        Command::CopyPath => "copy path",
         Command::CollapseParent => "collapse parent",
         Command::CollapseAll => "collapse all",
     }
@@ -1029,9 +1027,6 @@ pub fn modes_of(command: Command) -> &'static [Mode] {
         | Command::TabFiles
         | Command::TabConversation
         | Command::TabBrowse
-        | Command::SidebarShrink
-        | Command::SidebarGrow
-        | Command::SidebarReset
         | Command::ToggleSidebar
         | Command::Connect
         | Command::Disconnect
@@ -1042,6 +1037,7 @@ pub fn modes_of(command: Command) -> &'static [Mode] {
         | Command::ExpandContext
         | Command::ContentSearch
         | Command::ActionPalette
+        | Command::CopyPath
         | Command::CollapseParent
         | Command::CollapseAll
         | Command::Refresh => &[M::Normal],
@@ -1177,14 +1173,14 @@ mod tests {
             map.lookup(Context::Diff, &[KeyChord::char('z')]),
             Lookup::None
         );
-        // `c` is Comment in Diff but Commits in Tree.
+        // `c` comments in Diff and on the focused file in Tree.
         assert_eq!(
             map.lookup(Context::Diff, &[KeyChord::char('c')]),
             Lookup::Command(Command::Comment)
         );
         assert_eq!(
             map.lookup(Context::Tree, &[KeyChord::char('c')]),
-            Lookup::Command(Command::Commits)
+            Lookup::Command(Command::Comment)
         );
     }
 
@@ -1192,7 +1188,7 @@ mod tests {
     fn overrides_replace_unbind_and_surface_conflicts() {
         let overrides: Overrides = serde_json::from_str(
             r#"{"bindings":[
-                {"context":"Diff","command":"Comment","keys":"y","primary":true},
+                {"context":"Diff","command":"Comment","keys":"u","primary":true},
                 {"context":"Diff","command":"NextHunk","keys":null},
                 {"context":"Diff","command":"PrevHunk","keys":"j"}
             ]}"#,
@@ -1200,7 +1196,7 @@ mod tests {
         .unwrap();
         let map = Keymap::with_overrides(&overrides);
         assert_eq!(
-            map.lookup(Context::Diff, &[KeyChord::char('y')]),
+            map.lookup(Context::Diff, &[KeyChord::char('u')]),
             Lookup::Command(Command::Comment)
         );
         assert_eq!(

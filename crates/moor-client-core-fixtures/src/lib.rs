@@ -261,7 +261,6 @@ struct_fixture!(
         layout: Layout::Split,
         ignore_whitespace: true,
         context_lines: 5,
-        sidebar_width: 288,
         sidebar_hidden: false,
     }
 );
@@ -677,8 +676,10 @@ enum_fixture!(
         Action::SetTab {
             tab: Tab::Conversation,
         },
-        Action::SetSidebar { width: 320 },
         Action::ToggleSidebar,
+        Action::CopyPath {
+            path: path("src/lib.rs")?,
+        },
         Action::CollapseParent,
         Action::CollapseAll,
         Action::MarkViewed { file: file_ref()? },

@@ -13,7 +13,7 @@ use crate::content::FileRef;
 use crate::diff::ThreadPlace;
 use crate::explorer::{TreeNode, ViewedState};
 use crate::keymap::{Command, Context};
-use crate::view::{Layout, SIDEBAR_DEFAULT, SIDEBAR_STEP, Tab, ViewModel};
+use crate::view::{Layout, Tab, ViewModel};
 use crate::{Action, ClientCore, ScopeChoice};
 
 /// Rows a file opens with, and a page for `PageDown`/`PageUp`.
@@ -355,9 +355,7 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 | Command::TabFiles
                 | Command::TabConversation
                 | Command::TabBrowse
-                | Command::SidebarShrink
-                | Command::SidebarGrow
-                | Command::SidebarReset
+                | Command::CopyPath
                 | Command::ToggleSidebar
                 | Command::CollapseParent
                 | Command::CollapseAll
@@ -673,16 +671,11 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
             tab: Tab::Conversation,
         }),
         Command::TabBrowse => Ok(Action::SetTab { tab: Tab::Browse }),
-        Command::SidebarShrink => Ok(Action::SetSidebar {
-            width: view.prefs.sidebar_width.saturating_sub(SIDEBAR_STEP),
-        }),
-        Command::SidebarGrow => Ok(Action::SetSidebar {
-            width: view.prefs.sidebar_width.saturating_add(SIDEBAR_STEP),
-        }),
-        Command::SidebarReset => Ok(Action::SetSidebar {
-            width: SIDEBAR_DEFAULT,
-        }),
         Command::ToggleSidebar => Ok(Action::ToggleSidebar),
+        Command::CopyPath => {
+            let file = target_file(view, focus).ok_or_else(nothing)?;
+            Ok(Action::CopyPath { path: file.path })
+        }
         Command::CollapseParent => match focus {
             Focus::Tree { .. } => Ok(Action::CollapseParent),
             Focus::ReviewList { .. }

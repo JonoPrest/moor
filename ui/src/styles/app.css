@@ -151,6 +151,16 @@
   }
   .app-left {
     @apply flex w-72 shrink-0 flex-col overflow-hidden border-r border-border;
+    transition: width 0.15s ease;
+  }
+  /* Tree focus: grow to fit full file names (up to half the window). */
+  .app-left-expanded {
+    width: max-content;
+    min-width: 18rem;
+    max-width: 50vw;
+  }
+  .app-left-expanded .tree-name {
+    @apply overflow-visible;
   }
   .app-left-tree {
     @apply min-h-0 flex-1 overflow-auto;
@@ -662,6 +672,9 @@
   .mode-insert {
     background: var(--color-accent);
     color: var(--color-bg);
+  }
+  .mode-focus {
+    @apply border border-border text-muted;
   }
   /* Pending leader (UI-DESIGN: the zellij-style group bar). */
   .hint-bar-pending {

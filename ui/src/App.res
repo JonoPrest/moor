@@ -92,7 +92,14 @@ module Shell = {
       }
       None
     }, [model.focus])
-    let dispatch = core.dispatch
+    // `y`: the clipboard is the shell's; copy here, the core no-ops.
+    let dispatch = (action: Action.t) => {
+      switch action {
+      | CopyPath({path}) => FileDiff.writeText(path)
+      | _ => ()
+      }
+      core.dispatch(action)
+    }
     let left = if Array.length(model.tree.roots) > 0 {
       let home =
         model.openReview
@@ -105,8 +112,11 @@ module Shell = {
         reviews=model.reviews workspaces=model.workspaces connection=model.connection focus=model.focus dispatch
       />
     }
-    let sidebarStyle: ReactDOM.Style.t = {
-      width: Int.toString(model.prefs.sidebarWidth) ++ "px",
+    // The sidebar auto-expands to fit full file names while the tree is
+    // focused; otherwise names truncate at the resting width.
+    let treeFocused = switch model.focus {
+    | Tree(_) => true
+    | _ => false
     }
     <main className="app-shell">
       <div className="app-body">
@@ -118,7 +128,7 @@ module Shell = {
               onClick={_ => dispatch(ToggleSidebar({}))}>
               {React.string("⟩")}
             </button>
-          : <aside className="app-left" style=sidebarStyle>
+          : <aside className={"app-left" ++ (treeFocused ? " app-left-expanded" : "")}>
               <div className="app-left-tree"> left </div>
               {switch model.stepper {
               | Some(stepper) => <Stepper stepper focus=model.focus dispatch />
@@ -227,6 +237,14 @@ module Shell = {
         pendingKeys=model.pendingKeys
         mode=model.mode
         leader=model.leader
+        focusName={switch model.focus {
+        | Tree(_) => "TREE"
+        | Diff(_) => "DIFF"
+        | Thread(_) => "THREAD"
+        | ReviewList(_) => "REVIEWS"
+        | CommitStepper(_) => "COMMITS"
+        | Composer(_) | Help(_) => ""
+        }}
         connection=model.connection
         progress=model.progress
       />

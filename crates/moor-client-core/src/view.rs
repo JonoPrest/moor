@@ -169,23 +169,9 @@ pub struct ViewPrefs {
     pub layout: Layout,
     pub ignore_whitespace: bool,
     pub context_lines: u32,
-    /// Left sidebar width in px (`g <` / `g >` / `g =`). Defaulted so
-    /// prefs stored before the field existed still load.
-    #[serde(default = "default_sidebar")]
-    pub sidebar_width: u32,
     /// Whole sidebar hidden (`g b`).
     #[serde(default)]
     pub sidebar_hidden: bool,
-}
-
-/// Sidebar width bounds (px) for the keyboard resize commands.
-pub const SIDEBAR_DEFAULT: u32 = 288;
-pub const SIDEBAR_MIN: u32 = 176;
-pub const SIDEBAR_MAX: u32 = 520;
-pub const SIDEBAR_STEP: u32 = 32;
-
-const fn default_sidebar() -> u32 {
-    SIDEBAR_DEFAULT
 }
 
 impl ViewPrefs {
@@ -208,7 +194,6 @@ impl Default for ViewPrefs {
             layout: Layout::Unified,
             ignore_whitespace: opts.ignore_whitespace,
             context_lines: opts.context_lines,
-            sidebar_width: SIDEBAR_DEFAULT,
             sidebar_hidden: false,
         }
     }

@@ -9,6 +9,7 @@ let make = (
   ~pendingKeys: string="",
   ~mode: View.Mode.t=View.Mode.Normal,
   ~leader: string="",
+  ~focusName: string="",
   ~connection: View.ConnectionView.t,
   ~progress: View.Progress.t,
 ) => {
@@ -22,19 +23,22 @@ let make = (
   <footer className={"hint-bar" ++ (pending ? " hint-bar-pending" : "")} role="contentinfo">
     {switch mode {
     | Insert => <span className="mode-badge mode-insert"> {React.string("INSERT")} </span>
-    | Normal => React.null
+    | Normal =>
+      focusName == ""
+        ? React.null
+        : <span className="mode-badge mode-focus"> {React.string(focusName)} </span>
     }}
     <span className={"conn conn-" ++ conn}> {React.string(conn)} </span>
-    {leader != "" && !pending
-      ? <span className="leader-chip" title={"leader: " ++ leader}>
-          <UI.Kbd keys=leader /> {React.string(" leader")}
-        </span>
-      : React.null}
     <span className="progress">
       {React.string(
         Int.toString(progress.viewed) ++ "/" ++ Int.toString(progress.total) ++ " viewed",
       )}
     </span>
+    {leader != "" && !pending
+      ? <span className="leader-chip" title={"leader: " ++ leader}>
+          <UI.Kbd keys=leader /> {React.string(" leader")}
+        </span>
+      : React.null}
     {pending
       ? <span className="pending-keys">
           <UI.Kbd keys=pendingKeys />
