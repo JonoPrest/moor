@@ -43,6 +43,9 @@ struct Cli {
     /// Fail instead of starting the daemon when it is not running.
     #[arg(long, global = true)]
     no_autostart: bool,
+    /// Port for the served web UI (default: a free port).
+    #[arg(long, env = "MOOR_PORT", default_value_t = 0)]
+    port: u16,
     /// Print protocol values as JSON instead of text.
     #[arg(long, global = true)]
     json: bool,
@@ -556,7 +559,7 @@ async fn open_ui(cli: &Cli, ctx: &Context, ops: &mut Ops) -> anyhow::Result<()> 
         moor_client_core::IdSeed(moord::ids::fresh_parts().1),
         moor_client_host::KvConfig::Memory,
     );
-    let addr = std::net::SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, 0));
+    let addr = std::net::SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, cli.port));
     let server = moor_client_web::serve(addr, host).await?;
     let query = review_id.map_or_else(String::new, |id| format!("?review={id}"));
     println!("\n  moor: http://{}/{query}\n", server.addr());

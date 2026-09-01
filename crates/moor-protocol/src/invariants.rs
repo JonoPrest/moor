@@ -295,6 +295,25 @@ impl From<ColRange> for RawColRange {
 pub struct RepoPath(String);
 
 impl RepoPath {
+    /// Tree display order (dirs first, then files, each alphabetical):
+    /// the one order file lists are served and shown in.
+    #[must_use]
+    pub fn tree_order(&self, other: &Self) -> core::cmp::Ordering {
+        let (mut xa, mut xb) = (self.as_str().split('/'), other.as_str().split('/'));
+        loop {
+            match (xa.next(), xb.next()) {
+                (Some(ca), Some(cb)) => {
+                    let (da, db) = (xa.clone().next().is_some(), xb.clone().next().is_some());
+                    match db.cmp(&da).then_with(|| ca.cmp(cb)) {
+                        core::cmp::Ordering::Equal => {}
+                        other => return other,
+                    }
+                }
+                (a, b) => return a.is_some().cmp(&b.is_some()),
+            }
+        }
+    }
+
     pub fn new(s: impl Into<String>) -> Result<Self, InvariantError> {
         let s: String = s.into();
         let bad = |why| InvariantError::Path(s.clone(), why);

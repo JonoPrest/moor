@@ -791,44 +791,25 @@ impl ClientCore {
         // `STACK_ROWS_CAP` rows — the UI accumulates rows it has seen and
         // asks for more via `Viewport`.
         let diffs: Vec<DiffView> = match &self.view.review {
-            Some(open) => {
-                // Stack order = tree display order (dirs first, then files,
-                // each alphabetical), so the sidebar and the stack agree.
-                let mut ordered: Vec<&RenderKey> = open.files.iter().collect();
-                ordered.sort_by(|a, b| {
-                    let (mut xa, mut xb) = (a.path.as_str().split('/'), b.path.as_str().split('/'));
-                    loop {
-                        match (xa.next(), xb.next()) {
-                            (Some(ca), Some(cb)) => {
-                                let (da, db) =
-                                    (xa.clone().next().is_some(), xb.clone().next().is_some());
-                                match db.cmp(&da).then_with(|| ca.cmp(cb)) {
-                                    std::cmp::Ordering::Equal => {}
-                                    other => return other,
-                                }
-                            }
-                            (a, b) => return a.is_some().cmp(&b.is_some()),
-                        }
-                    }
-                });
-                ordered
-            }
-            .into_iter()
-            .filter_map(|render| {
-                let (first, last) = match open.open_file.as_ref() {
-                    Some(f) if &f.render == render => (f.first_row, f.last_row),
-                    Some(_) | None => (0, STACK_ROWS_CAP - 1),
-                };
-                diff::diff_view(
-                    &self.content.cache,
-                    &open.snapshot,
-                    &self.config.author,
-                    render,
-                    first,
-                    last,
-                )
-            })
-            .collect(),
+            // The daemon serves files already in tree display order.
+            Some(open) => open
+                .files
+                .iter()
+                .filter_map(|render| {
+                    let (first, last) = match open.open_file.as_ref() {
+                        Some(f) if &f.render == render => (f.first_row, f.last_row),
+                        Some(_) | None => (0, STACK_ROWS_CAP - 1),
+                    };
+                    diff::diff_view(
+                        &self.content.cache,
+                        &open.snapshot,
+                        &self.config.author,
+                        render,
+                        first,
+                        last,
+                    )
+                })
+                .collect(),
             None => Vec::new(),
         };
         if diff != self.view.diff || diffs != self.view.diffs {

@@ -389,6 +389,7 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
             if open.files.is_empty() {
                 return Err(nothing());
             }
+            // The daemon serves files in tree display order already.
             let current = open
                 .open_file
                 .as_ref()

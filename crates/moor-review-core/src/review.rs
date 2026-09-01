@@ -358,7 +358,9 @@ impl Core {
         for t in targets {
             let repo = self.repo(t.repo_id)?;
             let mut changes = repo.changed_files(t.base.tree, t.head.tree)?;
-            changes.sort_by(|a, b| a.path.cmp(&b.path));
+            // Tree display order (dirs first), so every client shows and
+            // steps files in the same order without re-sorting.
+            changes.sort_by(|a, b| a.path.tree_order(&b.path));
             out.extend(changes.into_iter().map(|c| FileChange {
                 repo_id: t.repo_id,
                 path: c.path,
