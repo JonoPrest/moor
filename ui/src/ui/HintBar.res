@@ -7,7 +7,7 @@
 let make = (
   ~hints: array<View.Hint.t>,
   ~pendingKeys: string="",
-  ~pendingLabel: option<string>=None,
+  ~pendingLabel: option<string>=?,
   ~mode: View.Mode.t=View.Mode.Normal,
   ~leader: string="",
   ~focusName: string="",
