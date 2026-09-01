@@ -236,7 +236,7 @@ Everything explicitly asked for, so no shell or rewrite loses them.
 - ✓ Mouse drag across lines = multiline comment (keyboard version =
   Visual mode, `V`); inline threads under their rows with in-card
   reply; comments record the diff they were made on.
-- ◻ `z` Expand group: `z u`/`z d` expand up/down from the focused row,
+- ✓ `z` Expand group: `z u`/`z d` expand up/down from the focused row,
   `z c` comment-on-file from the diff (interim: both expands may share
   the more-context re-render until band splicing). Rule to uphold:
   EVERY mouse affordance has a chord — audit found comment-on-file from

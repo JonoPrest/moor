@@ -2,6 +2,12 @@
 
 ## 2026-09-01 (later): Visual mode SHIPPED — next up: `z` Expand group
 
+The `z` Expand group is also in (Commands ExpandUp/ExpandDown/
+CommentOnFile bound `z u`/`z d`/`z c` in Diff, group label "Expand";
+the expands share ExpandContext's whole-file re-render until band
+splicing lands; the shadow-test probe moved to `q`). Verified headlessly
+(which-key popup shows the group; `z c` opens the composer).
+
 Visual mode below is built, tested and verified headlessly (Playwright
 against `moor --port 7788 .`: V badge, j/k extend, c opens the composer
 on the range, esc round-trips; zero console errors). Implementation

@@ -918,6 +918,21 @@ expression: core.view()
       "label": "select lines"
     },
     {
+      "keys": "z u",
+      "command": "ExpandUp",
+      "label": "expand up"
+    },
+    {
+      "keys": "z d",
+      "command": "ExpandDown",
+      "label": "expand down"
+    },
+    {
+      "keys": "z c",
+      "command": "CommentOnFile",
+      "label": "comment on file"
+    },
+    {
       "keys": "r",
       "command": "Reply",
       "label": "reply"

@@ -460,7 +460,10 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 | Command::ExpandContext
                 | Command::ContentSearch
                 | Command::ActionPalette
-                | Command::VisualMode => false,
+                | Command::VisualMode
+                | Command::ExpandUp
+                | Command::ExpandDown
+                | Command::CommentOnFile => false,
             };
             // A folded open file contributes no in-file stops.
             let found = if collapsed_of(view, render) {
@@ -942,7 +945,9 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
         Command::ActionPalette => Ok(Action::ActionPalette {
             open: !view.action_palette,
         }),
-        Command::ExpandContext => {
+        // The directional expands re-render the whole file with more
+        // context until band splicing gives them distinct semantics.
+        Command::ExpandContext | Command::ExpandUp | Command::ExpandDown => {
             let Focus::Diff { .. } = focus else {
                 return Err(nothing());
             };
@@ -951,6 +956,10 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 file: diff.file.clone(),
                 full: false,
             })
+        }
+        Command::CommentOnFile => {
+            let file = target_file(view, focus).ok_or_else(nothing)?;
+            Ok(Action::CommentFile { file })
         }
         Command::ScopeAll => {
             if view.review.is_none() {

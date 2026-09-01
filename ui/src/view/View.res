@@ -352,6 +352,9 @@ module Command = {
     | ContentSearch
     | ActionPalette
     | VisualMode
+    | ExpandUp
+    | ExpandDown
+    | CommentOnFile
 }
 
 /// A key sequence in its text form (`"g g"`, `"ctrl+p"`).

@@ -147,6 +147,13 @@ pub enum Command {
     Refresh,
     /// Enter (or leave) Visual line selection on the diff (`V`).
     VisualMode,
+    /// Expand context upward from the focused row (`z u`; whole-file
+    /// re-render until band splicing lands).
+    ExpandUp,
+    /// Expand context downward from the focused row (`z d`).
+    ExpandDown,
+    /// Comment on the open file (`z c`, file-level anchor).
+    CommentOnFile,
 }
 
 /// A named key that is not a character.
@@ -614,6 +621,10 @@ impl Keymap {
             b(X::Diff, keys!("C"), C::ToggleFileCollapse, false),
             b(X::Diff, keys!("X"), C::ExpandFile, false),
             b(X::Diff, keys!("V"), C::VisualMode, false),
+            // `z` is the expand group (which-key label "Expand").
+            b(X::Diff, keys!("z u"), C::ExpandUp, false),
+            b(X::Diff, keys!("z d"), C::ExpandDown, false),
+            b(X::Diff, keys!("z c"), C::CommentOnFile, false),
             b(X::Diff, keys!("enter"), C::Open, false),
             // Thread
             b(X::Thread, keys!("j"), C::MoveDown, true),
@@ -653,6 +664,7 @@ impl Keymap {
             groups: vec![
                 (KeySeq::single(leader), "Leader".to_owned()),
                 (keys!("g"), "Goto".to_owned()),
+                (keys!("z"), "Expand".to_owned()),
             ],
         }
     }
@@ -1021,6 +1033,9 @@ pub fn label(command: Command) -> &'static str {
         Command::FocusThreads => "focus threads",
         Command::FocusCommits => "focus commits",
         Command::VisualMode => "select lines",
+        Command::ExpandUp => "expand up",
+        Command::ExpandDown => "expand down",
+        Command::CommentOnFile => "comment on file",
     }
 }
 
@@ -1082,6 +1097,9 @@ pub fn modes_of(command: Command) -> &'static [Mode] {
         | Command::FocusDiff
         | Command::FocusThreads
         | Command::FocusCommits
+        | Command::ExpandUp
+        | Command::ExpandDown
+        | Command::CommentOnFile
         | Command::Refresh => &[M::Normal],
     }
 }
@@ -1211,8 +1229,13 @@ mod tests {
             map.lookup(Context::Diff, &[KeyChord::char('?')]),
             Lookup::Command(Command::ToggleHelp)
         );
+        // `z` opens the expand group in the diff; an unbound key is None.
         assert_eq!(
             map.lookup(Context::Diff, &[KeyChord::char('z')]),
+            Lookup::Prefix
+        );
+        assert_eq!(
+            map.lookup(Context::Diff, &[KeyChord::char('q')]),
             Lookup::None
         );
         // `c` comments in Diff and on the focused file in Tree.
