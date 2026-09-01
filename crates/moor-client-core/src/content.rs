@@ -733,6 +733,32 @@ impl ClientCore {
                 self.want_chunks_for(&render, &header, effects);
             }
         }
+        self.auto_open_first(effects);
+    }
+
+    /// Diffing mode lands on the first diff right away instead of an empty
+    /// "open a file" pane (UI-DESIGN §Layout). No-op when a file is open.
+    pub(crate) fn auto_open_first(&mut self, effects: &mut Vec<Effect>) {
+        if self
+            .view
+            .review
+            .as_ref()
+            .is_some_and(|o| o.open_file.is_none())
+            && let Some(first) = self
+                .view
+                .review
+                .as_ref()
+                .and_then(|o| o.files.first())
+                .cloned()
+        {
+            let file = FileRef {
+                repo_id: first.repo_id,
+                path: first.path.clone(),
+            };
+            if let Ok(more) = self.viewport(file, 0, crate::focus::PAGE_ROWS - 1) {
+                effects.extend(more);
+            }
+        }
     }
 
     /// Keep only pins the open review (and its open file) still needs.

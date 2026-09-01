@@ -344,8 +344,9 @@ fn view_after_open() {
 #[test]
 fn view_with_file_open_and_comments_placed() {
     let mut core = opened();
-    // Expand the tree, open src/lib.rs via keys, land on the commented row.
-    for chord in ["enter", "j", "enter", "j", "enter", "] c"] {
+    // The open auto-opened the first file (src/lib.rs) and focused the
+    // diff; land on the commented row.
+    for chord in ["] c"] {
         let seq: moor_client_core::KeySeq = chord.parse().unwrap();
         for c in seq.chords() {
             core.handle(Input::Key(*c)).unwrap();

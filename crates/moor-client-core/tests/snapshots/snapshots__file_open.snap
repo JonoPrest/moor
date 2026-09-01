@@ -46,15 +46,6 @@ expression: core.view()
                 "open": false
               }
             ]
-          },
-          {
-            "type": "File",
-            "name": "README.md",
-            "repo_id": "00000000020000000000000002",
-            "path": "README.md",
-            "change": null,
-            "viewed": "Unviewed",
-            "open": false
           }
         ]
       }

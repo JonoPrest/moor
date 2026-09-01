@@ -109,6 +109,10 @@ pub(crate) struct ExplorerInputs<'a> {
     pub(crate) open_file: Option<&'a FileRef>,
     pub(crate) viewer: &'a Author,
     pub(crate) state: &'a ExplorerState,
+    /// Diffing mode (UI-DESIGN §Layout): the tree lists only the changed
+    /// files, every directory expanded; the full tree belongs to Browse.
+    /// Search still spans the head trees either way.
+    pub(crate) changed_only: bool,
 }
 
 /// The change for `file`, if it is in the review's file list.
@@ -183,7 +187,17 @@ struct Leaf {
 /// Build the whole explorer view.
 pub(crate) fn build(inputs: &ExplorerInputs<'_>) -> TreeView {
     let mut repos: BTreeMap<RepoId, Vec<Leaf>> = BTreeMap::new();
-    for t in &inputs.trees {
+    if inputs.changed_only {
+        // Seed the repo roots so a review with files still shows its repos.
+        for f in inputs.files {
+            repos.entry(f.repo_id).or_default();
+        }
+    }
+    for t in inputs
+        .changed_only
+        .then_some(&[][..])
+        .unwrap_or(&inputs.trees)
+    {
         let leaves = repos.entry(t.repo_id).or_default();
         for e in &t.entries {
             match &e.kind {
@@ -224,7 +238,7 @@ pub(crate) fn build(inputs: &ExplorerInputs<'_>) -> TreeView {
                     .map_or_else(|| repo_id.to_string(), |(_, n)| n.clone()),
                 repo_id,
                 path: None,
-                expanded: inputs.state.expanded.contains(&(repo_id, None)),
+                expanded: inputs.changed_only || inputs.state.expanded.contains(&(repo_id, None)),
                 changed_below,
                 children,
             }
@@ -277,10 +291,11 @@ fn nest(
             out.push(TreeNode::Dir {
                 name: child_dir.to_owned(),
                 repo_id,
-                expanded: inputs
-                    .state
-                    .expanded
-                    .contains(&(repo_id, Some(child_path.clone()))),
+                expanded: inputs.changed_only
+                    || inputs
+                        .state
+                        .expanded
+                        .contains(&(repo_id, Some(child_path.clone()))),
                 path: Some(child_path),
                 changed_below,
                 children,

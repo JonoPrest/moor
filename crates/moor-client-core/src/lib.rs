@@ -680,6 +680,9 @@ impl ClientCore {
                     open_file: open_file.as_ref(),
                     viewer: &self.config.author,
                     state: &self.explorer,
+                    // Diffing tabs list only the changed files; the full
+                    // tree belongs to Browse (UI-DESIGN §Layout).
+                    changed_only: self.view.tab != Tab::Browse,
                 };
                 (
                     explorer::build(&inputs),
@@ -1935,6 +1938,9 @@ impl ClientCore {
                 match waiting {
                     InFlight::OpenReview { .. } => {
                         if self.view.review.is_some() {
+                            // The streamed open carries the file list; land
+                            // on the first diff (UI-DESIGN §Layout).
+                            self.auto_open_first(&mut effects);
                             effects.push(render(&[ViewSection::Diff]));
                         }
                     }

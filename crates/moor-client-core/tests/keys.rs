@@ -718,9 +718,9 @@ fn sequences_resolve_and_expire() {
         focus: Focus::Tree { index: 0 },
     }))
     .unwrap();
-    press(&mut core, "enter").unwrap(); // expand root: b.rs, src
+    // Diffing mode auto-expands: root, src (with a.rs), b.rs are visible.
     press(&mut core, "G").unwrap();
-    assert_eq!(core.view().focus, Focus::Tree { index: 2 });
+    assert_eq!(core.view().focus, Focus::Tree { index: 3 });
     // `g` alone waits for the rest; the hint bar switches to the group.
     let effects = core.handle(Input::Key(KeyChord::char('g'))).unwrap();
     assert_eq!(rendered(&effects), vec![ViewSection::Hints]);
@@ -827,6 +827,11 @@ fn diff_focus_scrolls_the_viewport_and_navigates_hunks_and_comments() {
 #[test]
 fn help_and_hints_follow_focus_and_help_is_never_empty() {
     let mut core = ready();
+    // The auto-open focuses the diff; this test reads the tree's hints.
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::Tree { index: 0 },
+    }))
+    .unwrap();
     for ctx in Context::iter() {
         assert!(
             !Keymap::default_table().help(ctx).groups[0]

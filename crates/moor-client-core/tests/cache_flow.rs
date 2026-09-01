@@ -507,20 +507,31 @@ fn streamed_open_fills_and_pins_the_cache_and_renders_once_at_end() {
             ViewSection::Draft,
             ViewSection::Focus, // keys now go to the explorer
             ViewSection::Hints,
-            // tree 1 is the base tree: the explorer shows heads, so no render
-            ViewSection::Tree, // tree 2 (derived)
-            ViewSection::Tree, // header a.rs (derived)
+            // The diffing tree lists only the changed files, so the head
+            // trees arriving render nothing; the file list does.
+            ViewSection::Tree, // file list (derived)
             ViewSection::Progress,
             ViewSection::Tree, // header b.rs (derived)
             ViewSection::Progress,
-            ViewSection::Diff, // stream end
+            // The stream end auto-opens the first diff (a.rs).
+            ViewSection::Focus,
+            ViewSection::Diff,
+            ViewSection::Tree,
+            ViewSection::Hints,
         ]
     );
-    // The stream brought all content; the only request out is the commits
-    // list every open fetches for the sidebar. Nothing touches disk.
+    // The stream brought all content; what goes out is the commits list
+    // every open fetches, plus the auto-opened file's prefetch chunks.
+    // Nothing touches disk.
     let reqs = requests(&effects);
-    assert_eq!(reqs.len(), 1);
-    assert!(matches!(reqs[0].1, Request::ListCommits { .. }));
+    assert!(
+        reqs.iter()
+            .any(|(_, r)| matches!(r, Request::ListCommits { .. }))
+    );
+    assert!(
+        reqs.iter()
+            .all(|(_, r)| matches!(r, Request::ListCommits { .. } | Request::RenderChunk { .. }))
+    );
     assert!(loads(&effects).is_empty());
     assert!(persists(&effects).is_empty());
     let cache = core.cache();
@@ -534,7 +545,8 @@ fn streamed_open_fills_and_pins_the_cache_and_renders_once_at_end() {
         assert!(cache.is_pinned(&key), "{key:?} not pinned");
     }
     assert!(cache.contains(&chunk_key("a.rs", 0)));
-    assert!(!cache.is_pinned(&chunk_key("a.rs", 0)));
+    // a.rs is the auto-opened file, so its chunks are pinned too.
+    assert!(cache.is_pinned(&chunk_key("a.rs", 0)));
     let open = core.view().review.as_ref().unwrap();
     assert_eq!(open.trees, vec![tree_oid(1), tree_oid(2)]);
     assert_eq!(open.files, vec![render_key("a.rs"), render_key("b.rs")]);
@@ -557,12 +569,8 @@ fn memory_hit_produces_no_effects_but_a_render() {
     assert!(loads(&effects).is_empty());
     assert_eq!(
         rendered(&effects),
-        vec![
-            ViewSection::Focus,
-            ViewSection::Tree,
-            ViewSection::Diff,
-            ViewSection::Hints
-        ]
+        // Hints don't change: the auto-open already focused the diff.
+        vec![ViewSection::Focus, ViewSection::Tree, ViewSection::Diff]
     );
     assert_eq!(
         core.view().tree.breadcrumbs,
@@ -599,7 +607,10 @@ fn memory_hit_produces_no_effects_but_a_render() {
 #[test]
 fn viewport_requests_only_the_window_and_bounds_in_flight() {
     let mut core = subscribed(local());
-    open_streamed(&mut core);
+    let opened = open_streamed(&mut core);
+    // Settle the auto-open's prefetch fetches so the budget is clean for
+    // what this test measures.
+    let _ = daemon_answers(&mut core, &opened);
     let max = core.cache_config().max_in_flight;
     // Rows 500..600 of a.rs span chunks 5..=6; the window is 3..=8, nearest
     // to the first visible chunk first.
@@ -653,14 +664,15 @@ fn viewport_requests_only_the_window_and_bounds_in_flight() {
     assert_eq!(core.content_in_flight(), max);
     assert_eq!(core.content_queued(), 3);
     // Scrolling back to the top drops the queued far-away chunks (7, 8, 9)
-    // before they are sent; 0 is cached, 1 and 2 queue.
+    // before they are sent; 0, 1 and 2 are already cached (the auto-open
+    // settled them), so nothing queues.
     core.handle(Input::User(Action::Viewport {
         file: file("a.rs"),
         first_row: 0,
         last_row: 10,
     }))
     .unwrap();
-    assert_eq!(core.content_queued(), 2);
+    assert_eq!(core.content_queued(), 0);
     assert_eq!(core.content_in_flight(), max);
 
     // Answers free slots; the queue drains, never exceeding the cap.
@@ -698,7 +710,11 @@ fn viewport_before_header_streams_the_file_and_cancels_past_the_radius() {
             ..local()
         })
     };
-    open_streamed(&mut core);
+    let opened = open_streamed(&mut core);
+    // Park the auto-opened diff and settle its fetches: unpinned under the
+    // 1-byte budget, its chunks evict and their in-flight slots free up.
+    core.handle(Input::User(Action::CloseFile)).unwrap();
+    let _ = daemon_answers(&mut core, &opened);
     // Pinned entries survive the 1-byte budget; the unpinned chunks did not.
     assert!(core.cache().is_pinned(&header_key("a.rs")));
     assert!(!core.cache().contains(&chunk_key("a.rs", 0)));
@@ -818,9 +834,9 @@ fn viewport_before_header_streams_the_file_and_cancels_past_the_radius() {
     // Only the two (unanswered) tree requests remain in flight.
     assert_eq!(core.content_in_flight(), 2);
     assert!(core.cache().is_pinned(&header_key("a.rs")));
-    // The late chunk was accepted (no error above) but, unpinned under the
-    // 1-byte budget, immediately evicted.
-    assert!(!core.cache().contains(&chunk_key("a.rs", 1)));
+    // The late chunk was accepted; a.rs is the (auto-)open file, so its
+    // chunks are pinned and survive even the 1-byte budget.
+    assert!(core.cache().contains(&chunk_key("a.rs", 1)));
 }
 
 #[test]
@@ -1193,9 +1209,14 @@ fn restart_serves_the_previous_review_from_disk_without_content_requests() {
         }))
         .unwrap();
     let effects2 = kv.drive(&mut core, effects2);
-    for (_, request) in requests(&effects) {
-        assert!(!is_content(&request), "went to the daemon for {request:?}");
-    }
+    // The auto-open of a.rs is served from disk except the prefetch-radius
+    // chunks (asserted below); the explicit viewport asks nothing more.
+    assert!(
+        requests(&effects2)
+            .iter()
+            .all(|(_, request)| !is_content(request)),
+        "went to the daemon twice"
+    );
     for key in [
         tree_key(1),
         tree_key(2),
@@ -1205,8 +1226,8 @@ fn restart_serves_the_previous_review_from_disk_without_content_requests() {
         assert!(core.cache().contains(&key), "{key:?} not served from disk");
     }
     // Chunks 1 and 2 (prefetch radius) were never on disk: those, and only
-    // those, go to the daemon.
-    let mut fetched: Vec<u32> = requests(&effects2)
+    // those, go to the daemon (with the auto-open).
+    let mut fetched: Vec<u32> = requests(&effects)
         .into_iter()
         .map(|(_, r)| match r {
             Request::RenderChunk { index, .. } => index.get(),
@@ -1257,7 +1278,9 @@ fn tree_delta_applies_in_place_and_renders_the_tree() {
     let effects = core
         .handle(Input::Server(ServerMsg::TreeDelta { delta }))
         .unwrap();
-    assert_eq!(rendered(&effects), vec![ViewSection::Tree]);
+    // The cache updates in place; the diffing tree (changed files only)
+    // does not depend on the head tree, so nothing re-renders.
+    assert_eq!(rendered(&effects), Vec::new());
     assert!(!core.cache().contains(&tree_key(2)));
     assert!(core.cache().is_pinned(&tree_key(9)));
     let Some(CacheValue::Tree { snapshot }) = core.cache().peek(&tree_key(9)) else {
@@ -1292,7 +1315,9 @@ fn tree_delta_applies_in_place_and_renders_the_tree() {
 #[test]
 fn close_review_releases_pins_and_drops_queued_fetches() {
     let mut core = subscribed(local());
-    open_streamed(&mut core);
+    let opened = open_streamed(&mut core);
+    // Settle the auto-open's prefetch fetches: this test counts the queue.
+    let _ = daemon_answers(&mut core, &opened);
     core.handle(Input::User(Action::Viewport {
         file: file("a.rs"),
         first_row: 500,
@@ -1361,7 +1386,8 @@ fn explorer_is_derived_from_head_trees_and_never_sends() {
     else {
         panic!("root is a dir");
     };
-    assert!(!expanded);
+    // Diffing mode: every dir starts expanded (UI-DESIGN §Layout).
+    assert!(expanded);
     assert_eq!(*changed_below, 2);
     let names: Vec<&str> = children
         .iter()
@@ -1370,12 +1396,13 @@ fn explorer_is_derived_from_head_trees_and_never_sends() {
             | moor_client_core::TreeNode::File { name, .. } => name.as_str(),
         })
         .collect();
-    // Head tree (tree 2) has a.rs, b.rs, c.rs; a.rs and b.rs are changed.
-    assert_eq!(names, vec!["a.rs", "b.rs", "c.rs"]);
-    let moor_client_core::TreeNode::File { change, viewed, .. } = &children[2] else {
+    // The head tree also has c.rs, but the diffing tree lists only the
+    // changed files (the full tree belongs to Browse).
+    assert_eq!(names, vec!["a.rs", "b.rs"]);
+    let moor_client_core::TreeNode::File { change, viewed, .. } = &children[0] else {
         panic!("file");
     };
-    assert_eq!(*change, None);
+    assert!(change.is_some());
     assert_eq!(*viewed, moor_client_core::ViewedState::Unviewed);
     assert_eq!(
         core.view().progress,
@@ -1394,7 +1421,9 @@ fn explorer_is_derived_from_head_trees_and_never_sends() {
         }))
         .unwrap();
     assert!(requests(&effects).is_empty() && loads(&effects).is_empty());
-    assert_eq!(rendered(&effects), vec![ViewSection::Tree]);
+    // Dirs are always expanded in diffing mode, so the toggle is a no-op
+    // for the derived tree (collapsing is a Browse affair).
+    assert!(rendered(&effects).is_empty());
     let moor_client_core::TreeNode::Dir { expanded, .. } = &core.view().tree.roots[0] else {
         panic!("root is a dir");
     };
@@ -1443,7 +1472,8 @@ fn mark_viewed_is_optimistic_and_drives_progress() {
     ));
     assert_eq!(
         rendered(&effects),
-        vec![ViewSection::Progress, ViewSection::Tree]
+        // The auto-opened a.rs diff re-renders with its viewed state.
+        vec![ViewSection::Progress, ViewSection::Tree, ViewSection::Diff]
     );
     assert_eq!(core.view().progress.viewed, 1);
     assert_eq!(core.view().review.as_ref().unwrap().pending.len(), 1);
@@ -2295,13 +2325,15 @@ fn browse_tab_shows_a_picked_ref_and_opens_blobs() {
             first_chunk: ChunkIndex::FIRST,
         }
     );
-    // Back to the review: the head tree returns (c.rs exists only there).
+    // Back to the review: the diffing tree lists only the changed files
+    // (c.rs lives in the head tree alone and stays in Browse).
     core.handle(Input::User(Action::SetTab {
         tab: moor_client_core::Tab::FilesChanged,
     }))
     .unwrap();
     let back = visible_files(core.view());
-    assert!(back.contains(&"c.rs".to_owned()), "{back:?}");
+    assert!(back.contains(&"a.rs".to_owned()), "{back:?}");
+    assert!(!back.contains(&"c.rs".to_owned()), "{back:?}");
     assert!(!back.contains(&"docs".to_owned()), "{back:?}");
     // Clearing the ref returns Browse to the head trees.
     core.handle(Input::User(Action::SetBrowseRef {
