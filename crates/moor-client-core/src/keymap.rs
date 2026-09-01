@@ -696,7 +696,7 @@ impl Keymap {
                 }
                 map.bindings
                     .retain(|b| !(b.command == command && in_mode(b.context)));
-                for seq_text in seqs {
+                for (i, seq_text) in seqs.iter().enumerate() {
                     let keys =
                         resolve_seq(seq_text, leader).map_err(|source| KeysError::BadKeys {
                             action: name.clone(),
@@ -707,7 +707,9 @@ impl Keymap {
                             context: *context,
                             keys: keys.clone(),
                             command,
-                            primary: *primary,
+                            // Only the first sequence carries the hint-bar
+                            // slot; the rest are aliases (`?` shows them).
+                            primary: *primary && i == 0,
                         });
                     }
                 }
@@ -839,13 +841,19 @@ impl Keymap {
                 b.context == Context::Global,
             )
         });
-        rows.into_iter()
-            .map(|b| Hint {
-                keys: b.keys.to_string(),
-                command: b.command,
-                label: label(b.command).to_owned(),
-            })
-            .collect()
+        // One key per command (the first in table order); aliases stay
+        // visible in the `?` help overlay.
+        let mut out: Vec<Hint> = Vec::new();
+        for b in rows {
+            if !out.iter().any(|h| h.command == b.command) {
+                out.push(Hint {
+                    keys: b.keys.to_string(),
+                    command: b.command,
+                    label: label(b.command).to_owned(),
+                });
+            }
+        }
+        out
     }
 
     /// The hint bar while a sequence is pending (UI-DESIGN: the zellij-style

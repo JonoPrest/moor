@@ -665,11 +665,6 @@ expression: core.view()
       "keys": "?",
       "command": "ToggleHelp",
       "label": "help"
-    },
-    {
-      "keys": "?",
-      "command": "ToggleHelp",
-      "label": "help"
     }
   ],
   "pending_keys": "",
