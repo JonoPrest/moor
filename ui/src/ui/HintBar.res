@@ -7,6 +7,7 @@
 let make = (
   ~hints: array<View.Hint.t>,
   ~pendingKeys: string="",
+  ~mode: View.Mode.t=View.Mode.Normal,
   ~connection: View.ConnectionView.t,
   ~progress: View.Progress.t,
 ) => {
@@ -18,6 +19,10 @@ let make = (
   }
   let pending = pendingKeys != ""
   <footer className={"hint-bar" ++ (pending ? " hint-bar-pending" : "")} role="contentinfo">
+    {switch mode {
+    | Insert => <span className="mode-badge mode-insert"> {React.string("INSERT")} </span>
+    | Normal => React.null
+    }}
     <span className={"conn conn-" ++ conn}> {React.string(conn)} </span>
     <span className="progress">
       {React.string(

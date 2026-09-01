@@ -1,53 +1,41 @@
-//! `~/.config/moor/keys.toml` → keymap overrides (UI-DESIGN §bindings).
-//!
-//! One table per context (case-insensitive: `[global]`, `[diff]`, …), one
-//! entry per command. The value is the key sequence to bind (`""` unbinds),
-//! or a table `{ keys = "…", primary = true }` to also put it in the hint
-//! bar. Commands and contexts are enums and chords are parsed: an unknown
-//! name or an unparsable chord fails loudly at load — the file is rejected
-//! whole, never half-applied.
+//! `~/.config/moor/keys.toml` → the typed keys config (UI-DESIGN: modal
+//! keys). Action-centric: one entry per action under its mode table, the
+//! value the list of sequences (`[]` unbinds). `<leader>` is usable in
+//! sequences; `leader` picks the chord (default `space`). `[groups]` adds
+//! which-key labels to prefixes.
 //!
 //! ```toml
-//! [global]
-//! ToggleLayout = "g x"          # rebind
-//! ToggleWhitespace = ""         # unbind
+//! #:schema ./keys.schema.json
+//! leader = "space"
 //!
-//! [diff]
-//! NextHunk = { keys = "]", primary = true }
+//! [bindings.normal]
+//! move_down = ["j", "down"]
+//! toggle_layout = ["s", "<leader> s"]
+//! toggle_whitespace = []          # unbind
+//!
+//! [bindings.insert]
+//! submit = ["ctrl+enter"]
+//!
+//! [groups]
+//! "<leader>" = "UI"
+//! "g" = "Go"
 //! ```
+//!
+//! Unknown actions, wrong-mode actions and unparsable chords reject the
+//! file whole, loudly. Collisions do NOT reject (vim lets you shadow);
+//! they surface in the help overlay and `moor keys check`.
 
 use std::path::PathBuf;
-use std::str::FromStr;
 
-use moor_client_core::{Command, Context, KeySeq, Override, Overrides};
-use strum::IntoEnumIterator;
+use moor_client_core::{Keymap, KeysConfig};
 
 /// Why the keys file was rejected. Everything names the offending entry.
 #[derive(Debug, thiserror::Error)]
 pub enum KeysFileError {
     #[error("keys.toml is not valid TOML: {0}")]
     Toml(#[from] toml::de::Error),
-    #[error("[{name}] is not a context; expected one of {names}", name = .0, names = context_names())]
-    UnknownContext(String),
-    #[error("[{context}] must be a table of command = keys entries")]
-    NotATable { context: String },
-    #[error("[{context}] {0:?} is not a command", .command)]
-    UnknownCommand { context: String, command: String },
-    #[error("[{context}] {command}: {source}")]
-    BadKeys {
-        context: String,
-        command: String,
-        source: moor_client_core::KeyParseError,
-    },
-    #[error("[{context}] {command}: expected a key string or {{ keys, primary }}")]
-    BadValue { context: String, command: String },
-}
-
-fn context_names() -> String {
-    Context::iter()
-        .map(|c| c.to_string().to_ascii_lowercase())
-        .collect::<Vec<_>>()
-        .join(", ")
+    #[error("keys.toml: {0}")]
+    Config(#[from] moor_client_core::KeysError),
 }
 
 /// `$XDG_CONFIG_HOME/moor/keys.toml` or `~/.config/moor/keys.toml`.
@@ -61,154 +49,254 @@ pub fn default_keys_path() -> Option<PathBuf> {
         .map(|home| PathBuf::from(home).join(".config/moor/keys.toml"))
 }
 
-fn context_of(name: &str) -> Option<Context> {
-    Context::iter().find(|c| c.to_string().eq_ignore_ascii_case(name))
+/// Parse and validate the whole file. The returned config builds a keymap
+/// without error (validated here so a bad file never half-applies).
+pub fn parse(text: &str) -> Result<KeysConfig, KeysFileError> {
+    let config: KeysConfig = toml::from_str(text)?;
+    Keymap::with_config(&config)?;
+    Ok(config)
 }
 
-fn command_of(name: &str) -> Option<Command> {
-    Command::iter().find(|c| c.to_string().eq_ignore_ascii_case(name))
-}
-
-/// Parse the whole file into the override list the core consumes.
-pub fn parse(text: &str) -> Result<Overrides, KeysFileError> {
-    let value: toml::Value = toml::from_str(text)?;
-    let Some(table) = value.as_table() else {
-        return Ok(Overrides::default());
-    };
-    let mut bindings = Vec::new();
-    for (context_name, entries) in table {
-        let context = context_of(context_name)
-            .ok_or_else(|| KeysFileError::UnknownContext(context_name.clone()))?;
-        let entries = entries.as_table().ok_or_else(|| KeysFileError::NotATable {
-            context: context_name.clone(),
-        })?;
-        for (command_name, spec) in entries {
-            let command =
-                command_of(command_name).ok_or_else(|| KeysFileError::UnknownCommand {
-                    context: context_name.clone(),
-                    command: command_name.clone(),
-                })?;
-            let (keys_text, primary) = match spec {
-                toml::Value::String(s) => (s.clone(), false),
-                toml::Value::Table(t) => {
-                    let keys = t.get("keys").and_then(|k| k.as_str());
-                    let primary = t.get("primary").and_then(toml::Value::as_bool);
-                    let known = t.keys().all(|k| k == "keys" || k == "primary");
-                    match (keys, known) {
-                        (Some(k), true) => (k.to_owned(), primary.unwrap_or(false)),
-                        (None | Some(_), _) => {
-                            return Err(KeysFileError::BadValue {
-                                context: context_name.clone(),
-                                command: command_name.clone(),
-                            });
-                        }
-                    }
-                }
-                toml::Value::Integer(_)
-                | toml::Value::Float(_)
-                | toml::Value::Boolean(_)
-                | toml::Value::Datetime(_)
-                | toml::Value::Array(_) => {
-                    return Err(KeysFileError::BadValue {
-                        context: context_name.clone(),
-                        command: command_name.clone(),
-                    });
-                }
+/// The default config file content: every action under its mode with its
+/// default keys, so defaults are literally the file you start from.
+#[must_use]
+pub fn default_file() -> String {
+    use moor_client_core::{Mode, config_name, modes_of};
+    use std::fmt::Write as _;
+    use strum::IntoEnumIterator;
+    let map = Keymap::default_table();
+    let mut out = String::from(
+        "#:schema ./keys.schema.json\n\
+         # moor keys — generated by `moor keys init`. Every action appears\n\
+         # under its mode with its default sequences; edit freely. `[]`\n\
+         # unbinds. `<leader>` is the leader chord below.\n\nleader = \"space\"\n",
+    );
+    for mode in Mode::iter() {
+        let _ = write!(out, "\n[bindings.{}]\n", mode.to_string().to_lowercase());
+        for command in moor_client_core::Command::iter() {
+            if !modes_of(command).contains(&mode) {
+                continue;
+            }
+            let in_mode = |ctx: moor_client_core::Context| match mode {
+                Mode::Insert => ctx == moor_client_core::Context::Composer,
+                Mode::Normal => ctx != moor_client_core::Context::Composer,
             };
-            let keys = if keys_text.is_empty() {
-                None
-            } else {
-                Some(
-                    KeySeq::from_str(&keys_text).map_err(|source| KeysFileError::BadKeys {
-                        context: context_name.clone(),
-                        command: command_name.clone(),
-                        source,
-                    })?,
-                )
-            };
-            bindings.push(Override {
-                context,
-                command,
-                keys,
-                primary,
-            });
+            let leader_text = map.leader().to_string();
+            let mut seqs: Vec<String> = Vec::new();
+            for b in map
+                .bindings()
+                .iter()
+                .filter(|b| b.command == command && in_mode(b.context))
+            {
+                // Emit leader-relative sequences as `<leader> …`.
+                let text = b.keys.to_string();
+                let text = match text.strip_prefix(&format!("{leader_text} ")) {
+                    Some(rest) => format!("<leader> {rest}"),
+                    None => text,
+                };
+                if !seqs.contains(&text) {
+                    seqs.push(text);
+                }
+            }
+            let list = seqs
+                .iter()
+                .map(|s| format!("{s:?}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let _ = writeln!(out, "{} = [{list}]", config_name(command));
         }
     }
-    Ok(Overrides { bindings })
+    out.push_str("\n[groups]\n\"<leader>\" = \"Leader\"\n\"g\" = \"Go\"\n");
+    out
+}
+
+/// The JSON schema for `keys.toml`, emitted with schemars: every action
+/// appears as a property of its mode table (only the modes it is valid
+/// in — `modes_of`), described by its label, so TOML editors autocomplete
+/// actions and show defaults.
+#[must_use]
+pub fn schema_json() -> String {
+    use moor_client_core::{Command, Mode, config_name, label, modes_of};
+    use serde_json::{Map, Value, json};
+    use strum::IntoEnumIterator;
+    let defaults = Keymap::default_table();
+    let seq_array = |desc: String| {
+        json!({
+            "type": "array",
+            "items": {
+                "type": "string",
+                "description": "A key sequence: chords separated by spaces (`g g`, `ctrl+enter`, `<leader> s`)."
+            },
+            "description": desc,
+        })
+    };
+    let mut modes = Map::new();
+    for mode in Mode::iter() {
+        let mut actions = Map::new();
+        for command in Command::iter() {
+            if !modes_of(command).contains(&mode) {
+                continue;
+            }
+            let default_keys: Vec<String> = defaults
+                .bindings()
+                .iter()
+                .filter(|b| b.command == command)
+                .map(|b| b.keys.to_string())
+                .collect();
+            actions.insert(
+                config_name(command),
+                seq_array(format!(
+                    "{} (default: {}). `[]` unbinds.",
+                    label(command),
+                    if default_keys.is_empty() {
+                        "unbound".to_owned()
+                    } else {
+                        default_keys.join(", ")
+                    }
+                )),
+            );
+        }
+        modes.insert(
+            mode.to_string().to_lowercase(),
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": Value::Object(actions),
+                "description": format!("{mode}-mode bindings, one entry per action."),
+            }),
+        );
+    }
+    let root = json!({
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "moor keys.toml",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "leader": {
+                "type": "string",
+                "description": "The <leader> chord. Default: space.",
+                "default": "space"
+            },
+            "bindings": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": Value::Object(modes)
+            },
+            "groups": {
+                "type": "object",
+                "description": "Which-key labels: prefix sequence → group label (`\"<leader>\"` = \"UI\").",
+                "additionalProperties": { "type": "string" }
+            }
+        }
+    });
+    // schemars validates the value as a schema; pretty for humans.
+    let schema = schemars::Schema::try_from(root).map(|s| s.to_value());
+    serde_json::to_string_pretty(&schema.unwrap_or_else(|_| json!({}))).unwrap_or_default()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use moor_client_core::Keymap;
+    use moor_client_core::{Command, Context, KeyChord, Lookup, NamedKey};
 
     #[test]
-    fn parses_rebinding_unbinding_and_primary() {
-        let overrides = parse(
+    fn parses_leader_rebinding_unbinding_and_groups() {
+        let config = parse(
             r#"
-            [global]
-            ToggleLayout = "g x"
-            ToggleWhitespace = ""
+            leader = "space"
 
-            [diff]
-            NextHunk = { keys = "]", primary = true }
+            [bindings.normal]
+            toggle_layout = ["<leader> x"]
+            toggle_whitespace = []
+
+            [bindings.insert]
+            submit = ["ctrl+enter", "meta+enter"]
+
+            [groups]
+            "<leader>" = "UI"
             "#,
         )
         .unwrap();
-        assert_eq!(overrides.bindings.len(), 3);
-        let map = Keymap::with_overrides(&overrides);
-        let rebound: Vec<_> = map
-            .bindings()
-            .iter()
-            .filter(|b| b.command == Command::ToggleLayout && b.context == Context::Global)
-            .collect();
-        assert_eq!(rebound.len(), 1);
-        assert_eq!(rebound[0].keys.to_string(), "g x");
-        assert!(
-            !map.bindings()
-                .iter()
-                .any(|b| b.command == Command::ToggleWhitespace && b.context == Context::Global),
-            "empty keys unbind"
+        let map = Keymap::with_config(&config).unwrap();
+        let space = KeyChord::named(NamedKey::Space);
+        assert_eq!(
+            map.lookup(Context::Diff, &[space, KeyChord::char('x')]),
+            Lookup::Command(Command::ToggleLayout)
         );
-        let hunk = map
-            .bindings()
-            .iter()
-            .find(|b| b.command == Command::NextHunk && b.context == Context::Diff)
-            .unwrap();
-        assert_eq!(hunk.keys.to_string(), "]");
-        assert!(hunk.primary);
+        assert_eq!(
+            map.lookup(Context::Diff, &[KeyChord::char('w')]),
+            Lookup::None,
+            "unbound"
+        );
+        assert_eq!(map.pending_label(&[space]), Some("UI".to_owned()));
+        // Insert-mode rebind lands in the composer context.
+        assert!(map.bindings().iter().any(|b| b.context == Context::Composer
+            && b.command == Command::Submit
+            && b.keys.to_string() == "meta+enter"));
     }
 
     #[test]
-    fn rejects_unknown_names_and_bad_chords_loudly() {
-        let err = parse("[nowhere]\nOpen = \"o\"\n").unwrap_err();
-        assert!(matches!(err, KeysFileError::UnknownContext(c) if c == "nowhere"));
-        let err = parse("[diff]\nFrobnicate = \"o\"\n").unwrap_err();
-        assert!(
-            matches!(err, KeysFileError::UnknownCommand { command, .. } if command == "Frobnicate")
-        );
-        let err = parse("[diff]\nOpen = \"ctrl+bogus+x\"\n").unwrap_err();
-        assert!(matches!(err, KeysFileError::BadKeys { .. }));
-        let err = parse("[diff]\nOpen = 3\n").unwrap_err();
-        assert!(matches!(err, KeysFileError::BadValue { .. }));
-        let err = parse("[diff]\nOpen = { keys = \"o\", typo = true }\n").unwrap_err();
-        assert!(matches!(err, KeysFileError::BadValue { .. }));
-        assert!(
-            parse("[[diff]]\n").is_err(),
-            "arrays of tables are not contexts"
-        );
-    }
-
-    #[test]
-    fn context_and_command_names_are_case_insensitive() {
-        let overrides = parse("[REVIEWLIST]\nrefresh = \"F5\"\n");
-        // F5 is not a chord we parse — the error names the entry.
+    fn rejects_unknown_wrong_mode_and_bad_chords_loudly() {
         assert!(matches!(
-            overrides.unwrap_err(),
-            KeysFileError::BadKeys { command, .. } if command == "refresh"
+            parse("[bindings.normal]\nfrobnicate = [\"o\"]\n").unwrap_err(),
+            KeysFileError::Config(moor_client_core::KeysError::UnknownAction(a)) if a == "frobnicate"
         ));
-        let overrides = parse("[reviewlist]\nrefresh = \"r\"\n").unwrap();
-        assert_eq!(overrides.bindings[0].context, Context::ReviewList);
-        assert_eq!(overrides.bindings[0].command, Command::Refresh);
+        assert!(matches!(
+            parse("[bindings.insert]\ncomment = [\"c\"]\n").unwrap_err(),
+            KeysFileError::Config(moor_client_core::KeysError::WrongMode { .. })
+        ));
+        assert!(matches!(
+            parse("[bindings.normal]\nopen = [\"ctrl+bogus+x\"]\n").unwrap_err(),
+            KeysFileError::Config(moor_client_core::KeysError::BadKeys { .. })
+        ));
+        assert!(parse("[bindings.sideways]\nopen = [\"o\"]\n").is_err());
+        assert!(parse("nonsense = 3\n").is_err());
+    }
+
+    #[test]
+    fn schema_lists_every_normal_action_with_its_defaults() {
+        let text = schema_json();
+        let v: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let normal = &v["properties"]["bindings"]["properties"]["normal"]["properties"];
+        assert!(normal.get("move_down").is_some());
+        assert!(
+            normal["toggle_layout"]["description"]
+                .as_str()
+                .unwrap()
+                .contains("default"),
+        );
+        // Insert-only actions stay out of the normal table.
+        assert!(normal.get("submit").is_none());
+        assert!(
+            v["properties"]["bindings"]["properties"]["insert"]["properties"]
+                .get("submit")
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn default_file_round_trips_and_covers_every_action() {
+        use strum::IntoEnumIterator;
+        let text = default_file();
+        let config = parse(&text).expect("the generated defaults parse");
+        let normal = config
+            .bindings
+            .get(&moor_client_core::Mode::Normal)
+            .unwrap();
+        for command in Command::iter() {
+            if moor_client_core::modes_of(command).contains(&moor_client_core::Mode::Normal) {
+                assert!(
+                    normal.contains_key(&moor_client_core::config_name(command)),
+                    "{command} missing from the generated defaults"
+                );
+            }
+        }
+        // Applying the generated defaults reproduces the default table's
+        // lookups (spot check).
+        let map = Keymap::with_config(&config).unwrap();
+        assert_eq!(
+            map.lookup(Context::Diff, &[KeyChord::char('c')]),
+            Lookup::Command(Command::Comment)
+        );
     }
 }

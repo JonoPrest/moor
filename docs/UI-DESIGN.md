@@ -24,14 +24,18 @@ where they differ.
   `ctrl+enter` (submit from inside a text input). GUI shells may add mac
   aliases (`⌘K`, `⌘P`, `⌘⇧F` opening the palette) and show them second in
   tooltips; the bare key is the source of truth.
-- **Simple surface, leader for depth (zellij-style).** The main flow is
-  flat single keys. Everything less common lives behind a single leader
-  (`g`): pressing it switches the hint bar to that group's keys
-  (zellij-style pending-mode bar), the next key runs the command, `Esc`
-  cancels. No global vim modes — the only key-capturing states are text
-  inputs (until `Esc`/submit) and a pending leader. Groups are
-  user-definable in keys.toml, so power users can grow their own leader
-  trees without the defaults getting complicated.
+- **Fully modal, vim-style (supersedes the earlier "no modes" rule).**
+  Modes: Normal (keys are commands), Insert (any text editor; only `esc`
+  and `ctrl+enter` are chords), Visual (line selection — stage 2). The
+  hint bar shows the mode. The main flow stays flat single keys; `g` is
+  the goto group; everything less common lives under a configurable
+  `<leader>` (default `space`), with which-key style group labels: a
+  pending prefix pops the group's continuations. keys.toml is
+  action-centric (`toggle_layout = ["s", "<leader> s"]`), validated
+  against a schemars-generated JSON schema (`moor keys schema`), and
+  `moor keys init` writes the full defaults. `:` runs any action by its
+  snake_case name with fuzzy autocomplete. Collisions never reject a
+  config — they are reported (help overlay, `moor keys check`).
 - **User-configurable bindings.** `~/.config/moor/keys.toml` overrides
   per-context bindings. Commands are an enum; an unknown command or
   unparsable chord fails loudly at load. Everything derived from the

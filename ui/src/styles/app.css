@@ -623,6 +623,30 @@
     border-color: var(--color-accent);
     color: var(--color-accent);
   }
+  /* Which-key popup (UI-DESIGN: modal keys). */
+  .whichkey {
+    @apply fixed right-4 bottom-10 z-30 max-h-80 w-72 overflow-auto rounded border border-border bg-panel p-2 shadow-lg;
+  }
+  .whichkey-title {
+    @apply mb-1 border-b border-border pb-1 text-xs font-semibold;
+    color: var(--color-accent);
+  }
+  .whichkey-grid {
+    @apply flex flex-col gap-0.5;
+  }
+  .whichkey-row {
+    @apply flex items-center gap-2 text-xs;
+  }
+  .whichkey-label {
+    @apply text-muted;
+  }
+  .mode-badge {
+    @apply mr-2 rounded px-1.5 py-0 text-[10px] font-bold;
+  }
+  .mode-insert {
+    background: var(--color-accent);
+    color: var(--color-bg);
+  }
   /* Pending leader (UI-DESIGN: the zellij-style group bar). */
   .hint-bar-pending {
     border-top-color: var(--color-accent);

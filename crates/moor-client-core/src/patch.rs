@@ -15,7 +15,7 @@ use strum::EnumDiscriminants;
 use crate::diff::{CommitStepper, DiffView, ThreadView};
 use crate::explorer::{Progress, TreeView};
 use crate::focus::Focus;
-use crate::keymap::{HelpView, Hint};
+use crate::keymap::{HelpView, Hint, Mode};
 use crate::view::{ConnectionView, ContentSearchView, Draft, Tab, ViewDelta, ViewModel, ViewPrefs};
 
 /// The part of the view one section owns.
@@ -68,6 +68,8 @@ pub enum ViewPatch {
     Hints {
         hints: Vec<Hint>,
         pending: String,
+        pending_label: Option<String>,
+        mode: Mode,
         chrome: Vec<Hint>,
     },
     Help {
@@ -149,6 +151,8 @@ impl ViewModel {
             ViewSection::Hints => ViewPatch::Hints {
                 hints: self.hints.clone(),
                 pending: self.pending_keys.clone(),
+                pending_label: self.pending_label.clone(),
+                mode: self.mode,
                 chrome: self.chrome.clone(),
             },
             ViewSection::Help => ViewPatch::Help {
@@ -220,10 +224,14 @@ impl ViewModel {
             ViewPatch::Hints {
                 hints,
                 pending,
+                pending_label,
+                mode,
                 chrome,
             } => {
                 self.hints = hints;
                 self.pending_keys = pending;
+                self.pending_label = pending_label;
+                self.mode = mode;
                 self.chrome = chrome;
             }
             ViewPatch::Help { help } => self.help = help,

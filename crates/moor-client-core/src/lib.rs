@@ -64,8 +64,8 @@ pub use focus::{Focus, FocusKind, NoTarget, PAGE_ROWS, clamp as clamp_focus, vis
 pub use ids::IdSeed;
 pub use keymap::{
     Binding, Command, Conflict, Context, HelpEntry, HelpGroup, HelpView, Hint, KeyChord, KeyCode,
-    KeyCodeKind, KeyParseError, KeySeq, Keymap, Lookup, Modifiers, NamedKey, Override, Overrides,
-    label,
+    KeyCodeKind, KeyParseError, KeySeq, Keymap, KeysConfig, KeysError, Lookup, Mode, Modifiers,
+    NamedKey, Override, Overrides, command_named, config_name, label, modes_of,
 };
 pub use patch::{ViewPatch, ViewPatchKind};
 pub use view::{
@@ -859,6 +859,25 @@ impl ClientCore {
             self.view.pending_keys = pending_keys;
             sections.push(ViewSection::Hints);
         }
+        let pending_label = if self.chords.is_empty() {
+            None
+        } else {
+            self.keymap.pending_label(&self.chords)
+        };
+        if pending_label != self.view.pending_label {
+            self.view.pending_label = pending_label;
+            sections.push(ViewSection::Hints);
+        }
+        // Vim-style mode indicator: Insert while a text editor owns keys.
+        let mode = if focus.context() == keymap::Context::Composer {
+            keymap::Mode::Insert
+        } else {
+            keymap::Mode::Normal
+        };
+        if mode != self.view.mode {
+            self.view.mode = mode;
+            sections.push(ViewSection::Hints);
+        }
         let hints = if self.chords.is_empty() {
             self.keymap.hints(focus.context())
         } else {
@@ -946,11 +965,15 @@ impl ClientCore {
     /// The stored keymap overrides arrived (or were absent / unreadable:
     /// the defaults stay).
     fn keymap_stored(&mut self, value: Option<Vec<u8>>) -> Vec<Effect> {
-        let Some(overrides) = value.and_then(|b| serde_json::from_slice::<Overrides>(&b).ok())
-        else {
+        // The host stores the typed keys config (keys.toml, validated
+        // there). Unreadable or absent: the defaults stay.
+        let Some(config) = value.and_then(|b| serde_json::from_slice::<KeysConfig>(&b).ok()) else {
             return Vec::new();
         };
-        self.keymap = Keymap::with_overrides(&overrides);
+        let Ok(map) = Keymap::with_config(&config) else {
+            return Vec::new();
+        };
+        self.keymap = map;
         // Hints and help are derived after this returns.
         Vec::new()
     }
@@ -1273,8 +1296,16 @@ impl ClientCore {
                     return Err(CoreError::NoOpenReview);
                 }
                 let key = (repo_id, path);
-                if !self.explorer.expanded.remove(&key) {
-                    self.explorer.expanded.insert(key);
+                // Diffing tabs default dirs open (the set records the
+                // collapsed ones); Browse defaults closed. Separate sets,
+                // so toggling in one tab never leaks into the other.
+                let set = if self.view.tab == Tab::Browse {
+                    &mut self.explorer.expanded
+                } else {
+                    &mut self.explorer.collapsed
+                };
+                if !set.remove(&key) {
+                    set.insert(key);
                 }
                 // The tree itself is derived after this returns.
                 Ok(Vec::new())

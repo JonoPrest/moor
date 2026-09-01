@@ -206,8 +206,10 @@
     }
   ],
   "last_error": null,
+  "mode": "Normal",
   "open_review": "01HF7YATZ80000000000000004",
   "pending_keys": "",
+  "pending_label": null,
   "pending_refresh": true,
   "prefs": {
     "context_lines": 5,

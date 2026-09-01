@@ -397,12 +397,10 @@ fn every_action_is_reachable_from_a_binding() {
         focus: Focus::Tree { index: 0 },
     }))
     .unwrap();
-    if moor_client_core::visible_nodes(core.view()).len() == 1 {
-        press(&mut core, "enter").unwrap(); // expand repo root
-    }
-    // Dirs sort before files: root, src, b.rs.
+    // The record loop's `enter` collapsed the (default-open) root;
+    // reopen it, then walk: root, src (a.rs), b.rs.
+    press(&mut core, "enter").unwrap();
     press(&mut core, "j").unwrap(); // src dir
-    press(&mut core, "enter").unwrap(); // expand
     press(&mut core, "j").unwrap(); // src/a.rs
     let names: Vec<String> = moor_client_core::visible_nodes(core.view())
         .iter()
@@ -855,19 +853,21 @@ fn help_and_hints_follow_focus_and_help_is_never_empty() {
     assert_eq!(core.view().focus, Focus::Tree { index: 0 });
     // Hints changed with the context and back.
     assert_eq!(core.view().hints, hints_tree);
-    // Overrides from the KV re-derive the hints.
-    let overrides = moor_client_core::Overrides {
-        bindings: vec![moor_client_core::Override {
-            context: Context::Tree,
-            command: Command::Open,
-            keys: Some("o".parse().unwrap()),
-            primary: true,
-        }],
+    // A keys config from the KV re-derives the hints: `open` rebinds to
+    // `o` across normal mode.
+    let mut normal = std::collections::BTreeMap::new();
+    normal.insert("open".to_owned(), vec!["o".to_owned()]);
+    let mut bindings = std::collections::BTreeMap::new();
+    bindings.insert(moor_client_core::Mode::Normal, normal);
+    let config = moor_client_core::KeysConfig {
+        leader: None,
+        bindings,
+        groups: std::collections::BTreeMap::new(),
     };
     let effects = core
         .handle(Input::Stored {
             key: Keymap::KEY.into(),
-            value: Some(serde_json::to_vec(&overrides).unwrap()),
+            value: Some(serde_json::to_vec(&config).unwrap()),
         })
         .unwrap();
     assert_eq!(rendered(&effects), vec![ViewSection::Hints]);
@@ -876,12 +876,14 @@ fn help_and_hints_follow_focus_and_help_is_never_empty() {
         core.handle(Input::Key(KeyChord::named(NamedKey::Enter))),
         Err(CoreError::UnboundKey("enter".into()))
     );
+    // `o` on the root dir toggles it: diffing dirs default open, so it
+    // collapses.
     press(&mut core, "o").unwrap();
-    assert!(
-        core.view()
-            .tree
-            .roots
-            .iter()
-            .any(|n| matches!(n, moor_client_core::TreeNode::Dir { expanded: true, .. }))
-    );
+    assert!(core.view().tree.roots.iter().all(|n| matches!(
+        n,
+        moor_client_core::TreeNode::Dir {
+            expanded: false,
+            ..
+        }
+    )));
 }

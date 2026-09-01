@@ -7,7 +7,8 @@ expression: core.view()
     "layout": "Unified",
     "ignore_whitespace": false,
     "context_lines": 3,
-    "sidebar_width": 288
+    "sidebar_width": 288,
+    "sidebar_hidden": false
   },
   "tree": {
     "roots": [
@@ -647,6 +648,8 @@ expression: core.view()
     "type": "Help"
   },
   "tab": "FilesChanged",
+  "mode": "Normal",
+  "pending_label": null,
   "hints": [
     {
       "keys": "esc",
@@ -722,21 +725,6 @@ expression: core.view()
       "label": "whitespace"
     },
     {
-      "keys": "g a",
-      "command": "ScopeAll",
-      "label": "all changes"
-    },
-    {
-      "keys": "g c",
-      "command": "ScopeByCommit",
-      "label": "by commit"
-    },
-    {
-      "keys": "g w",
-      "command": "ScopeWorktree",
-      "label": "worktree"
-    },
-    {
       "keys": "g f",
       "command": "NextFile",
       "label": "next file"
@@ -752,19 +740,39 @@ expression: core.view()
       "label": "bottom"
     },
     {
-      "keys": "g <",
+      "keys": "space a",
+      "command": "ScopeAll",
+      "label": "all changes"
+    },
+    {
+      "keys": "space c",
+      "command": "ScopeByCommit",
+      "label": "by commit"
+    },
+    {
+      "keys": "space w",
+      "command": "ScopeWorktree",
+      "label": "worktree"
+    },
+    {
+      "keys": "space <",
       "command": "SidebarShrink",
       "label": "shrink sidebar"
     },
     {
-      "keys": "g >",
+      "keys": "space >",
       "command": "SidebarGrow",
       "label": "grow sidebar"
     },
     {
-      "keys": "g =",
+      "keys": "space =",
       "command": "SidebarReset",
       "label": "reset sidebar"
+    },
+    {
+      "keys": "space b",
+      "command": "ToggleSidebar",
+      "label": "toggle sidebar"
     },
     {
       "keys": "esc",
@@ -1005,41 +1013,6 @@ expression: core.view()
             "overridden": false
           },
           {
-            "keys": "g a",
-            "command": "ScopeAll",
-            "label": "all changes",
-            "primary": false,
-            "overridden": false
-          },
-          {
-            "keys": "g c",
-            "command": "ScopeByCommit",
-            "label": "by commit",
-            "primary": false,
-            "overridden": false
-          },
-          {
-            "keys": "g w",
-            "command": "ScopeWorktree",
-            "label": "worktree",
-            "primary": false,
-            "overridden": false
-          },
-          {
-            "keys": "g s",
-            "command": "ToggleLayout",
-            "label": "split/unified",
-            "primary": false,
-            "overridden": false
-          },
-          {
-            "keys": "g h",
-            "command": "ToggleWhitespace",
-            "label": "whitespace",
-            "primary": false,
-            "overridden": false
-          },
-          {
             "keys": "g f",
             "command": "NextFile",
             "label": "next file",
@@ -1061,23 +1034,65 @@ expression: core.view()
             "overridden": false
           },
           {
-            "keys": "g <",
+            "keys": "space a",
+            "command": "ScopeAll",
+            "label": "all changes",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "space c",
+            "command": "ScopeByCommit",
+            "label": "by commit",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "space w",
+            "command": "ScopeWorktree",
+            "label": "worktree",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "space s",
+            "command": "ToggleLayout",
+            "label": "split/unified",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "space h",
+            "command": "ToggleWhitespace",
+            "label": "whitespace",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "space <",
             "command": "SidebarShrink",
             "label": "shrink sidebar",
             "primary": false,
             "overridden": false
           },
           {
-            "keys": "g >",
+            "keys": "space >",
             "command": "SidebarGrow",
             "label": "grow sidebar",
             "primary": false,
             "overridden": false
           },
           {
-            "keys": "g =",
+            "keys": "space =",
             "command": "SidebarReset",
             "label": "reset sidebar",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "space b",
+            "command": "ToggleSidebar",
+            "label": "toggle sidebar",
             "primary": false,
             "overridden": false
           },

@@ -251,6 +251,12 @@ pub struct ViewModel {
     pub focus: Focus,
     /// Which center tab is shown (`1`/`2`/`3`).
     pub tab: Tab,
+    /// Vim-style mode (UI-DESIGN: modal keys): Insert while a text
+    /// editor owns the keys, Normal otherwise. The hint bar shows it.
+    pub mode: crate::keymap::Mode,
+    /// Which-key label for the pending group (`Leader`, `Go`), when the
+    /// pending prefix has one configured.
+    pub pending_label: Option<String>,
     /// Primary bindings for the focused context, for the hint bar — or,
     /// while a leader is pending, the pending group's keys.
     pub hints: Vec<Hint>,

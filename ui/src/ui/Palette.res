@@ -35,10 +35,48 @@ let make = (
     }
   }
   let allFiles = contentSearch->Option.mapOr(false, c => c.allFiles)
-  let actions =
-    chrome->Array.filter(h =>
-      text == "" || String.includes(String.toLowerCase(h.label), String.toLowerCase(text))
+  // Fuzzy subsequence match over the action's config name
+  // (`toggle_layout`) and its label; lower score (earlier hits) first.
+  let toSnake = (name: string) =>
+    name->String.replaceRegExp(/([a-z0-9])([A-Z])/g, "$1_$2")->String.toLowerCase
+  let fuzzy = (hay: string, needle: string): option<int> => {
+    let score = ref(0)
+    let from = ref(0)
+    let ok = ref(true)
+    needle
+    ->String.split("")
+    ->Array.forEach(ch =>
+      if ok.contents {
+        switch hay->String.indexOfFrom(ch, from.contents) {
+        | -1 => ok := false
+        | i => {
+            score := score.contents + i
+            from := i + 1
+          }
+        }
+      }
     )
+    ok.contents ? Some(score.contents) : None
+  }
+  let actions = {
+    let q = String.toLowerCase(String.trim(text))
+    chrome
+    ->Array.filterMap(h => {
+      if q == "" {
+        Some((h, 0))
+      } else {
+        let name = toSnake((h.command :> string))
+        switch (fuzzy(name, q), fuzzy(String.toLowerCase(h.label), q)) {
+        | (Some(a), Some(b)) => Some((h, Math.Int.min(a, b)))
+        | (Some(a), None) => Some((h, a))
+        | (None, Some(b)) => Some((h, b))
+        | (None, None) => None
+        }
+      }
+    })
+    ->Array.toSorted(((_, a), (_, b)) => Int.compare(a, b))
+    ->Array.map(((h, _)) => h)
+  }
   let submit = () =>
     switch mode {
     | Content => dispatch(ContentSearch({query: Some(text), allFiles}))

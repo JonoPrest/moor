@@ -121,6 +121,9 @@ enum Cmd {
     /// Comments and threads.
     #[command(subcommand)]
     Comment(CommentCmd),
+    /// The keys config: generate defaults, print the schema, check a file.
+    #[command(subcommand)]
+    Keys(KeysCmd),
     /// Print events; `--follow` keeps waiting for more.
     Events {
         #[arg(long)]
@@ -470,12 +473,93 @@ fn anchor_text(a: &Anchor) -> String {
     }
 }
 
+#[derive(Debug, clap::Subcommand)]
+enum KeysCmd {
+    /// Write ~/.config/moor/keys.toml with every action's defaults, plus
+    /// keys.schema.json next to it (for editor autocomplete).
+    Init {
+        /// Overwrite an existing keys.toml.
+        #[arg(long)]
+        force: bool,
+    },
+    /// Print the JSON schema for keys.toml (schemars-generated).
+    Schema,
+    /// Parse a keys file and report collisions (which never reject).
+    Check {
+        /// Defaults to ~/.config/moor/keys.toml.
+        path: Option<PathBuf>,
+    },
+}
+
+fn keys_cmd(cmd: &KeysCmd) -> anyhow::Result<()> {
+    use moor_client_host::keys_file;
+    match cmd {
+        KeysCmd::Init { force } => {
+            let path = keys_file::default_keys_path()
+                .ok_or_else(|| anyhow::anyhow!("no home directory"))?;
+            if path.exists() && !force {
+                anyhow::bail!("{} exists; pass --force to overwrite", path.display());
+            }
+            if let Some(dir) = path.parent() {
+                std::fs::create_dir_all(dir)?;
+            }
+            std::fs::write(&path, keys_file::default_file())?;
+            let schema = path.with_file_name("keys.schema.json");
+            std::fs::write(&schema, keys_file::schema_json())?;
+            println!("wrote {}\nwrote {}", path.display(), schema.display());
+            Ok(())
+        }
+        KeysCmd::Schema => {
+            println!("{}", keys_file::schema_json());
+            Ok(())
+        }
+        KeysCmd::Check { path } => {
+            let path = match path {
+                Some(p) => p.clone(),
+                None => keys_file::default_keys_path()
+                    .ok_or_else(|| anyhow::anyhow!("no home directory"))?,
+            };
+            let text = std::fs::read_to_string(&path)
+                .with_context(|| format!("reading {}", path.display()))?;
+            let config = keys_file::parse(&text)?;
+            let map = moor_client_core::Keymap::with_config(&config)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            let conflicts = map.conflicts();
+            if conflicts.is_empty() {
+                println!("ok: no collisions");
+            } else {
+                println!(
+                    "ok, with {} collision(s) (later bindings shadow):",
+                    conflicts.len()
+                );
+                for c in conflicts {
+                    println!(
+                        "  [{}] {} → {}",
+                        c.context,
+                        c.keys,
+                        c.commands
+                            .iter()
+                            .map(|cmd| moor_client_core::config_name(*cmd))
+                            .collect::<Vec<_>>()
+                            .join(" vs ")
+                    );
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let json = cli.json;
     let cfg_path = config_path(&cli)?;
     let mut cfg = moor_config::Config::load(&cfg_path)?;
+    if let Some(Cmd::Keys(c)) = &cli.cmd {
+        // Purely local: no daemon, no context.
+        return keys_cmd(c);
+    }
     if let Some(Cmd::Context(c)) = cli.cmd {
         return context_cmd(&mut cfg, &cfg_path, cli.context.as_deref(), c, json);
     }
@@ -488,7 +572,7 @@ async fn main() -> anyhow::Result<()> {
         return open_ui(&cli, &ctx, &mut ops).await;
     };
     match cmd {
-        Cmd::Context(_) | Cmd::Daemon(_) => unreachable!("handled above"),
+        Cmd::Context(_) | Cmd::Daemon(_) | Cmd::Keys(_) => unreachable!("handled above"),
         Cmd::Workspace(c) => workspace(&mut ops, c, json).await,
         Cmd::Review(c) => review(&mut ops, c, json).await,
         Cmd::Comment(c) => comment(&mut ops, c, json).await,

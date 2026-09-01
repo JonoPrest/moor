@@ -219,9 +219,13 @@ module Shell = {
           }}
         </div>
       </div>
+      <WhichKey
+        pendingKeys=model.pendingKeys pendingLabel=model.pendingLabel hints=model.hints
+      />
       <HintBar
         hints=model.hints
         pendingKeys=model.pendingKeys
+        mode=model.mode
         connection=model.connection
         progress=model.progress
       />

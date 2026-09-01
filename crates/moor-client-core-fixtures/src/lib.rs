@@ -127,6 +127,7 @@ registry!(
     ViewPrefs,
     Layout,
     Tab,
+    Mode,
     ConnectionView,
     Draft,
     PendingEvent,
@@ -266,6 +267,7 @@ struct_fixture!(
 );
 unit_enum_fixture!(Layout, "Layout");
 unit_enum_fixture!(Tab, "Tab");
+unit_enum_fixture!(Mode, "Mode");
 enum_fixture!(
     ConnectionView,
     ConnectionViewKind,
@@ -811,6 +813,8 @@ enum_fixture!(
         ViewPatch::Hints {
             hints: vec![local::<Hint>()?],
             pending: "g".into(),
+            pending_label: Some("Go".into()),
+            mode: Mode::Normal,
             chrome: vec![local::<Hint>()?],
         },
         ViewPatch::Help {
@@ -836,8 +840,10 @@ struct_fixture!(
         stepper: Some(local::<CommitStepper>()?),
         focus: Focus::Diff { row: 121 },
         tab: Tab::FilesChanged,
+        mode: Mode::Normal,
         hints: vec![local::<Hint>()?],
         pending_keys: String::new(),
+        pending_label: None,
         chrome: vec![local::<Hint>()?],
         help: None,
         connection: ConnectionView::Subscribed,

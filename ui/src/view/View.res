@@ -14,6 +14,11 @@ module Tab = {
   type t = FilesChanged | Conversation | Browse
 }
 
+module Mode = {
+  @schema
+  type t = Normal | Insert
+}
+
 module ViewPrefs = {
   @schema
   type t = {
@@ -392,8 +397,10 @@ module ViewModel = {
     stepper: @s.null option<CommitStepper.t>,
     focus: Focus.t,
     tab: Tab.t,
+    mode: Mode.t,
     hints: array<Hint.t>,
     @as("pending_keys") pendingKeys: string,
+    @as("pending_label") pendingLabel: @s.null option<string>,
     chrome: array<Hint.t>,
     help: @s.null option<HelpView.t>,
     connection: ConnectionView.t,
@@ -429,8 +436,10 @@ module ViewModel = {
     stepper: None,
     focus: ReviewList({index: 0}),
     tab: FilesChanged,
+    mode: Normal,
     hints: [],
     pendingKeys: "",
+    pendingLabel: None,
     chrome: [],
     help: None,
     connection: Disconnected({}),
@@ -473,7 +482,14 @@ module ViewPatch = {
     | @as("CommitStepper") CommitStepper({stepper: @s.null option<CommitStepper.t>})
     | @as("Progress") Progress({progress: Progress.t})
     | @as("Focus") Focus({focus: Focus.t, tab: Tab.t})
-    | @as("Hints") Hints({hints: array<Hint.t>, pending: string, chrome: array<Hint.t>})
+    | @as("Hints")
+    Hints({
+        hints: array<Hint.t>,
+        pending: string,
+        @as("pending_label") pendingLabel: @s.null option<string>,
+        mode: Mode.t,
+        chrome: array<Hint.t>,
+      })
     | @as("Help") Help({help: @s.null option<HelpView.t>})
     | @as("Draft") Draft({draft: @s.null option<Draft.t>, @as("pending_refresh") pendingRefresh: bool})
     | @as("Search")
@@ -502,7 +518,14 @@ module ViewPatch = {
     | CommitStepper({stepper}) => {...model, stepper}
     | Progress({progress}) => {...model, progress}
     | Focus({focus, tab}) => {...model, focus, tab}
-    | Hints({hints, pending, chrome}) => {...model, hints, pendingKeys: pending, chrome}
+    | Hints({hints, pending, pendingLabel, mode, chrome}) => {
+        ...model,
+        hints,
+        pendingKeys: pending,
+        pendingLabel,
+        mode,
+        chrome,
+      }
     | Help({help}) => {...model, help}
     | Draft({draft, pendingRefresh}) => {...model, draft, pendingRefresh}
     | Search({contentSearch, actionPalette}) => {...model, contentSearch, actionPalette}

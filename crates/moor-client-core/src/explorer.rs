@@ -103,7 +103,10 @@ pub struct Progress {
 /// what is being searched for.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct ExplorerState {
+    /// Browse-mode dirs the user opened (Browse defaults closed).
     pub(crate) expanded: BTreeSet<(RepoId, Option<RepoPath>)>,
+    /// Diffing-mode dirs the user closed (diffing defaults open).
+    pub(crate) collapsed: BTreeSet<(RepoId, Option<RepoPath>)>,
     pub(crate) search: Option<String>,
 }
 
@@ -258,9 +261,7 @@ pub(crate) fn build(inputs: &ExplorerInputs<'_>) -> TreeView {
                 repo_id,
                 path: None,
                 expanded: if inputs.changed_only {
-                    // Diffing mode defaults dirs open; the toggle set then
-                    // records the *collapsed* ones.
-                    !inputs.state.expanded.contains(&(repo_id, None))
+                    !inputs.state.collapsed.contains(&(repo_id, None))
                 } else {
                     inputs.state.expanded.contains(&(repo_id, None))
                 },
@@ -316,12 +317,16 @@ fn nest(
             out.push(TreeNode::Dir {
                 name: child_dir.to_owned(),
                 repo_id,
-                expanded: {
-                    let marked = inputs
+                expanded: if inputs.changed_only {
+                    !inputs
+                        .state
+                        .collapsed
+                        .contains(&(repo_id, Some(child_path.clone())))
+                } else {
+                    inputs
                         .state
                         .expanded
-                        .contains(&(repo_id, Some(child_path.clone())));
-                    if inputs.changed_only { !marked } else { marked }
+                        .contains(&(repo_id, Some(child_path.clone())))
                 },
                 path: Some(child_path),
                 changed_below,

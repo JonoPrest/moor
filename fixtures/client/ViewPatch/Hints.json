@@ -13,6 +13,8 @@
       "label": "next file"
     }
   ],
+  "mode": "Normal",
   "pending": "g",
+  "pending_label": "Go",
   "type": "Hints"
 }

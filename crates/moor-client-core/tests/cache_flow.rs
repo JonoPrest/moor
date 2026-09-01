@@ -1516,6 +1516,7 @@ fn prefs_are_loaded_once_on_connect_persisted_on_change_and_re_key_renders() {
         ignore_whitespace: true,
         context_lines: 5,
         sidebar_width: 288,
+        sidebar_hidden: false,
     };
     let effects = core
         .handle(Input::Stored {

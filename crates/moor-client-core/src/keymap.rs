@@ -27,6 +27,36 @@ pub enum Context {
     Help,
 }
 
+/// Vim-style editing mode (UI-DESIGN: fully modal). `Normal` is keys as
+/// commands; `Insert` is any text editor (the composer, search boxes) —
+/// only `esc` and `ctrl+enter` stay chords there. Visual (line
+/// selection) arrives with stage 2.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    EnumIter,
+    EnumString,
+    Display,
+    Default,
+    PartialOrd,
+    Ord,
+)]
+pub enum Mode {
+    /// Accepts the config file's lowercase table names; serializes
+    /// CamelCase like every other enum on the UI boundary.
+    #[default]
+    #[serde(alias = "normal")]
+    Normal,
+    #[serde(alias = "insert")]
+    Insert,
+}
+
 /// What a key means. Unit-only: targets come from the focus at resolution.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter, EnumString, Display,
@@ -363,6 +393,69 @@ pub struct Conflict {
 pub struct Keymap {
     bindings: Vec<Binding>,
     overridden: Vec<(Context, Command)>,
+    /// The leader chord (`<leader>` in config sequences). Default: space.
+    leader: KeyChord,
+    /// Which-key labels: a pending prefix → its group name.
+    groups: Vec<(KeySeq, String)>,
+}
+
+/// Why a keys config was rejected. Collisions are NOT errors — they are
+/// reported (`conflicts`), vim-style; only unparsable input rejects.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum KeysError {
+    #[error("{0:?} is not an action (see `moor keys init` for the list)")]
+    UnknownAction(String),
+    #[error("{action}: {source}")]
+    BadKeys {
+        action: String,
+        source: KeyParseError,
+    },
+    #[error("leader: {0}")]
+    BadLeader(KeyParseError),
+    #[error("{action} cannot be bound in {mode} mode (valid: {valid})")]
+    WrongMode {
+        action: String,
+        mode: Mode,
+        valid: String,
+    },
+    #[error("group prefix {prefix:?}: {source}")]
+    BadGroup {
+        prefix: String,
+        source: KeyParseError,
+    },
+}
+
+/// The typed keys config (UI-DESIGN: modal keys): what `keys.toml`
+/// deserializes to and the host stores under [`Keymap::KEY`]. Action
+/// names are snake_case command names; sequences may use `<leader>`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct KeysConfig {
+    /// The leader chord; default `space`.
+    #[serde(default)]
+    pub leader: Option<String>,
+    /// `mode → action → sequences`. An action listed replaces its default
+    /// bindings in that mode; `[]` unbinds it.
+    #[serde(default)]
+    pub bindings: std::collections::BTreeMap<Mode, std::collections::BTreeMap<String, Vec<String>>>,
+    /// Which-key labels: `prefix sequence → group label`.
+    #[serde(default)]
+    pub groups: std::collections::BTreeMap<String, String>,
+}
+
+/// Parse a sequence that may contain `<leader>` tokens.
+pub fn resolve_seq(text: &str, leader: KeyChord) -> Result<KeySeq, KeyParseError> {
+    let chords = text
+        .split_whitespace()
+        .map(|tok| {
+            if tok.eq_ignore_ascii_case("<leader>") {
+                Ok(leader)
+            } else {
+                KeyChord::from_str(tok)
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    KeySeq::new(chords)
 }
 
 /// How a chord sequence matched the table.
@@ -389,13 +482,28 @@ impl Keymap {
     /// Host KV key the overrides live under.
     pub const KEY: &'static str = "moor/keymap";
 
-    /// The built-in table (§6.4). Vim-style movement plus a few chords.
+    /// The built-in table with the default leader (space).
+    #[must_use]
+    pub fn default_table() -> Self {
+        Self::default_table_with(KeyChord::named(NamedKey::Space))
+    }
+
+    /// The built-in table (§6.4, UI-DESIGN: modal keys). Vim-style
+    /// movement, a `g` goto group, and a `<leader>` tree.
     // One line per binding; splitting would hide the whole table.
     #[allow(clippy::too_many_lines)]
     #[must_use]
-    pub fn default_table() -> Self {
+    pub fn default_table_with(leader: KeyChord) -> Self {
         use Command as C;
         use Context as X;
+        // A leader-group binding: `<leader> <c>`.
+        let l = |c: char, command: Command| Binding {
+            context: X::Global,
+            keys: KeySeq::new(vec![leader, KeyChord::char(c)])
+                .unwrap_or_else(|_| KeySeq::single(leader)),
+            command,
+            primary: false,
+        };
         let b = |context: Context, keys: KeySeq, command: Command, primary: bool| Binding {
             context,
             keys,
@@ -416,21 +524,20 @@ impl Keymap {
             b(X::Global, keys!("3"), C::TabBrowse, false),
             b(X::Global, keys!("s"), C::ToggleLayout, false),
             b(X::Global, keys!("w"), C::ToggleWhitespace, false),
-            // The `g` leader (UI-DESIGN §bindings): flat keys are the main
-            // flow; everything less common is a `g`-prefixed group. The
-            // hint bar switches to the group while `g` is pending.
-            b(X::Global, keys!("g a"), C::ScopeAll, false),
-            b(X::Global, keys!("g c"), C::ScopeByCommit, false),
-            b(X::Global, keys!("g w"), C::ScopeWorktree, false),
-            b(X::Global, keys!("g s"), C::ToggleLayout, false),
-            b(X::Global, keys!("g h"), C::ToggleWhitespace, false),
+            // `g` is vim's goto group (which-key label "Go"); the
+            // configurable `<leader>` (default space) holds the rest.
             b(X::Global, keys!("g f"), C::NextFile, false),
             b(X::Global, keys!("g F"), C::PrevFile, false),
             b(X::Global, keys!("g e"), C::GoBottom, false),
-            b(X::Global, keys!("g <"), C::SidebarShrink, false),
-            b(X::Global, keys!("g >"), C::SidebarGrow, false),
-            b(X::Global, keys!("g ="), C::SidebarReset, false),
-            b(X::Global, keys!("g b"), C::ToggleSidebar, false),
+            l('a', C::ScopeAll),
+            l('c', C::ScopeByCommit),
+            l('w', C::ScopeWorktree),
+            l('s', C::ToggleLayout),
+            l('h', C::ToggleWhitespace),
+            l('<', C::SidebarShrink),
+            l('>', C::SidebarGrow),
+            l('=', C::SidebarReset),
+            l('b', C::ToggleSidebar),
             b(X::Global, keys!("esc"), C::Back, false),
             b(X::Global, keys!("ctrl+shift+c"), C::Connect, false),
             b(X::Global, keys!("ctrl+shift+d"), C::Disconnect, false),
@@ -512,7 +619,112 @@ impl Keymap {
         Self {
             bindings,
             overridden: Vec::new(),
+            leader,
+            groups: vec![
+                (KeySeq::single(leader), "Leader".to_owned()),
+                (keys!("g"), "Go".to_owned()),
+            ],
         }
+    }
+
+    /// The leader chord (`<leader>` in config sequences).
+    #[must_use]
+    pub fn leader(&self) -> KeyChord {
+        self.leader
+    }
+
+    /// Which-key label for a pending prefix, when one is configured.
+    #[must_use]
+    pub fn pending_label(&self, pressed: &[KeyChord]) -> Option<String> {
+        self.groups
+            .iter()
+            .find(|(k, _)| k.chords() == pressed)
+            .map(|(_, label)| label.clone())
+    }
+
+    /// The default table with a [`KeysConfig`] applied: the leader swaps,
+    /// listed actions replace their default bindings in that mode (`[]`
+    /// unbinds), groups add which-key labels. Collisions do not reject —
+    /// they surface via [`Keymap::conflicts`].
+    pub fn with_config(config: &KeysConfig) -> Result<Self, KeysError> {
+        let leader = match &config.leader {
+            Some(text) => resolve_seq(text, KeyChord::named(NamedKey::Space))
+                .map_err(KeysError::BadLeader)
+                .and_then(|seq| match seq.chords() {
+                    [one] => Ok(*one),
+                    _ => Err(KeysError::BadLeader(KeyParseError::Empty)),
+                })?,
+            None => KeyChord::named(NamedKey::Space),
+        };
+        let mut map = Self::default_table_with(leader);
+        for (mode, actions) in &config.bindings {
+            for (name, seqs) in actions {
+                let command =
+                    command_named(name).ok_or_else(|| KeysError::UnknownAction(name.clone()))?;
+                if !modes_of(command).contains(mode) {
+                    return Err(KeysError::WrongMode {
+                        action: name.clone(),
+                        mode: *mode,
+                        valid: modes_of(command)
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    });
+                }
+                // The contexts this mode's bindings live in.
+                let in_mode = |ctx: Context| match mode {
+                    Mode::Insert => ctx == Context::Composer,
+                    Mode::Normal => ctx != Context::Composer,
+                };
+                let mut contexts: Vec<(Context, bool)> = map
+                    .bindings
+                    .iter()
+                    .filter(|b| b.command == command && in_mode(b.context))
+                    .map(|b| (b.context, b.primary))
+                    .collect();
+                contexts.dedup_by_key(|(c, _)| *c);
+                if contexts.is_empty() {
+                    contexts.push((
+                        if *mode == Mode::Insert {
+                            Context::Composer
+                        } else {
+                            Context::Global
+                        },
+                        false,
+                    ));
+                }
+                map.bindings
+                    .retain(|b| !(b.command == command && in_mode(b.context)));
+                for seq_text in seqs {
+                    let keys =
+                        resolve_seq(seq_text, leader).map_err(|source| KeysError::BadKeys {
+                            action: name.clone(),
+                            source,
+                        })?;
+                    for (context, primary) in &contexts {
+                        map.bindings.push(Binding {
+                            context: *context,
+                            keys: keys.clone(),
+                            command,
+                            primary: *primary,
+                        });
+                    }
+                }
+                for (context, _) in &contexts {
+                    map.overridden.push((*context, command));
+                }
+            }
+        }
+        for (prefix, label) in &config.groups {
+            let seq = resolve_seq(prefix, leader).map_err(|source| KeysError::BadGroup {
+                prefix: prefix.clone(),
+                source,
+            })?;
+            map.groups.retain(|(k, _)| *k != seq);
+            map.groups.push((seq, label.clone()));
+        }
+        Ok(map)
     }
 
     /// The default table with `overrides` applied.
@@ -762,6 +974,92 @@ pub fn label(command: Command) -> &'static str {
         Command::ContentSearch => "find in files",
         Command::ActionPalette => "actions",
     }
+}
+
+/// Which modes a command may be bound (and run) in. One exhaustive
+/// match; the config schema derives its per-mode action lists from this.
+#[must_use]
+pub fn modes_of(command: Command) -> &'static [Mode] {
+    use Mode as M;
+    match command {
+        // The composer owns these; everything else is Normal-only.
+        Command::Submit => &[M::Insert],
+        Command::Back => &[M::Normal, M::Insert],
+        Command::MoveDown
+        | Command::MoveUp
+        | Command::PageDown
+        | Command::PageUp
+        | Command::GoTop
+        | Command::GoBottom
+        | Command::NextHunk
+        | Command::PrevHunk
+        | Command::NextFile
+        | Command::PrevFile
+        | Command::NextComment
+        | Command::PrevComment
+        | Command::Open
+        | Command::NextPanel
+        | Command::ToggleViewed
+        | Command::Comment
+        | Command::Reply
+        | Command::Delete
+        | Command::ApplySuggestion
+        | Command::ToggleResolved
+        | Command::FileSearch
+        | Command::ToggleLayout
+        | Command::ToggleWhitespace
+        | Command::ToggleHelp
+        | Command::TabFiles
+        | Command::TabConversation
+        | Command::TabBrowse
+        | Command::SidebarShrink
+        | Command::SidebarGrow
+        | Command::SidebarReset
+        | Command::ToggleSidebar
+        | Command::Connect
+        | Command::Disconnect
+        | Command::Commits
+        | Command::ScopeAll
+        | Command::ScopeByCommit
+        | Command::ScopeWorktree
+        | Command::ExpandContext
+        | Command::ContentSearch
+        | Command::ActionPalette
+        | Command::Refresh => &[M::Normal],
+    }
+}
+
+/// The command's name in the config file and the `:` palette
+/// (`ToggleLayout` → `toggle_layout`).
+#[must_use]
+pub fn config_name(command: Command) -> String {
+    let name = command.to_string();
+    let mut out = String::with_capacity(name.len() + 4);
+    for (i, ch) in name.chars().enumerate() {
+        if ch.is_ascii_uppercase() {
+            if i > 0 {
+                out.push('_');
+            }
+            out.push(ch.to_ascii_lowercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+/// The command a config/palette name refers to (case- and
+/// underscore-insensitive: `toggle_layout`, `ToggleLayout`, `togglelayout`).
+#[must_use]
+pub fn command_named(name: &str) -> Option<Command> {
+    let norm = |s: &str| {
+        s.chars()
+            .filter(|c| *c != '_' && *c != '-')
+            .flat_map(char::to_lowercase)
+            .collect::<String>()
+    };
+    let wanted = norm(name);
+    Command::iter().find(|c| norm(&c.to_string()) == wanted)
 }
 
 /// One hint-bar entry.

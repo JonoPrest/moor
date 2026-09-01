@@ -3105,6 +3105,7 @@ dependencies = [
  "moor-test-support",
  "moord",
  "redb",
+ "schemars 1.2.2",
  "serde_json",
  "strum",
  "tempfile",
