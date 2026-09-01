@@ -1804,6 +1804,26 @@ impl ClientCore {
         self.rebase();
         // Keys go to the explorer of the review that just opened.
         self.view.focus = Focus::Tree { index: 0 };
+        // The commits list sits under the file tree from the start
+        // (UI-DESIGN §Layout), so fetch it with the review rather than
+        // waiting for by-commit mode.
+        if let Some(open) = &self.view.review {
+            let review_id = open.snapshot.review.id;
+            if let Some(repo_id) = open
+                .snapshot
+                .review
+                .targets
+                .iter()
+                .next()
+                .map(|t| t.repo_id)
+            {
+                let req = self.request(
+                    Request::ListCommits { review_id, repo_id },
+                    InFlight::ListCommits { repo_id },
+                );
+                effects.push(req);
+            }
+        }
     }
 
     fn require_subscribed(&self) -> Result<(), CoreError> {

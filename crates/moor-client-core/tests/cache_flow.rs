@@ -516,8 +516,11 @@ fn streamed_open_fills_and_pins_the_cache_and_renders_once_at_end() {
             ViewSection::Diff, // stream end
         ]
     );
-    // Nothing goes to the daemon or disk: the stream brought everything.
-    assert!(requests(&effects).is_empty());
+    // The stream brought all content; the only request out is the commits
+    // list every open fetches for the sidebar. Nothing touches disk.
+    let reqs = requests(&effects);
+    assert_eq!(reqs.len(), 1);
+    assert!(matches!(reqs[0].1, Request::ListCommits { .. }));
     assert!(loads(&effects).is_empty());
     assert!(persists(&effects).is_empty());
     let cache = core.cache();
@@ -851,10 +854,18 @@ fn disk_tier_load_before_send_and_dedupes_concurrent_misses() {
         loads(&effects),
         vec![tree_key(1).storage_key(), tree_key(2).storage_key()]
     );
+    // (plus the commits list, fetched with every open for the sidebar).
     let reqs = requests(&effects);
-    assert_eq!(reqs.len(), 1);
-    assert!(matches!(reqs[0].1, Request::ListFiles { .. }));
-    let files_id = reqs[0].0;
+    assert_eq!(reqs.len(), 2);
+    assert!(
+        reqs.iter()
+            .any(|(_, r)| matches!(r, Request::ListCommits { .. }))
+    );
+    let files_id = reqs
+        .iter()
+        .find(|(_, r)| matches!(r, Request::ListFiles { .. }))
+        .expect("ListFiles goes out with the open")
+        .0;
 
     // Disk answers: tree 1 is there, tree 2 is not → one Send for tree 2.
     kv.map.insert(
@@ -1086,6 +1097,8 @@ fn restart_serves_the_previous_review_from_disk_without_content_requests() {
                     kv.drive(&mut core, effects);
                 }
                 Request::ListFiles { .. } => files_id = Some(id),
+                // Fetched with every open (sidebar commits); unanswered here.
+                Request::ListCommits { .. } => {}
                 Request::FileRender { .. }
                 | Request::ChangeRender { .. }
                 | Request::Search { .. }
@@ -1096,7 +1109,6 @@ fn restart_serves_the_previous_review_from_disk_without_content_requests() {
                 | Request::ReviewSnapshot { .. }
                 | Request::OpenReview { .. }
                 | Request::ResolveTargets { .. }
-                | Request::ListCommits { .. }
                 | Request::BlobRender { .. }
                 | Request::Subscribe { .. }
                 | Request::Unsubscribe { .. }
