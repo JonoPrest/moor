@@ -1,4 +1,8 @@
 {
+  "browse_ref": {
+    "name": "main",
+    "type": "Branch"
+  },
   "open_review": "01HF7YATZ80000000000000004",
   "resolved_targets": [
     {

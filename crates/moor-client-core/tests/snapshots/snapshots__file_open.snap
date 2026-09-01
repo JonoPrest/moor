@@ -639,6 +639,7 @@ expression: core.view()
   "scope": {
     "type": "All"
   },
+  "browse_ref": null,
   "review": {
     "snapshot": {
       "review": {

@@ -376,16 +376,20 @@ impl ClientCore {
                             opts: render.opts,
                             first_chunk,
                         },
-                        (RenderTarget::Diff { .. } | RenderTarget::Blob { .. }, _) => {
-                            Request::FileRender {
-                                review_id,
-                                repo_id: render.repo_id,
-                                path: render.path.clone(),
-                                opts: render.opts,
-                                first_chunk,
-                                scope: open.map(|r| r.scope).unwrap_or_default(),
-                            }
-                        }
+                        (RenderTarget::Blob { oid }, _) => Request::BlobRender {
+                            repo_id: render.repo_id,
+                            path: render.path.clone(),
+                            blob_oid: *oid,
+                            first_chunk,
+                        },
+                        (RenderTarget::Diff { .. }, false) => Request::FileRender {
+                            review_id,
+                            repo_id: render.repo_id,
+                            path: render.path.clone(),
+                            opts: render.opts,
+                            first_chunk,
+                            scope: open.map(|r| r.scope).unwrap_or_default(),
+                        },
                     };
                     (request, InFlight::FileRender { render, stop_after })
                 }
@@ -509,6 +513,7 @@ impl ClientCore {
                 if let Some(open) = &mut self.view.review
                     && !open.files.contains(&render)
                     && open.original.as_ref() != Some(&render)
+                    && open.open_file.as_ref().map(|f| &f.render) != Some(&render)
                 {
                     open.files.push(render.clone());
                 }
@@ -744,7 +749,9 @@ impl ClientCore {
         self.content.cache.retain_pins(|k| match k {
             CacheKey::Tree { root } => trees.contains(root),
             CacheKey::Header { render } => {
-                files.contains(render) || original.as_ref() == Some(render)
+                files.contains(render)
+                    || original.as_ref() == Some(render)
+                    || open_file.as_ref() == Some(render)
             }
             CacheKey::Chunk { render, .. } => open_file.as_ref() == Some(render),
         })
@@ -785,6 +792,43 @@ impl ClientCore {
         }
     }
 
+    /// A blob render key for a file outside the review's diff: from the
+    /// Browse ref's tree when one is picked for the repo, else the repo's
+    /// scoped head tree (UI-DESIGN §Browse).
+    fn blob_render_of(&self, file: &FileRef) -> Option<RenderKey> {
+        let open = self.view.review.as_ref()?;
+        let root = match (self.view.tab, self.browse_root(file.repo_id)) {
+            (crate::Tab::Browse, Some(root)) => root,
+            (crate::Tab::Browse | crate::Tab::FilesChanged | crate::Tab::Conversation, _) => {
+                open.current_targets()
+                    .iter()
+                    .find(|t| t.repo_id == file.repo_id)?
+                    .head
+                    .tree
+            }
+        };
+        let CacheValue::Tree { snapshot } = self.content.cache.peek(&CacheKey::Tree { root })?
+        else {
+            return None;
+        };
+        let oid = snapshot
+            .entries
+            .iter()
+            .find(|e| e.path == file.path)
+            .and_then(|e| match e.kind {
+                moor_protocol::TreeEntryKind::File { oid, .. }
+                | moor_protocol::TreeEntryKind::Symlink { oid } => Some(oid),
+                moor_protocol::TreeEntryKind::Dir { .. }
+                | moor_protocol::TreeEntryKind::Submodule { .. } => None,
+            })?;
+        Some(RenderKey {
+            repo_id: file.repo_id,
+            path: file.path.clone(),
+            target: RenderTarget::Blob { oid },
+            opts: self.content.config.render_opts,
+        })
+    }
+
     // ---- viewport -------------------------------------------------------
 
     pub(crate) fn viewport(
@@ -806,12 +850,26 @@ impl ClientCore {
                     && r.path == file.path
             })
             .cloned();
-        let Some(render) = original.or_else(|| {
-            open.files
-                .iter()
-                .find(|r| r.repo_id == file.repo_id && r.path == file.path)
-                .cloned()
-        }) else {
+        // In Browse at a picked ref, every file opens as that ref's blob —
+        // even ones the review's diff also touches.
+        let browsing =
+            self.view.tab == crate::Tab::Browse && self.browse_root(file.repo_id).is_some();
+        let Some(render) = original
+            .or_else(|| {
+                if browsing {
+                    self.blob_render_of(&file)
+                } else {
+                    None
+                }
+            })
+            .or_else(|| {
+                open.files
+                    .iter()
+                    .find(|r| r.repo_id == file.repo_id && r.path == file.path)
+                    .cloned()
+            })
+            .or_else(|| self.blob_render_of(&file))
+        else {
             return Err(CoreError::UnknownFile(file));
         };
         let (first_row, last_row) = (first_row.min(last_row), first_row.max(last_row));

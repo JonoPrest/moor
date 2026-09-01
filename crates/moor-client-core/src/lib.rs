@@ -243,6 +243,12 @@ pub enum Action {
         file: FileRef,
         full: bool,
     },
+    /// Browse `repo_id` at `ref_spec` (UI-DESIGN §Browse); `None` returns
+    /// to the review's head trees.
+    SetBrowseRef {
+        repo_id: RepoId,
+        ref_spec: Option<moor_protocol::RefSpec>,
+    },
 }
 
 /// How much one `ExpandContext` step adds to a file's context lines.
@@ -368,6 +374,11 @@ pub(crate) enum InFlight {
     TreeSnapshot {
         root: moor_protocol::TreeOid,
     },
+    /// A Browse-tab tree at an arbitrary ref; the root is unknown until
+    /// the answer names it.
+    BrowseTree {
+        repo_id: RepoId,
+    },
     FileRender {
         render: RenderKey,
         stop_after: moor_protocol::ChunkIndex,
@@ -385,6 +396,7 @@ impl InFlight {
     fn is_content(&self) -> bool {
         match self {
             InFlight::TreeSnapshot { .. }
+            | InFlight::BrowseTree { .. }
             | InFlight::FileRender { .. }
             | InFlight::RenderChunk { .. } => true,
             InFlight::Subscribe
@@ -413,6 +425,7 @@ impl InFlight {
             | InFlight::ReviewSnapshot { .. }
             | InFlight::ListFiles { .. }
             | InFlight::ListCommits { .. }
+            | InFlight::BrowseTree { .. }
             | InFlight::Mutate { .. } => None,
         }
     }
@@ -462,6 +475,17 @@ pub struct ClientCore {
     focus_return: Option<Focus>,
     /// `SetScope { ByCommit }` is waiting for its `ListCommits` answer.
     by_commit_pending: bool,
+    /// The Browse tab's custom ref, when one is picked (UI-DESIGN §Browse).
+    browse: Option<Browse>,
+}
+
+/// Browsing one repo at an arbitrary ref.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Browse {
+    repo_id: RepoId,
+    ref_spec: moor_protocol::RefSpec,
+    /// Root of the snapshot once it arrived.
+    root: Option<moor_protocol::TreeOid>,
 }
 
 /// A mutation applied locally and awaiting the daemon's echo.
@@ -503,6 +527,7 @@ impl ClientCore {
             help_open: false,
             focus_return: None,
             by_commit_pending: false,
+            browse: None,
         }
     }
 
@@ -593,8 +618,14 @@ impl ClientCore {
         let mut sections = Vec::new();
         let (tree, progress) = match (&self.view.review, &self.committed) {
             (Some(open), Some(_)) => {
-                let heads: Vec<moor_protocol::TreeOid> =
-                    open.current_targets().iter().map(|t| t.head.tree).collect();
+                let browse_root = match (self.view.tab, &self.browse) {
+                    (Tab::Browse, Some(b)) => b.root,
+                    (Tab::Browse | Tab::FilesChanged | Tab::Conversation, _) => None,
+                };
+                let heads: Vec<moor_protocol::TreeOid> = match browse_root {
+                    Some(root) => vec![root],
+                    None => open.current_targets().iter().map(|t| t.head.tree).collect(),
+                };
                 let trees: Vec<&moor_protocol::TreeSnapshot> = heads
                     .iter()
                     .filter_map(|root| {
@@ -616,11 +647,18 @@ impl ClientCore {
                     .iter()
                     .flat_map(|w| w.repos.iter().map(|r| (r.id, r.display_name.clone())))
                     .collect();
+                // A custom Browse ref shows every file plain: no change
+                // badges (they belong to the review's diff).
+                let files_for_tree: &[RenderKey] = if browse_root.is_some() {
+                    &[]
+                } else {
+                    &open.files
+                };
                 let inputs = explorer::ExplorerInputs {
                     snapshot: &open.snapshot,
                     repo_names: &repo_names,
                     trees,
-                    files: &open.files,
+                    files: files_for_tree,
                     open_file: open_file.as_ref(),
                     viewer: &self.config.author,
                     state: &self.explorer,
@@ -693,6 +731,11 @@ impl ClientCore {
             .unwrap_or_default();
         if scope != self.view.scope {
             self.view.scope = scope;
+            sections.push(ViewSection::ReviewList);
+        }
+        let browse_ref = self.browse.as_ref().map(|b| b.ref_spec.clone());
+        if browse_ref != self.view.browse_ref {
+            self.view.browse_ref = browse_ref;
             sections.push(ViewSection::ReviewList);
         }
         let focus = focus::clamp(&self.view, self.view.focus);
@@ -1002,6 +1045,14 @@ impl ClientCore {
         Ok(effects)
     }
 
+    /// The Browse tab's tree root for `repo_id`, when picked and loaded.
+    pub(crate) fn browse_root(&self, repo_id: RepoId) -> Option<moor_protocol::TreeOid> {
+        self.browse
+            .as_ref()
+            .filter(|b| b.repo_id == repo_id)
+            .and_then(|b| b.root)
+    }
+
     fn wrong_state(&self, input: InputKind) -> CoreError {
         CoreError::WrongConnectionState {
             input,
@@ -1235,6 +1286,33 @@ impl ClientCore {
             }
             Action::OpenOriginalDiff { thread_id } => self.open_original(thread_id),
             Action::ExpandContext { file, full } => self.expand_context(&file, full),
+            Action::SetBrowseRef { repo_id, ref_spec } => {
+                if self.view.review.is_none() {
+                    return Err(CoreError::NoOpenReview);
+                }
+                match ref_spec {
+                    None => {
+                        self.browse = None;
+                        // The tree is derived after this returns.
+                        Ok(vec![render(&[ViewSection::ReviewList])])
+                    }
+                    Some(ref_spec) => {
+                        self.require_subscribed()?;
+                        self.browse = Some(Browse {
+                            repo_id,
+                            ref_spec: ref_spec.clone(),
+                            root: None,
+                        });
+                        Ok(vec![
+                            self.request(
+                                Request::TreeSnapshot { repo_id, ref_spec },
+                                InFlight::BrowseTree { repo_id },
+                            ),
+                            render(&[ViewSection::ReviewList]),
+                        ])
+                    }
+                }
+            }
             Action::DraftOpened { anchor } => {
                 if self.view.review.is_none() {
                     return Err(CoreError::NoOpenReview);
@@ -1324,15 +1402,24 @@ impl ClientCore {
                     }
                 } else {
                     // Record the exact file diff on screen so readers can
-                    // reopen this rendering later.
+                    // reopen this rendering later. A blob view (Browse)
+                    // records nothing: the comment is off-diff.
                     let context = match &anchor {
                         Anchor::Review => None,
                         Anchor::File { repo_id, path, .. }
                         | Anchor::Lines { repo_id, path, .. } => review
-                            .files
-                            .iter()
-                            .find(|k| k.repo_id == *repo_id && k.path == *path)
-                            .and_then(|k| match &k.target {
+                            .open_file
+                            .as_ref()
+                            .filter(|f| f.render.repo_id == *repo_id && f.render.path == *path)
+                            .map(|f| &f.render.target)
+                            .or_else(|| {
+                                review
+                                    .files
+                                    .iter()
+                                    .find(|k| k.repo_id == *repo_id && k.path == *path)
+                                    .map(|k| &k.target)
+                            })
+                            .and_then(|t| match t {
                                 RenderTarget::Diff { change } => Some(change.clone()),
                                 RenderTarget::Blob { .. } => None,
                             }),
@@ -1621,6 +1708,7 @@ impl ClientCore {
         self.focus_return = None;
         self.help_open = false;
         self.by_commit_pending = false;
+        self.browse = None;
         self.review_closed(effects);
     }
 
@@ -1772,6 +1860,7 @@ impl ClientCore {
                     | InFlight::ListFiles { .. }
                     | InFlight::ListCommits { .. }
                     | InFlight::TreeSnapshot { .. }
+                    | InFlight::BrowseTree { .. }
                     | InFlight::RenderChunk { .. }
                     | InFlight::Mutate { .. } => {
                         self.in_flight.insert(id, waiting);
@@ -1980,6 +2069,7 @@ impl ClientCore {
                 | InFlight::ListFiles { .. }
                 | InFlight::ListCommits { .. }
                 | InFlight::TreeSnapshot { .. }
+                | InFlight::BrowseTree { .. }
                 | InFlight::RenderChunk { .. }
                 | InFlight::Mutate { .. },
                 StreamItem::ReviewSnapshot { .. }
@@ -2111,6 +2201,30 @@ impl ClientCore {
                 }
                 effects
             }
+            (InFlight::BrowseTree { repo_id }, Response::TreeSnapshot { snapshot }) => {
+                let mut effects = Vec::new();
+                let root = snapshot.root_oid;
+                if snapshot.repo_id == repo_id
+                    && let Some(browse) = &mut self.browse
+                    && browse.repo_id == repo_id
+                {
+                    browse.root = Some(root);
+                    if let Some(open) = &mut self.view.review
+                        && !open.trees.contains(&root)
+                    {
+                        open.trees.push(root);
+                    }
+                    self.content.cache.pin(CacheKey::Tree { root });
+                    self.arrived(
+                        CacheKey::Tree { root },
+                        CacheValue::Tree { snapshot },
+                        content::Arrival::Response,
+                        &mut effects,
+                    );
+                }
+                self.content_done(&mut effects);
+                effects
+            }
             (InFlight::TreeSnapshot { root }, Response::TreeSnapshot { snapshot }) => {
                 if snapshot.root_oid != root {
                     return Err(CoreError::UnexpectedResponse {
@@ -2186,7 +2300,7 @@ impl ClientCore {
                     InFlight::ReviewSnapshot { .. } => "ReviewSnapshot",
                     InFlight::ListFiles { .. } => "Files",
                     InFlight::ListCommits { .. } => "Commits",
-                    InFlight::TreeSnapshot { .. } => "TreeSnapshot",
+                    InFlight::TreeSnapshot { .. } | InFlight::BrowseTree { .. } => "TreeSnapshot",
                     InFlight::RenderChunk { .. } => "RenderChunk",
                     InFlight::Mutate { .. } => "Committed",
                 };

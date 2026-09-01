@@ -664,6 +664,12 @@ enum_fixture!(
             file: file_ref()?,
             full: false
         },
+        Action::SetBrowseRef {
+            repo_id: repo_id()?,
+            ref_spec: Some(RefSpec::Branch {
+                name: "main".into()
+            })
+        },
     ]
 );
 enum_fixture!(
@@ -733,6 +739,9 @@ enum_fixture!(
             open_review: Some(proto::<Review>()?.id),
             resolved_targets: vec![proto::<ResolvedTarget>()?],
             scope: DiffScope::All,
+            browse_ref: Some(RefSpec::Branch {
+                name: "main".into()
+            }),
         },
         ViewPatch::Tree {
             tree: local::<TreeView>()?,
@@ -795,6 +804,7 @@ struct_fixture!(
         open_review: Some(proto::<Review>()?.id),
         resolved_targets: vec![proto::<ResolvedTarget>()?],
         scope: DiffScope::All,
+        browse_ref: None,
         review: Some(local::<OpenReview>()?),
         draft: Some(local::<Draft>()?),
         pending_refresh: true,

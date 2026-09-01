@@ -35,6 +35,9 @@ pub enum ViewPatch {
         /// The open review's diff scope (UI-DESIGN §Diff scope).
         #[serde(default)]
         scope: DiffScope,
+        /// The Browse tab's picked ref (UI-DESIGN §Browse).
+        #[serde(default)]
+        browse_ref: Option<moor_protocol::RefSpec>,
     },
     Tree {
         tree: TreeView,
@@ -110,6 +113,7 @@ impl ViewModel {
                 open_review: self.open_review,
                 resolved_targets: self.resolved_targets.clone(),
                 scope: self.scope,
+                browse_ref: self.browse_ref.clone(),
             },
             ViewSection::Tree => ViewPatch::Tree {
                 tree: self.tree.clone(),
@@ -178,12 +182,14 @@ impl ViewModel {
                 open_review,
                 resolved_targets,
                 scope,
+                browse_ref,
             } => {
                 self.workspaces = workspaces;
                 self.reviews = reviews;
                 self.open_review = open_review;
                 self.resolved_targets = resolved_targets;
                 self.scope = scope;
+                self.browse_ref = browse_ref;
             }
             ViewPatch::Tree { tree } => self.tree = tree,
             ViewPatch::Diff { diff, prefs } => {

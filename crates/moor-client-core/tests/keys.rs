@@ -358,7 +358,8 @@ fn every_action_is_reachable_from_a_binding() {
         ActionKind::EditComment,  // edit text is host's
         ActionKind::CreateReview, // title and targets come from a form
         ActionKind::ListReviews,
-        ActionKind::FileSearch, // produced (with an empty query) — see below
+        ActionKind::FileSearch,   // produced (with an empty query) — see below
+        ActionKind::SetBrowseRef, // the ref text comes from the Browse picker
     ]
     .into_iter()
     .collect();

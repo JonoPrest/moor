@@ -857,3 +857,24 @@ fn diff_scopes_narrow_files_and_step_a_worktree_review() {
         )
         .unwrap();
 }
+
+#[test]
+fn an_unresolvable_target_leaves_no_ghost_review() {
+    let w = world();
+    // No upstream is configured in the test repo: the create must fail
+    // whole, committing nothing.
+    let t = NonEmpty::singleton(ReviewTarget {
+        repo_id: rid(1),
+        base: RefSpec::Upstream,
+        head: RefSpec::WorkingTree,
+    });
+    let err = w
+        .core
+        .create_review(&human(), review_id(9), ws(), "ghost".into(), t)
+        .unwrap_err();
+    let _ = err;
+    assert!(
+        w.core.reviews(ws()).unwrap().is_empty(),
+        "a failed create leaves no review behind"
+    );
+}

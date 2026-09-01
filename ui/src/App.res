@@ -146,9 +146,25 @@ module Shell = {
               title="Conversation" threads=model.conversation focus=model.focus indexOffset=0 dispatch
             />
           | Browse =>
-            <div className="tab-placeholder">
-              {React.string("Browse — reading any ref without a diff — is coming soon")}
-            </div>
+            <>
+              <BrowseBar
+                browseRef=model.browseRef
+                repoId={model.resolvedTargets->Array.get(0)->Option.map(t => t.repoId)}
+                dispatch
+              />
+              {switch model.tree.search {
+              | Some(search) => <SearchBox search dispatch />
+              | None => React.null
+              }}
+              {switch model.diff {
+              | Some(diff) => <DiffView diff layout=model.prefs.layout focus=model.focus dispatch />
+              | None => <div className="diff-empty"> {React.string("Open a file")} </div>
+              }}
+              {switch model.draft {
+              | Some(draft) => <Composer draft pendingRefresh=model.pendingRefresh dispatch />
+              | None => React.null
+              }}
+            </>
           }}
         </div>
         {model.tab == FilesChanged

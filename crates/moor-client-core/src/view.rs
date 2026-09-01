@@ -258,6 +258,10 @@ pub struct ViewModel {
     /// `All` when no review is open.
     #[serde(default)]
     pub scope: DiffScope,
+    /// The Browse tab's picked ref (UI-DESIGN §Browse); `None` browses the
+    /// review's head trees.
+    #[serde(default)]
+    pub browse_ref: Option<moor_protocol::RefSpec>,
     pub review: Option<OpenReview>,
     pub draft: Option<Draft>,
     /// A working-tree refresh arrived while `draft` was open and is being

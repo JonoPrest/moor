@@ -219,6 +219,18 @@
   .new-review-target {
     @apply my-1 flex gap-1;
   }
+  .browse-bar {
+    @apply flex items-center gap-2 border-b border-border bg-panel px-3 py-1 text-sm;
+  }
+  .browse-bar .text-input {
+    @apply w-64;
+  }
+  .browse-viewing {
+    @apply text-muted;
+  }
+  .browse-bad {
+    color: var(--color-diff-remove-fg);
+  }
   .original-banner {
     @apply border-b px-3 py-1 text-xs;
     border-color: var(--color-accent);

@@ -176,6 +176,14 @@ impl Core {
                 )));
             }
         }
+        // Pre-flight: every target must resolve before anything is
+        // committed, or an unresolvable base (say `Upstream` with no
+        // upstream configured) would leave a ghost review behind.
+        for t in &targets {
+            let repo = self.repo(t.repo_id)?;
+            repo.resolve(&t.base)?;
+            repo.resolve(&t.head)?;
+        }
         let review = Review {
             id,
             workspace_id,

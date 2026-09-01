@@ -1,4 +1,5 @@
 {
+  "browse_ref": null,
   "chrome": [
     {
       "command": "NextFile",

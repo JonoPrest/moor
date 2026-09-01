@@ -58,4 +58,6 @@ type t =
   | @as("SetScope") SetScope({scope: ScopeChoice.t})
   | @as("OpenOriginalDiff") OpenOriginalDiff({@as("thread_id") threadId: threadId})
   | @as("ExpandContext") ExpandContext({file: View.FileRef.t, full: bool})
+  | @as("SetBrowseRef")
+  SetBrowseRef({@as("repo_id") repoId: repoId, @as("ref_spec") refSpec: @s.null option<Domain.RefSpec.t>})
 @@warning("+27")

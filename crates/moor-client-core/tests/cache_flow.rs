@@ -2206,3 +2206,101 @@ fn open_render(core: &ClientCore) -> RenderKey {
         .render
         .clone()
 }
+
+#[test]
+fn browse_tab_shows_a_picked_ref_and_opens_blobs() {
+    let mut core = subscribed(local());
+    open_streamed(&mut core);
+    // Pick a ref to browse; the tree at that ref is fetched.
+    let effects = core
+        .handle(Input::User(Action::SetBrowseRef {
+            repo_id: repo_id(),
+            ref_spec: Some(RefSpec::Tag { name: "v1".into() }),
+        }))
+        .unwrap();
+    let (id, request) = requests(&effects)[0].clone();
+    assert_eq!(
+        request,
+        Request::TreeSnapshot {
+            repo_id: repo_id(),
+            ref_spec: RefSpec::Tag { name: "v1".into() }
+        }
+    );
+    core.handle(Input::Server(ServerMsg::Response {
+        id,
+        response: Response::TreeSnapshot {
+            snapshot: tree(7, &["a.rs", "docs/guide.md"]),
+        },
+    }))
+    .unwrap();
+    assert_eq!(
+        core.view().browse_ref,
+        Some(RefSpec::Tag { name: "v1".into() })
+    );
+    core.handle(Input::User(Action::SetTab {
+        tab: moor_client_core::Tab::Browse,
+    }))
+    .unwrap();
+    // Expand the root: the browse tree lists the picked ref's files, with
+    // no change badges.
+    let root = match &core.view().tree.roots[0] {
+        moor_client_core::TreeNode::Dir { repo_id, .. } => *repo_id,
+        moor_client_core::TreeNode::File { .. } => panic!("root is a dir"),
+    };
+    core.handle(Input::User(Action::ToggleDir {
+        repo_id: root,
+        path: None,
+    }))
+    .unwrap();
+    let browse_files = visible_files(core.view());
+    assert!(
+        browse_files.contains(&"docs".to_owned()),
+        "{browse_files:?}"
+    );
+    // Opening a file outside the diff renders its blob.
+    let effects = core
+        .handle(Input::User(Action::Viewport {
+            file: file_ref("docs/guide.md"),
+            first_row: 0,
+            last_row: 59,
+        }))
+        .unwrap();
+    let (_, request) = requests(&effects)
+        .into_iter()
+        .find(|(_, r)| matches!(r, Request::BlobRender { .. }))
+        .expect("a BlobRender request");
+    assert_eq!(
+        request,
+        Request::BlobRender {
+            repo_id: repo_id(),
+            path: path("docs/guide.md"),
+            blob_oid: blob_oid(1),
+            first_chunk: ChunkIndex::FIRST,
+        }
+    );
+    // Back to the review: the head tree returns (c.rs exists only there).
+    core.handle(Input::User(Action::SetTab {
+        tab: moor_client_core::Tab::FilesChanged,
+    }))
+    .unwrap();
+    let back = visible_files(core.view());
+    assert!(back.contains(&"c.rs".to_owned()), "{back:?}");
+    assert!(!back.contains(&"docs".to_owned()), "{back:?}");
+    // Clearing the ref returns Browse to the head trees.
+    core.handle(Input::User(Action::SetBrowseRef {
+        repo_id: repo_id(),
+        ref_spec: None,
+    }))
+    .unwrap();
+    assert_eq!(core.view().browse_ref, None);
+}
+
+fn visible_files(view: &moor_client_core::ViewModel) -> Vec<String> {
+    moor_client_core::visible_nodes(view)
+        .iter()
+        .map(|n| match n {
+            moor_client_core::TreeNode::Dir { name, .. }
+            | moor_client_core::TreeNode::File { name, .. } => name.clone(),
+        })
+        .collect()
+}
