@@ -27,9 +27,9 @@ on:
         type: boolean
         default: true
       aur:
-        description: Push the AUR package
+        description: Push the AUR package (needs AUR_SSH_PRIVATE_KEY)
         type: boolean
-        default: true
+        default: false
       dry_run:
         description: Build and check everything, publish nothing
         type: boolean
@@ -442,6 +442,13 @@ jobs:
           AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
         run: |
           set -euo pipefail
+          # Checked here rather than left to fail at `git push`: by this point
+          # crates.io and the Homebrew tap have already published, and a
+          # missing key should say so plainly.
+          if [ -z "${AUR_SSH_PRIVATE_KEY:-}" ]; then
+            echo "::error::AUR_SSH_PRIVATE_KEY is not set — register a key on aur.archlinux.org and add the secret, or leave the aur input unticked."
+            exit 1
+          fi
           mkdir -p ~/.ssh
           printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
           chmod 600 ~/.ssh/aur
