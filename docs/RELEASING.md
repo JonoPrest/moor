@@ -19,9 +19,12 @@ shipping a CLI fix never forces a daemon release.
    package, and untick any channel you want to skip. `dry_run` builds every
    artifact and checks every collision without tagging or publishing anything.
 
-The run refuses to start if the tag already exists. The tag is what a *binary*
-release claims, and it is the only guard against a double release — so don't
-delete tags to re-run; bump instead.
+The run refuses to start only if the tag exists **on a different commit** —
+that means the version was released from other code, so bump rather than
+deleting the tag. A tag on the commit being released is a *resume*: a previous
+run got that far and something after it failed, and rerunning must be able to
+finish. The tag step is idempotent to match, and `plan` reports `tag_state` as
+`absent`, `at_head` or `elsewhere`.
 
 Being on crates.io deliberately does **not** block a release. A crate is
 published whenever it appears in another package's dependency closure (a `nits`
@@ -84,11 +87,19 @@ The Homebrew `test` block runs `nits workspace list`, which reaches
 `ensure_daemon`; `--version` and `daemon status` both pass without `nitsd`
 present, so neither would catch a client shipped without it.
 
-**Known limitation:** because `nits` and `nits-mcp` both own `/usr/bin/nitsd`,
-their debs/rpms declare `Provides`/`Conflicts`/`Replaces` on `nitsd` and are not
-co-installable from apt/dnf. Only `nits` ships today, so this is not yet live.
-Making them co-installable means splitting `nitsd` into its own package that
-both depend on — do that before the first `nits-mcp` deb, not after.
+Archives, the formula and the AUR package **bundle** the daemon, because none of
+those formats can express a dependency on another of our artifacts. deb and rpm
+**depend** on it: the release builds one system package per binary, and the
+client packages carry `Depends: nitsd` / `Requires: nitsd`, so the two clients
+are co-installable and there is only ever one `/usr/bin/nitsd`.
+
+`cargo install` can do neither, so it is documented as `cargo install nits
+nitsd` — cargo does not install binaries from dependency crates, and a plain
+`cargo install nits` yields a client that fails at `ensure_daemon`.
+
+Note for deb metadata: cargo-deb interpolates only `$auto`, so a literal
+`$version` in `depends`/`provides` reaches the control file verbatim and
+`dpkg` rejects it. Keep those relationships unversioned.
 
 ## Platforms
 

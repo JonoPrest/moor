@@ -6470,6 +6470,7 @@ dependencies = [
  "nits-client-core-fixtures",
  "nits-protocol-fixtures",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

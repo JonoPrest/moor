@@ -53,22 +53,19 @@ section = "devel"
 priority = "optional"
 assets = [
     ["target/release/nits", "usr/bin/", "755"],
-    ["target/release/nitsd", "usr/bin/", "755"],
     ["../../README.md", "usr/share/doc/nits/README.md", "644"],
     ["../../LICENSE", "usr/share/doc/nits/LICENSE", "644"],
 ]
-provides = ["nitsd (= $version)"]
-conflicts = ["nitsd"]
-replaces = ["nitsd"]
+# $auto keeps cargo-deb's generated libc/shlib dependencies; nitsd is the
+# separately packaged daemon this client spawns.
+depends = ["$auto", "nitsd"]
 
 [package.metadata.generate-rpm]
 name = "nits"
 summary = "Command-line client for the nitsd code-review daemon"
 assets = [
     { source = "target/release/nits", dest = "/usr/bin/nits", mode = "755" },
-    { source = "target/release/nitsd", dest = "/usr/bin/nitsd", mode = "755" },
     { source = "../../README.md", dest = "/usr/share/doc/nits/README.md", mode = "644", doc = true },
     { source = "../../LICENSE", dest = "/usr/share/doc/nits/LICENSE", mode = "644", doc = true },
 ]
-provides = { nitsd = "*" }
-conflicts = { nitsd = "*" }
+requires = { nitsd = "*" }

@@ -235,20 +235,60 @@ fn tag_for(package: &str, version: &str) -> String {
     format!("{package}-v{version}")
 }
 
-/// Whether `tag` already exists in this repository.
-fn tag_exists(tag: &str) -> anyhow::Result<bool> {
-    let out = Command::new("git")
-        .args(["tag", "--list", tag])
-        .output()
-        .context("running `git tag --list`")?;
-    if !out.status.success() {
-        bail!("`git tag --list` failed");
-    }
-    Ok(!String::from_utf8_lossy(&out.stdout).trim().is_empty())
+/// Where a release's tag stands relative to the commit being released.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TagState {
+    /// No such tag: a fresh release.
+    Absent,
+    /// The tag exists and points at this commit. A previous run got this far
+    /// and something after it failed, so this run is a *resume*, not a
+    /// collision — re-running must be able to finish the release.
+    AtHead,
+    /// The tag exists on a different commit. That is a genuine collision: the
+    /// version was released from other code.
+    Elsewhere,
 }
 
-/// Print the release plan as JSON. `release.yml` reads `version`, `tag` and
-/// `collision` from this to decide whether the run may proceed.
+impl TagState {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Absent => "absent",
+            Self::AtHead => "at_head",
+            Self::Elsewhere => "elsewhere",
+        }
+    }
+}
+
+/// Resolve a revision to a full commit id, or `None` if it does not exist.
+/// `repo` is explicit so tests can drive a throwaway repository without
+/// changing the process-wide working directory.
+fn rev_parse(repo: &std::path::Path, rev: &str) -> anyhow::Result<Option<String>> {
+    let out = Command::new("git")
+        .args(["rev-parse", "--verify", "--quiet", rev])
+        .current_dir(repo)
+        .output()
+        .context("running `git rev-parse`")?;
+    let id = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+    Ok((!id.is_empty()).then_some(id))
+}
+
+/// Whether `tag` exists and, if so, whether it is on the commit being released.
+fn tag_state(repo: &std::path::Path, tag: &str) -> anyhow::Result<TagState> {
+    // `<tag>^{commit}` peels an annotated tag to the commit it points at.
+    let Some(tagged) = rev_parse(repo, &format!("{tag}^{{commit}}"))? else {
+        return Ok(TagState::Absent);
+    };
+    let head = rev_parse(repo, "HEAD^{commit}")?.context("HEAD does not resolve to a commit")?;
+    Ok(if tagged == head {
+        TagState::AtHead
+    } else {
+        TagState::Elsewhere
+    })
+}
+
+/// Print the release plan as JSON. `release.yml` reads `version`, `tag`,
+/// `binaries`, `packages` and `collision` from this to decide whether the run
+/// may proceed and what it must build.
 pub fn plan(package: Releasable) -> anyhow::Result<()> {
     let graph = members()?;
     let root = package.crate_name();
@@ -271,6 +311,16 @@ pub fn plan(package: Releasable) -> anyhow::Result<()> {
         }));
     }
 
+    // Every binary this release ships, with the crate directory it is built
+    // from, so the deb/rpm job can produce one system package per binary.
+    let mut packages = Vec::new();
+    for bin in package.binaries() {
+        let m = graph
+            .get(*bin)
+            .with_context(|| format!("no workspace member builds {bin}"))?;
+        packages.push(serde_json::json!({ "name": m.name, "dir": m.dir }));
+    }
+
     // What makes a version un-releasable is the *tag*, which is what a binary
     // release claims. Being on crates.io does not: a crate is published
     // whenever it appears in some other package's dependency closure — a
@@ -283,19 +333,26 @@ pub fn plan(package: Releasable) -> anyhow::Result<()> {
         .find(|c| c["name"] == root)
         .and_then(|c| c["already_published"].as_bool())
         .unwrap_or(false);
-    let tag_taken = tag_exists(&tag)?;
+
+    // A tag on *this* commit means a previous run got partway and something
+    // after it failed; that must be resumable, not a collision. Only a tag on
+    // different code says the version was already released.
+    let tag_state = tag_state(std::path::Path::new("."), &tag)?;
+    let collision = tag_state == TagState::Elsewhere;
 
     let plan = serde_json::json!({
         "package": root,
         "version": version,
         "dir": dir,
         "tag": tag,
+        "tag_state": tag_state.as_str(),
         "binaries": package.binaries(),
+        "packages": packages,
         "crates": crates,
         "crate_already_published": root_published,
-        "collision": tag_taken,
-        "collision_reason": if tag_taken {
-            format!("tag {tag} already exists")
+        "collision": collision,
+        "collision_reason": if collision {
+            format!("tag {tag} already exists on a different commit")
         } else {
             String::new()
         },
@@ -474,6 +531,43 @@ mod tests {
             .collect();
 
         assert!(publish_order(&graph, "a").is_err());
+    }
+
+    /// `tag_state` shells out to git, so this drives a throwaway repository
+    /// rather than mocking it — the same rule the rest of the workspace follows.
+    fn git(dir: &std::path::Path, args: &[&str]) {
+        let ok = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@example.com")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@example.com")
+            .status()
+            .expect("git runs")
+            .success();
+        assert!(ok, "git {args:?} failed");
+    }
+
+    #[test]
+    fn a_tag_on_this_commit_is_resumable_and_one_elsewhere_is_a_collision() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let dir = tmp.path();
+        git(dir, &["init", "-q", "-b", "main"]);
+        std::fs::write(dir.join("a"), "1").expect("write");
+        git(dir, &["add", "."]);
+        git(dir, &["commit", "-qm", "one"]);
+
+        assert_eq!(tag_state(dir, "v1").expect("state"), TagState::Absent);
+
+        git(dir, &["tag", "-a", "v1", "-m", "v1"]);
+        // A previous run tagged this very commit and then failed: resume.
+        assert_eq!(tag_state(dir, "v1").expect("state"), TagState::AtHead);
+
+        std::fs::write(dir.join("a"), "2").expect("write");
+        git(dir, &["commit", "-qam", "two"]);
+        // The tag now names other code: a real collision.
+        assert_eq!(tag_state(dir, "v1").expect("state"), TagState::Elsewhere);
     }
 
     #[test]

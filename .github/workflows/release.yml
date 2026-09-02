@@ -58,6 +58,8 @@ jobs:
       tag: ${{ steps.plan.outputs.tag }}
       dir: ${{ steps.plan.outputs.dir }}
       binaries: ${{ steps.plan.outputs.binaries }}
+      packages: ${{ steps.plan.outputs.packages }}
+      tag_state: ${{ steps.plan.outputs.tag_state }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -76,6 +78,11 @@ jobs:
           echo "dir=$(jq -r .dir plan.json)" >> "$GITHUB_OUTPUT"
           # Space-separated, so the build job can loop over it in shell.
           echo "binaries=$(jq -r '.binaries | join(" ")' plan.json)" >> "$GITHUB_OUTPUT"
+          # "<name>:<dir>" pairs, one system package per binary shipped.
+          echo "packages=$(jq -r '[.packages[] | "\(.name):\(.dir)"] | join(" ")' plan.json)" >> "$GITHUB_OUTPUT"
+          echo "tag_state=$(jq -r .tag_state plan.json)" >> "$GITHUB_OUTPUT"
+          [ "$(jq -r .tag_state plan.json)" = at_head ] && \
+            echo "::notice::tag $tag already exists on this commit — resuming a partial release"
           if [ "$(jq -r .collision plan.json)" = "true" ]; then
             reason=$(jq -r .collision_reason plan.json)
             echo "::error::$reason — bump the version in Cargo.toml before releasing."
@@ -208,12 +215,19 @@ jobs:
           printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
           echo "GPG_KEY_ID=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec:/ {print $5; exit}')" >> "$GITHUB_ENV"
       - name: build packages
+        # One system package per binary. Unlike an archive, a deb/rpm can
+        # express a dependency, so the clients depend on a separately packaged
+        # nitsd rather than each owning /usr/bin/nitsd and conflicting.
         run: |
           set -euo pipefail
           mkdir -p dist
-          # --no-build/--no-strip: reuse the exact binaries that were released.
-          cargo deb --no-build --no-strip --target '${{ matrix.target }}' --package '${{ inputs.package }}' --output dist/
-          cargo generate-rpm --target '${{ matrix.target }}' --package '${{ needs.plan.outputs.dir }}' --output dist/
+          for entry in ${{ needs.plan.outputs.packages }}; do
+            name=${entry%%:*}
+            dir=${entry#*:}
+            # --no-build/--no-strip: reuse the exact binaries that were released.
+            cargo deb --no-build --no-strip --target '${{ matrix.target }}' --package "$name" --output dist/
+            cargo generate-rpm --target '${{ matrix.target }}' --package "$dir" --output dist/
+          done
       - name: sign the RPMs
         # The published repo sets gpgcheck=1, which checks *package* signatures
         # and is a separate check from repo_gpgcheck. cargo-generate-rpm's
@@ -321,6 +335,15 @@ jobs:
           # Every sha256 must be a real 64-hex digest, not an empty string.
           grep -oE 'sha256 "[^"]*"' formula.rb | grep -vqE 'sha256 "[0-9a-f]{64}"' \
             && { echo '::error::formula has a malformed sha256'; exit 1; } || true
+          # `ruby -c` accepts a test block that runs the wrong binary, so check
+          # that every binary the formula installs or invokes is one it ships.
+          shipped=" ${{ needs.plan.outputs.binaries }} "
+          for ref in $(grep -oE 'bin(\.install |/)"[a-z-]+"' formula.rb | grep -oE '"[a-z-]+"' | tr -d '"' | sort -u); do
+            case "$shipped" in
+              *" $ref "*) ;;
+              *) echo "::error::formula references $ref, which it does not ship"; exit 1 ;;
+            esac
+          done
       - name: commit to the tap
         if: '!inputs.dry_run'
         env:

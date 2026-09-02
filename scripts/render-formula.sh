@@ -77,16 +77,32 @@ $(for b in "${binaries[@]}"; do echo "    bin.install \"$b\""; done)
 
   test do
     assert_match "$version", shell_output("#{bin}/$package --version")
-$(if [ "$package" != nitsd ]; then cat <<'TEST'
+$(case $package in
+nits) cat <<'TEST'
     # A command that actually starts and connects to the daemon. `--version`
     # and `daemon status` both pass without nitsd installed — only something
-    # that reaches ensure_daemon catches a client shipped without it.
+    # reaching ensure_daemon catches a client shipped without it.
     ENV["NITS_DATA_DIR"] = testpath/"data"
     ENV["NITS_CONFIG"]   = testpath/"config.toml"
-    system bin/"PACKAGE", "workspace", "list"
-    system bin/"PACKAGE", "daemon", "stop"
+    system bin/"nits", "workspace", "list"
+    system bin/"nits", "daemon", "stop"
 TEST
-fi | sed "s/PACKAGE/$package/")
+;;
+nits-mcp) cat <<'TEST'
+    # nits-mcp is a stdio MCP server with no subcommands, so a CLI-shaped
+    # smoke test would fail on argument parsing. Drive the protocol instead:
+    # the initialize result names the daemon it connected to, and without
+    # nitsd installed this returns a JSON-RPC error rather than a result.
+    ENV["NITS_DATA_DIR"] = testpath/"data"
+    ENV["NITS_CONFIG"]   = testpath/"config.toml"
+    req = <<~JSON
+      {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"brew-test","version":"0"}}}
+    JSON
+    out = pipe_output(bin/"nits-mcp", req)
+    assert_match "Connected to nitsd", out
+TEST
+;;
+esac)
   end
 end
 EOF

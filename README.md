@@ -12,14 +12,18 @@ A daemon-backed code review tool. Nits are anchored to content (blobs), not to d
 
 ```console
 $ brew install jonoprest/nits/nits          # macOS, Linuxbrew
-$ cargo install nits                        # any platform with a Rust toolchain
+$ cargo install nits nitsd                  # any platform with a Rust toolchain
 $ yay -S nits-bin                           # Arch
 ```
 
 Debian/Ubuntu and Fedora/RHEL repositories, and tarballs for
 `{x86_64,aarch64}-{apple-darwin,unknown-linux-gnu,unknown-linux-musl}`, are at
 <https://jonoprest.github.io/nits/> and on the [releases page][releases].
-Every package ships `nitsd` alongside the client, which starts it on demand.
+The client starts `nitsd` on demand, so it needs the daemon installed too: the
+archives, Homebrew formula and AUR package bundle it, the deb/rpm depend on a
+`nitsd` package, and with cargo you name both crates — `cargo install nits`
+alone installs only the `nits` binary, because cargo never installs binaries
+from dependency crates.
 There is no Windows build yet — the daemon's transport is unix-socket only.
 
 Cutting a release: [`docs/RELEASING.md`](docs/RELEASING.md).
