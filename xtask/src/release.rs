@@ -393,19 +393,78 @@ pub fn publish(package: Releasable, dry_run: bool) -> anyhow::Result<()> {
             continue;
         }
         println!("publish {}@{}", member.name, member.version);
+        publish_one(&member.name, dry_run)?;
+    }
+    Ok(())
+}
+
+/// How many times to wait out a crates.io rate limit before giving up, and how
+/// long to wait between attempts. The new-crate limit refills roughly every ten
+/// minutes, so this covers it with margin without waiting forever on a limit
+/// that is never going to clear.
+const RATE_LIMIT_ATTEMPTS: u32 = 20;
+const RATE_LIMIT_WAIT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// `cargo publish` one crate, waiting out a crates.io rate limit rather than
+/// failing on it.
+///
+/// crates.io allows a small burst of *new* crates and then one per interval, so
+/// a first release of several new crates gets partway and is refused with 429.
+/// Nothing is wrong with the package at that point — the only correct response
+/// is to wait — but treating it as fatal means a human re-running the job once
+/// per interval.
+fn publish_one(name: &str, dry_run: bool) -> anyhow::Result<()> {
+    for attempt in 1..=RATE_LIMIT_ATTEMPTS {
         let mut cmd = Command::new("cargo");
-        cmd.args(["publish", "--package", &member.name, "--locked"]);
+        cmd.args(["publish", "--package", name, "--locked"]);
         if dry_run {
             cmd.arg("--dry-run");
         }
-        let status = cmd
-            .status()
-            .with_context(|| format!("running `cargo publish -p {}`", member.name))?;
-        if !status.success() {
-            bail!("`cargo publish -p {}` failed", member.name);
+        let out = cmd
+            .output()
+            .with_context(|| format!("running `cargo publish -p {name}`"))?;
+
+        // cargo writes progress to stderr; relay both so the job log still
+        // reads like a normal publish.
+        print!("{}", String::from_utf8_lossy(&out.stdout));
+        eprint!("{}", String::from_utf8_lossy(&out.stderr));
+        if out.status.success() {
+            return Ok(());
         }
+
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let Some(after) = rate_limited_until(&stderr) else {
+            bail!("`cargo publish -p {name}` failed");
+        };
+        if attempt == RATE_LIMIT_ATTEMPTS {
+            bail!(
+                "`cargo publish -p {name}` is still rate limited after {attempt} attempts; \
+                 crates.io last said to try again after {after}"
+            );
+        }
+        println!(
+            "rate limited on {name}: crates.io says try again after {after} \
+             — waiting {}s (attempt {attempt}/{RATE_LIMIT_ATTEMPTS})",
+            RATE_LIMIT_WAIT.as_secs()
+        );
+        std::thread::sleep(RATE_LIMIT_WAIT);
     }
     Ok(())
+}
+
+/// The time crates.io told us to retry after, if this failure was a rate limit.
+///
+/// The message is: `the remote server responded with an error (status 429 Too
+/// Many Requests): You have published too many new crates in a short period of
+/// time. Please try again after Wed, 02 Sep 2026 11:46:21 GMT and see …`. We
+/// only report the timestamp — parsing it to sleep exactly that long would need
+/// a date library for no benefit over polling.
+fn rate_limited_until(stderr: &str) -> Option<&str> {
+    if !stderr.contains("429") {
+        return None;
+    }
+    let after = stderr.split("Please try again after ").nth(1)?;
+    Some(after.split(" and see").next().unwrap_or(after).trim())
 }
 
 /// The first publishable workspace dependency of `member` that crates.io does
@@ -568,6 +627,30 @@ mod tests {
         git(dir, &["commit", "-qam", "two"]);
         // The tag now names other code: a real collision.
         assert_eq!(tag_state(dir, "v1").expect("state"), TagState::Elsewhere);
+    }
+
+    #[test]
+    fn a_rate_limit_is_recognised_and_its_retry_time_extracted() {
+        let stderr = "\
+error: failed to publish nits-client-host v0.1.0 to registry at https://crates.io
+  the remote server responded with an error (status 429 Too Many Requests): You \
+have published too many new crates in a short period of time. Please try again \
+after Wed, 02 Sep 2026 11:46:21 GMT and see https://crates.io/docs/rate-limits \
+for more details.";
+        assert_eq!(
+            rate_limited_until(stderr),
+            Some("Wed, 02 Sep 2026 11:46:21 GMT")
+        );
+    }
+
+    #[test]
+    fn other_failures_are_not_treated_as_rate_limits() {
+        // A verified email address is required — retrying this forever would
+        // turn a clear error into a twenty-minute hang.
+        let stderr = "the remote server responded with an error (status 400 Bad \
+Request): A verified email address is required to publish crates to crates.io.";
+        assert_eq!(rate_limited_until(stderr), None);
+        assert_eq!(rate_limited_until("some unrelated build failure"), None);
     }
 
     #[test]
