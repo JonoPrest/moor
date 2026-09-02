@@ -1,15 +1,12 @@
 # Benchmarks are a regression *trigger*, not a correctness gate, and cost a
-# whole release-profile build of the workspace. They live in their own workflow
-# so that opting a PR in does not re-run every other CI job, and so `labeled`
-# can be an activity type here without making every label change re-run CI.
+# whole release-profile build of the workspace. They run on main only, never in
+# PR CI. `workflow_dispatch` is the escape hatch for checking a branch by hand
+# before merging it.
 name: bench
 on:
   push:
     branches: [main]
-  pull_request:
-    # `labeled` is not one of the default activity types; without naming them
-    # explicitly, adding the label would not trigger anything.
-    types: [opened, reopened, synchronize, labeled]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -17,22 +14,10 @@ env:
 jobs:
   bench:
     name: benchmark triggers
-    # On `labeled`, gate on the label that was just added: otherwise, once a PR
-    # carries `perf`, adding any *other* label satisfies a whole-label-set check
-    # and starts another release build. Every other activity type checks the
-    # full set, since no single label is being added.
-    if: >-
-      github.event_name == 'push'
-      || (github.event.action == 'labeled' && github.event.label.name == 'perf')
-      || (github.event.action != 'labeled'
-          && contains(github.event.pull_request.labels.*.name, 'perf'))
-    # Job-level, not workflow-level: workflow concurrency is applied before a
-    # job's `if` is evaluated, so a run that is going to skip would still cancel
-    # a benchmark already in flight.
+    runs-on: ubuntu-latest
     concurrency:
       group: bench-${{ github.ref }}
       cancel-in-progress: true
-    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
