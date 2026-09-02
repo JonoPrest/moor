@@ -760,3 +760,52 @@ describe("Row sides", () => {
     expect(commented)->toBe(true)
   })
 })
+
+describe("Scroll.delta", () => {
+  // A 400px viewport of 20px rows, nothing painted over the top.
+  let container: Scroll.box = {top: 0., bottom: 400., height: 400.}
+  let row = (top: float): Scroll.box => {top, bottom: top +. 20., height: 20.}
+  let d = (~row as r, ~mode, ~headroom=0.) =>
+    Scroll.delta(~container, ~row=r, ~headroom, ~margin=Scroll.scrolloff *. 20., ~mode)
+
+  test("a row well inside the viewport does not scroll", () => {
+    expect(d(~row=row(200.), ~mode=Nearest))->toBe(0.)
+  })
+
+  test("a row inside the scrolloff margin pushes the view by the shortfall", () => {
+    // 3 rows of margin = 60px: a row at 40 is 20px too high, one whose
+    // bottom is at 360 is exactly at the limit.
+    expect(d(~row=row(40.), ~mode=Nearest))->toBe(-20.)
+    expect(d(~row=row(320.), ~mode=Nearest))->toBe(0.)
+    expect(d(~row=row(340.), ~mode=Nearest))->toBe(20.)
+  })
+
+  test("a row below the fold scrolls just far enough to clear the margin", () => {
+    expect(d(~row=row(1000.), ~mode=Nearest))->toBe(1020. -. 340.)
+  })
+
+  test("the sticky header is headroom the row must clear", () => {
+    // With a 24px header the top limit is 24 + 60 = 84.
+    expect(d(~row=row(80.), ~mode=Nearest, ~headroom=24.))->toBe(-4.)
+  })
+
+  test("zt/zz/zb put the row at the top, middle and bottom", () => {
+    expect(d(~row=row(200.), ~mode=Align(Top)))->toBe(200.)
+    expect(d(~row=row(200.), ~mode=Align(Center)))->toBe(200. -. 190.)
+    expect(d(~row=row(200.), ~mode=Align(Bottom)))->toBe(220. -. 400.)
+    // `z t` on a row inside a file section leaves its sticky header room.
+    expect(d(~row=row(200.), ~mode=Align(Top), ~headroom=24.))->toBe(176.)
+  })
+
+  test("a viewport too short for the margin still shows the row", () => {
+    let tiny: Scroll.box = {top: 0., bottom: 30., height: 30.}
+    let delta = Scroll.delta(
+      ~container=tiny,
+      ~row=row(100.),
+      ~headroom=0.,
+      ~margin=60.,
+      ~mode=Nearest,
+    )
+    expect(delta)->toBe(120. -. 25.)
+  })
+})

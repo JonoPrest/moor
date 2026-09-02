@@ -242,6 +242,14 @@ Everything explicitly asked for, so no shell or rewrite loses them.
   the halves, the mouse hit-tests the cell it is over, and a drag or
   Visual selection keeps the side it started on. A thread's marker hangs
   on the cell its anchor names.
+- ✓ The viewport follows the focused row: a motion that would take the
+  cursor past the edge scrolls by as little as it can, keeping 3 rows of
+  context (vim's `scrolloff`) and clearing the sticky file header. This
+  holds for every motion, in the stacked view and on Browse.
+- ✓ `z z`/`z t`/`z b` reposition the view around the cursor (centre, top,
+  bottom) without moving it. Only the host knows the viewport's height,
+  so the core records the intent — row, alignment and a counter, so the
+  same chord twice scrolls twice — and the host performs it.
 - ✓ `z` Expand group: `z u`/`z d` expand up/down from the focused row,
   `z c` comment-on-file from the diff (interim: both expands may share
   the more-context re-render until band splicing). Rule to uphold:

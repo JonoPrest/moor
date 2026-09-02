@@ -168,6 +168,19 @@ module TreeView = {
 
 /// The Visual-mode line selection: row indices of the open file, ordered,
 /// both ends inclusive.
+/// Where the host should put a row of the diff (`z z`/`z t`/`z b`).
+module ScrollAlign = {
+  @schema
+  type t = Center | Top | Bottom
+}
+
+/// A reposition the host has not performed yet; `seq` counts the
+/// instructions so the same chord twice is two of them.
+module ScrollIntent = {
+  @schema
+  type t = {row: int, align: ScrollAlign.t, seq: int}
+}
+
 module VisualView = {
   @schema
   type t = {start: int, @as("end") end_: int, side: Domain.Side.t}
@@ -364,6 +377,9 @@ module Command = {
     | CommentOnFile
     | SideBase
     | SideHead
+    | CenterView
+    | ViewTop
+    | ViewBottom
 }
 
 /// A key sequence in its text form (`"g g"`, `"ctrl+p"`).
@@ -423,6 +439,7 @@ module ViewModel = {
     stepper: @s.null option<CommitStepper.t>,
     focus: Focus.t,
     tab: Tab.t,
+    scroll: @s.null option<ScrollIntent.t>,
     mode: Mode.t,
     hints: array<Hint.t>,
     @as("pending_keys") pendingKeys: string,
@@ -463,6 +480,7 @@ module ViewModel = {
     stepper: None,
     focus: ReviewList({index: 0}),
     tab: FilesChanged,
+    scroll: None,
     mode: Normal,
     hints: [],
     pendingKeys: "",
@@ -518,7 +536,7 @@ module ViewPatch = {
     | @as("Conversation") Conversation({conversation: array<ThreadView.t>})
     | @as("CommitStepper") CommitStepper({stepper: @s.null option<CommitStepper.t>})
     | @as("Progress") Progress({progress: Progress.t})
-    | @as("Focus") Focus({focus: Focus.t, tab: Tab.t})
+    | @as("Focus") Focus({focus: Focus.t, tab: Tab.t, scroll: @s.null option<ScrollIntent.t>})
     | @as("Hints")
     Hints({
         hints: array<Hint.t>,
@@ -559,7 +577,7 @@ module ViewPatch = {
     | Conversation({conversation}) => {...model, conversation}
     | CommitStepper({stepper}) => {...model, stepper}
     | Progress({progress}) => {...model, progress}
-    | Focus({focus, tab}) => {...model, focus, tab}
+    | Focus({focus, tab, scroll}) => {...model, focus, tab, scroll}
     | Hints({hints, pending, pendingLabel, mode, leader, chrome}) => {
         ...model,
         hints,

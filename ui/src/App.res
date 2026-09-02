@@ -88,14 +88,35 @@ module Shell = {
       KeyEvent.listen("keydown", handler)
       Some(() => KeyEvent.unlisten("keydown", handler))
     })
-    // Keep the focused list item on screen (the diff scrolls itself).
-    React.useEffect1(() => {
+    // Keep whatever is focused on screen. On the diff that means vim-style
+    // edge scrolling: the row moves, the view follows by as little as it
+    // can. Rows arriving (a viewport that just filled) re-runs it, since
+    // the row to scroll to may not have been in the DOM the first time.
+    let rowWindow = switch model.diff {
+    | Some(d) => `${d.file.path}:${Int.toString(d.firstRow)}:${Int.toString(d.lastRow)}`
+    | None => ""
+    }
+    React.useEffect2(() => {
       switch model.focus {
-      | Diff(_) | Composer(_) | Help(_) => ()
+      | Composer(_) | Help(_) => ()
+      | Diff(_) => Scroll.apply(Nearest)
       | ReviewList(_) | Tree(_) | Thread(_) | CommitStepper(_) => Focused.scrollIntoView()
       }
       None
-    }, [model.focus])
+    }, (model.focus, rowWindow))
+    // `z z`/`z t`/`z b`: the core records where the view should sit and
+    // counts the instructions, so the same chord twice scrolls twice.
+    let lastScroll = React.useRef(None)
+    React.useEffect1(() => {
+      switch model.scroll {
+      | Some({seq, align}) if lastScroll.current != Some(seq) => {
+          lastScroll.current = Some(seq)
+          Scroll.apply(Align(align))
+        }
+      | Some(_) | None => ()
+      }
+      None
+    }, [model.scroll])
     // `y`: the clipboard is the shell's; copy here, the core no-ops.
     let dispatch = (action: Action.t) => {
       switch action {
@@ -229,7 +250,10 @@ module Shell = {
               | None => React.null
               }}
               {switch model.diff {
-              | Some(diff) => <DiffView diff layout=model.prefs.layout focus=model.focus dispatch />
+              | Some(diff) =>
+                <DiffView
+                  diff layout=model.prefs.layout focus=model.focus scroll=?model.scroll dispatch
+                />
               | None => <div className="diff-empty"> {React.string("Open a file")} </div>
               }}
               {switch model.draft {

@@ -1219,6 +1219,44 @@ fn a_row_with_one_cell_has_no_other_side_to_move_to() {
 }
 
 #[test]
+fn the_scroll_family_records_an_intent_the_host_performs() {
+    let mut core = on_row(4, Side::Head);
+    assert_eq!(core.view().scroll, None);
+
+    press(&mut core, "z z").unwrap();
+    let centred = core.view().scroll.expect("z z records an intent");
+    assert_eq!(centred.row, 4);
+    assert_eq!(centred.align, nits_client_core::ScrollAlign::Center);
+
+    // The cursor does not move — only the view does.
+    assert_eq!(
+        core.view().focus,
+        Focus::Diff {
+            row: 4,
+            side: Side::Head
+        }
+    );
+
+    // Repeating the chord is a new instruction: the reader may have
+    // scrolled away with the mouse since.
+    press(&mut core, "z z").unwrap();
+    let again = core.view().scroll.expect("still an intent");
+    assert_eq!((again.row, again.align), (centred.row, centred.align));
+    assert_eq!(again.seq, centred.seq + 1);
+
+    press(&mut core, "z t").unwrap();
+    assert_eq!(
+        core.view().scroll.map(|s| s.align),
+        Some(nits_client_core::ScrollAlign::Top)
+    );
+    press(&mut core, "z b").unwrap();
+    assert_eq!(
+        core.view().scroll.map(|s| s.align),
+        Some(nits_client_core::ScrollAlign::Bottom)
+    );
+}
+
+#[test]
 fn focus_settles_on_the_side_the_row_has() {
     // Stepping onto an added row from the red half lands on its green
     // cell — the focus never points at a cell that is not there.
@@ -1313,4 +1351,22 @@ fn opening_a_thread_in_another_file_lands_on_its_side() {
         },
         "on the thread's row and side, not the top of the window"
     );
+}
+
+#[test]
+fn the_scroll_family_means_nothing_off_the_diff() {
+    let mut core = ready();
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::Tree { index: 0 },
+    }))
+    .unwrap();
+    // `z` in the tree is CollapseAll, so the chord does not even reach the
+    // scroll family; dispatching the action directly is the real test.
+    assert!(
+        core.handle(Input::User(Action::ScrollView {
+            align: nits_client_core::ScrollAlign::Center,
+        }))
+        .is_err()
+    );
+    assert_eq!(core.view().scroll, None);
 }

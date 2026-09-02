@@ -124,6 +124,8 @@ macro_rules! registry {
 registry!(
     ViewModel,
     VisualView,
+    ScrollIntent,
+    ScrollAlign,
     ContentSearchView,
     ViewPrefs,
     Layout,
@@ -704,6 +706,9 @@ enum_fixture!(
         Action::CopyPath {
             path: path("src/lib.rs")?,
         },
+        Action::ScrollView {
+            align: ScrollAlign::Center,
+        },
         Action::ToggleFileCollapse { file: file_ref()? },
         Action::CollapseParent,
         Action::CollapseAll,
@@ -844,6 +849,7 @@ enum_fixture!(
                 side: Side::Head,
             },
             tab: Tab::FilesChanged,
+            scroll: Some(local::<ScrollIntent>()?),
         },
         ViewPatch::Hints {
             hints: vec![local::<Hint>()?],
@@ -872,6 +878,16 @@ struct_fixture!(
     }
 );
 struct_fixture!(
+    ScrollIntent,
+    "ScrollIntent",
+    ScrollIntent {
+        row: 121,
+        align: ScrollAlign::Center,
+        seq: 3,
+    }
+);
+unit_enum_fixture!(ScrollAlign, "ScrollAlign");
+struct_fixture!(
     ViewModel,
     "ViewModel",
     ViewModel {
@@ -888,6 +904,7 @@ struct_fixture!(
             side: Side::Head,
         },
         tab: Tab::FilesChanged,
+        scroll: Some(local::<ScrollIntent>()?),
         mode: Mode::Normal,
         hints: vec![local::<Hint>()?],
         pending_keys: String::new(),

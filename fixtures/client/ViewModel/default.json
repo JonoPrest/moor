@@ -556,6 +556,11 @@
   "scope": {
     "type": "All"
   },
+  "scroll": {
+    "align": "Center",
+    "row": 121,
+    "seq": 3
+  },
   "stepper": {
     "commits": [
       {

@@ -22,3 +22,7 @@ external useVirtualizer: options => virtualizer = "useVirtualizer"
 @get external measureElement: virtualizer => Nullable.t<Dom.element> => unit = "measureElement"
 @send external getTotalSize: virtualizer => int = "getTotalSize"
 @send external scrollToIndex: (virtualizer, int) => unit = "scrollToIndex"
+/// `align` is TanStack's: "auto" keeps the row on screen with the least
+/// movement, "start"/"center"/"end" put it there (`z t`/`z z`/`z b`).
+@send
+external scrollToIndexAligned: (virtualizer, int, {"align": string}) => unit = "scrollToIndex"

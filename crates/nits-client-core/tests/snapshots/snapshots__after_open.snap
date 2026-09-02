@@ -1,6 +1,5 @@
 ---
 source: crates/nits-client-core/tests/snapshots.rs
-assertion_line: 341
 expression: core.view()
 ---
 {
@@ -648,6 +647,7 @@ expression: core.view()
     "side": "Head"
   },
   "tab": "FilesChanged",
+  "scroll": null,
   "mode": "Normal",
   "pending_label": null,
   "hints": [
@@ -949,6 +949,21 @@ expression: core.view()
       "keys": "l",
       "command": "SideHead",
       "label": "target added side"
+    },
+    {
+      "keys": "z z",
+      "command": "CenterView",
+      "label": "centre the view"
+    },
+    {
+      "keys": "z t",
+      "command": "ViewTop",
+      "label": "row to top"
+    },
+    {
+      "keys": "z b",
+      "command": "ViewBottom",
+      "label": "row to bottom"
     },
     {
       "keys": "r",

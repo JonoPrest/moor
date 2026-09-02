@@ -10,6 +10,8 @@ let schemas: dict<S.t<unknown>> = Dict.fromArray([
   ("Tab", erase(View.Tab.schema)),
   ("Mode", erase(View.Mode.schema)),
   ("VisualView", erase(View.VisualView.schema)),
+  ("ScrollIntent", erase(View.ScrollIntent.schema)),
+  ("ScrollAlign", erase(View.ScrollAlign.schema)),
   ("ConnectionView", erase(View.ConnectionView.schema)),
   ("Draft", erase(View.Draft.schema)),
   ("PendingEvent", erase(View.PendingEvent.schema)),

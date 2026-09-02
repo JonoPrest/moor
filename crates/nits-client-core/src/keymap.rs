@@ -158,6 +158,12 @@ pub enum Command {
     SideBase,
     /// Target the added (right) half of the focused row (`l`).
     SideHead,
+    /// Put the focused row in the middle of the viewport (`z z`).
+    CenterView,
+    /// Put the focused row at the top of the viewport (`z t`).
+    ViewTop,
+    /// Put the focused row at the bottom of the viewport (`z b`).
+    ViewBottom,
 }
 
 /// A named key that is not a character.
@@ -625,13 +631,17 @@ impl Keymap {
             b(X::Diff, keys!("C"), C::ToggleFileCollapse, false),
             b(X::Diff, keys!("X"), C::ExpandFile, false),
             b(X::Diff, keys!("V"), C::VisualMode, false),
-            // `z` is the expand group (which-key label "Expand").
+            // `z` is the expand and scroll group (which-key "Expand/scroll").
             b(X::Diff, keys!("z u"), C::ExpandUp, false),
             b(X::Diff, keys!("z d"), C::ExpandDown, false),
             b(X::Diff, keys!("z c"), C::CommentOnFile, false),
             // A modified row is two commentable cells: h/l pick which.
             b(X::Diff, keys!("h"), C::SideBase, false),
             b(X::Diff, keys!("l"), C::SideHead, false),
+            // The scroll family moves the view, not the cursor.
+            b(X::Diff, keys!("z z"), C::CenterView, false),
+            b(X::Diff, keys!("z t"), C::ViewTop, false),
+            b(X::Diff, keys!("z b"), C::ViewBottom, false),
             b(X::Diff, keys!("enter"), C::Open, false),
             // Thread
             b(X::Thread, keys!("j"), C::MoveDown, true),
@@ -671,7 +681,7 @@ impl Keymap {
             groups: vec![
                 (KeySeq::single(leader), "Leader".to_owned()),
                 (keys!("g"), "Goto".to_owned()),
-                (keys!("z"), "Expand".to_owned()),
+                (keys!("z"), "Expand/scroll".to_owned()),
             ],
         }
     }
@@ -1045,6 +1055,9 @@ pub fn label(command: Command) -> &'static str {
         Command::CommentOnFile => "comment on file",
         Command::SideBase => "target removed side",
         Command::SideHead => "target added side",
+        Command::CenterView => "centre the view",
+        Command::ViewTop => "row to top",
+        Command::ViewBottom => "row to bottom",
     }
 }
 
@@ -1111,6 +1124,9 @@ pub fn modes_of(command: Command) -> &'static [Mode] {
         | Command::CommentOnFile
         | Command::SideBase
         | Command::SideHead
+        | Command::CenterView
+        | Command::ViewTop
+        | Command::ViewBottom
         | Command::Refresh => &[M::Normal],
     }
 }
