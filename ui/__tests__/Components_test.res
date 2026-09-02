@@ -809,3 +809,69 @@ describe("Scroll.delta", () => {
     expect(delta)->toBe(120. -. 25.)
   })
 })
+
+describe("Scroll.plan", () => {
+  let intent = (seq: int): View.ScrollIntent.t => {row: 120, align: Center, seq}
+
+  test("a focused row that has not arrived yet keeps the intent for later", () => {
+    // `G` focuses a row whose chunk is still in flight: there is nothing
+    // in the DOM to scroll to, and consuming the intent here would lose
+    // the reposition for good.
+    let (step, seen) = Scroll.plan(
+      ~focus=Diff({row: 120}),
+      ~scroll=Some(intent(4)),
+      ~present=false,
+      ~seen=None,
+    )
+    expect(step)->toEqual(Scroll.Skip)
+    expect(seen)->toEqual(None)
+    // The chunk lands: same intent, now performable.
+    let (step, seen) = Scroll.plan(
+      ~focus=Diff({row: 120}),
+      ~scroll=Some(intent(4)),
+      ~present=true,
+      ~seen,
+    )
+    expect(step)->toEqual(Scroll.Reposition(Center))
+    expect(seen)->toEqual(Some(4))
+  })
+
+  test("an intent is performed once; motions after it only follow", () => {
+    let (step, seen) = Scroll.plan(
+      ~focus=Diff({row: 121}),
+      ~scroll=Some(intent(4)),
+      ~present=true,
+      ~seen=Some(4),
+    )
+    expect(step)->toEqual(Scroll.Follow)
+    expect(seen)->toEqual(Some(4))
+    // Pressing the chord again is a new instruction.
+    let (step, _) = Scroll.plan(
+      ~focus=Diff({row: 121}),
+      ~scroll=Some(intent(5)),
+      ~present=true,
+      ~seen,
+    )
+    expect(step)->toEqual(Scroll.Reposition(Center))
+  })
+
+  test("a view mounting at an existing intent does not replay it", () => {
+    // Leaving a tab and coming back remounts the consumer; starting its
+    // watermark at the current intent is what keeps the old `z z` from
+    // yanking the view back to where the cursor used to be.
+    let (step, _) = Scroll.plan(
+      ~focus=Diff({row: 121}),
+      ~scroll=Some(intent(4)),
+      ~present=true,
+      ~seen=Some(4),
+    )
+    expect(step)->toEqual(Scroll.Follow)
+  })
+
+  test("list focus scrolls itself, and modal focus not at all", () => {
+    let (step, _) = Scroll.plan(~focus=Tree({index: 2}), ~scroll=None, ~present=false, ~seen=None)
+    expect(step)->toEqual(Scroll.List)
+    let (step, _) = Scroll.plan(~focus=Composer({}), ~scroll=None, ~present=false, ~seen=None)
+    expect(step)->toEqual(Scroll.Skip)
+  })
+})

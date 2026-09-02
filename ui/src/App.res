@@ -90,33 +90,52 @@ module Shell = {
     })
     // Keep whatever is focused on screen. On the diff that means vim-style
     // edge scrolling: the row moves, the view follows by as little as it
-    // can. Rows arriving (a viewport that just filled) re-runs it, since
-    // the row to scroll to may not have been in the DOM the first time.
-    let rowWindow = switch model.diff {
-    | Some(d) => `${d.file.path}:${Int.toString(d.firstRow)}:${Int.toString(d.lastRow)}`
+    // can, and `z z`/`z t`/`z b` reposition it outright.
+    //
+    // The trigger has to cover every way the row can end up in the wrong
+    // place: the focus moving, the row arriving (a jump like `G` focuses a
+    // row whose chunk is still in flight, so there is nothing to scroll to
+    // on the first render), a new reposition, and the tab remounting the
+    // scroller with a fresh scroll position.
+    let focusedRow = switch model.focus {
+    | Diff({row}) => Some(row)
+    | ReviewList(_) | Tree(_) | Thread(_) | CommitStepper(_) | Composer(_) | Help(_) => None
+    }
+    let rowPresent = switch (focusedRow, model.diff) {
+    | (Some(row), Some(d)) => d.rows->Array.some((r: View.DiffRow.t) => r.index == row)
+    | (Some(_), None) | (None, _) => false
+    }
+    // An intent that already existed when this shell mounted has been
+    // performed by whoever was showing the row before.
+    let seen = React.useRef(model.scroll->Option.map(s => s.seq))
+    let file = switch model.diff {
+    | Some(d) => d.file.repoId ++ ":" ++ d.file.path
     | None => ""
     }
-    React.useEffect2(() => {
-      switch model.focus {
-      | Composer(_) | Help(_) => ()
-      | Diff(_) => Scroll.apply(Nearest)
-      | ReviewList(_) | Tree(_) | Thread(_) | CommitStepper(_) => Focused.scrollIntoView()
-      }
-      None
-    }, (model.focus, rowWindow))
-    // `z z`/`z t`/`z b`: the core records where the view should sit and
-    // counts the instructions, so the same chord twice scrolls twice.
-    let lastScroll = React.useRef(None)
+    let key =
+      [
+        JSON.stringifyAny(model.focus)->Option.getOr(""),
+        file,
+        rowPresent ? "1" : "0",
+        model.scroll->Option.map(s => Int.toString(s.seq))->Option.getOr(""),
+        JSON.stringifyAny(model.tab)->Option.getOr(""),
+      ]->Array.join("|")
     React.useEffect1(() => {
-      switch model.scroll {
-      | Some({seq, align}) if lastScroll.current != Some(seq) => {
-          lastScroll.current = Some(seq)
-          Scroll.apply(Align(align))
-        }
-      | Some(_) | None => ()
+      let (step, next) = Scroll.plan(
+        ~focus=model.focus,
+        ~scroll=model.scroll,
+        ~present=rowPresent,
+        ~seen=seen.current,
+      )
+      seen.current = next
+      switch step {
+      | Skip => ()
+      | Follow => Scroll.apply(Nearest)
+      | Reposition(align) => Scroll.apply(Align(align))
+      | List => Focused.scrollIntoView()
       }
       None
-    }, [model.scroll])
+    }, [key])
     // `y`: the clipboard is the shell's; copy here, the core no-ops.
     let dispatch = (action: Action.t) => {
       switch action {

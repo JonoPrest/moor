@@ -39,6 +39,44 @@ let delta = (~container: box, ~row: box, ~headroom: float, ~margin: float, ~mode
   }
 }
 
+/// What the host should do about the view right now.
+type step =
+  /// Nothing to do — or nothing that can be done yet, because the focused
+  /// row has not been rendered.
+  | Skip
+  /// Keep the focused row on screen (`Nearest`).
+  | Follow
+  /// Perform a `z z`/`z t`/`z b` that has not been performed yet.
+  | Reposition(View.ScrollAlign.t)
+  /// A focused list item, which scrolls itself into view.
+  | List
+
+/// What to do, and the intent watermark to carry forward. `seen` is the
+/// last reposition already performed and `present` says whether the
+/// focused row is in the DOM: an intent whose row has not arrived yet is
+/// KEPT, not consumed, so it still happens when the chunk lands. A
+/// remounting view starts `seen` at the current intent, so an old one is
+/// not replayed as if it were new.
+let plan = (
+  ~focus: View.Focus.t,
+  ~scroll: option<View.ScrollIntent.t>,
+  ~present: bool,
+  ~seen: option<int>,
+): (step, option<int>) =>
+  switch focus {
+  | Composer(_) | Help(_) => (Skip, seen)
+  | ReviewList(_) | Tree(_) | Thread(_) | CommitStepper(_) => (List, seen)
+  | Diff(_) =>
+    if !present {
+      (Skip, seen)
+    } else {
+      switch scroll {
+      | Some({seq, align}) if seen != Some(seq) => (Reposition(align), Some(seq))
+      | Some(_) | None => (Follow, seen)
+      }
+    }
+  }
+
 /// Rows of context kept past the cursor (vim's default is 0; a few rows
 /// is the setting people actually use).
 let scrolloff = 3.

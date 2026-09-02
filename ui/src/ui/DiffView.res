@@ -66,7 +66,10 @@ let make = (
   }, [focusedRow])
   // `z z`/`z t`/`z b` reposition the view around the focused row; the
   // core counts the instructions so the same chord twice scrolls twice.
-  let lastScroll = React.useRef(None)
+  // The watermark starts at whatever intent exists when this view mounts:
+  // switching tabs away and back must not replay an old reposition as if
+  // the reader had just asked for it.
+  let lastScroll = React.useRef(scroll->Option.map((s: ScrollIntent.t) => s.seq))
   React.useEffect1(() => {
     switch scroll {
     | Some({seq, row, align}) if lastScroll.current != Some(seq) => {
