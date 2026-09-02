@@ -11,17 +11,27 @@ on:
     # explicitly, adding the label would not trigger anything.
     types: [opened, reopened, synchronize, labeled]
 
-concurrency:
-  group: bench-${{ github.ref }}
-  cancel-in-progress: true
-
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   bench:
     name: benchmark triggers
-    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'perf')
+    # On `labeled`, gate on the label that was just added: otherwise, once a PR
+    # carries `perf`, adding any *other* label satisfies a whole-label-set check
+    # and starts another release build. Every other activity type checks the
+    # full set, since no single label is being added.
+    if: >-
+      github.event_name == 'push'
+      || (github.event.action == 'labeled' && github.event.label.name == 'perf')
+      || (github.event.action != 'labeled'
+          && contains(github.event.pull_request.labels.*.name, 'perf'))
+    # Job-level, not workflow-level: workflow concurrency is applied before a
+    # job's `if` is evaluated, so a run that is going to skip would still cancel
+    # a benchmark already in flight.
+    concurrency:
+      group: bench-${{ github.ref }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
