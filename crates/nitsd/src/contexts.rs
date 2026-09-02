@@ -26,6 +26,12 @@ pub enum ContextError {
     NotManaged,
     #[error("daemon is not running")]
     NotRunning,
+    #[error("this context names a `nitsd` binary on {host} ({nitsd}), which cannot serve: {help}")]
+    LegacyNitsd {
+        host: String,
+        nitsd: String,
+        help: &'static str,
+    },
     #[error("unexpected response shape")]
     Shape,
 }
@@ -121,9 +127,20 @@ pub async fn connect(
         Context::Ssh {
             host,
             bin,
+            legacy_nitsd,
             args,
             ssh,
         } => {
+            // Refuse rather than run it: `<path>/nitsd daemon stdio` is not a
+            // command the old daemon understands, so proceeding would report
+            // the host as unreachable for a reason the user cannot see.
+            if let Some(nitsd) = legacy_nitsd {
+                return Err(ContextError::LegacyNitsd {
+                    host: host.clone(),
+                    nitsd: nitsd.clone(),
+                    help: Context::LEGACY_NITSD_HELP,
+                });
+            }
             let mut cmd = ssh_command(host, bin.as_deref(), args, ssh.as_deref());
             if !autostart {
                 // Exits 3 rather than waking a daemon, so a client can

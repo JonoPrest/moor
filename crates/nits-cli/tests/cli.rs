@@ -425,3 +425,38 @@ fn every_subcommand_definition_builds() {
             .success();
     }
 }
+
+/// An ssh context written before the daemon became `nits daemon serve` names
+/// a `nitsd` binary that cannot serve `daemon stdio`. Running it anyway would
+/// report the host unreachable for a reason the user cannot see, so the
+/// context is refused with the edit to make.
+#[test]
+fn a_legacy_ssh_context_says_how_to_migrate_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = dir.path().join("config.toml");
+    std::fs::write(
+        &cfg,
+        "[contexts.box]\ntype = \"Ssh\"\nhost = \"build-box\"\nnitsd = \"/opt/bin/nitsd\"\n",
+    )
+    .unwrap();
+    let nits = || {
+        let mut c = Command::cargo_bin("nits").unwrap();
+        c.env("NITS_CONFIG", &cfg)
+            .env_remove("NITS_SOCKET")
+            .env_remove("NITS_CONTEXT");
+        c
+    };
+    // `status` never fails the process — it reports per context — so the
+    // guidance has to reach the user through the row itself.
+    nits()
+        .args(["-c", "box", "daemon", "status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("/opt/bin/nitsd"))
+        .stdout(predicate::str::contains("bin = "));
+    nits()
+        .args(["-c", "box", "workspace", "list"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("nits daemon serve"));
+}

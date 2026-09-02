@@ -71,10 +71,17 @@ pub enum Context {
     Ssh {
         host: String,
         /// The remote `nits` binary. Default: `nits` on the remote PATH.
-        /// The `nitsd` alias reads configs written when the daemon was a
-        /// second executable.
-        #[serde(default, alias = "nitsd", skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         bin: Option<String>,
+        /// The pre-one-binary `nitsd` key, kept **only** so a config written
+        /// before the daemon became `nits daemon serve` can be recognised
+        /// and reported. It is deliberately not an alias for `bin`: the
+        /// value names a `nitsd` executable that does not understand
+        /// `daemon stdio` (and is probably gone after the upgrade), so
+        /// silently running it would fail obscurely. See
+        /// [`Context::legacy_nitsd`].
+        #[serde(default, rename = "nitsd", skip_serializing_if = "Option::is_none")]
+        legacy_nitsd: Option<String>,
         /// Extra arguments for the remote daemon, e.g. `--data-dir`.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         args: Vec<String>,
@@ -87,6 +94,22 @@ pub enum Context {
 }
 
 impl Context {
+    /// The pre-one-binary `nitsd = "..."` key, if this context still carries
+    /// one. Callers must refuse to use such a context and say how to fix it
+    /// — [`Context::LEGACY_NITSD_HELP`] is that message.
+    #[must_use]
+    pub fn legacy_nitsd(&self) -> Option<&str> {
+        match self {
+            Context::Ssh { legacy_nitsd, .. } => legacy_nitsd.as_deref(),
+            Context::Local { .. } | Context::Ws { .. } => None,
+        }
+    }
+
+    /// What to tell someone whose config still has the old key.
+    pub const LEGACY_NITSD_HELP: &'static str = "the daemon is now `nits daemon serve`. Replace `nitsd = \"...\"` with \
+         `bin = \"nits\"` (or the path to `nits` on that host), or drop the line \
+         to use `nits` from the remote PATH";
+
     /// One-line description for listings.
     #[must_use]
     pub fn describe(&self) -> String {
@@ -197,6 +220,7 @@ mod tests {
             Context::Ssh {
                 host: "build-box".into(),
                 bin: None,
+                legacy_nitsd: None,
                 args: vec!["--data-dir".into(), "/srv/nits".into()],
                 ssh: None,
             },
@@ -220,5 +244,38 @@ mod tests {
         back.remove("box").unwrap();
         assert!(back.resolve(Some("box")).is_err());
         assert!(Config::load(&path).is_ok());
+    }
+
+    /// A config written before the daemon became `nits daemon serve` still
+    /// loads — it has to, or the CLI could not even tell the user what is
+    /// wrong — but the old `nitsd` key stays distinguishable from `bin` so
+    /// callers refuse it instead of running a binary that cannot serve.
+    #[test]
+    fn the_pre_one_binary_nitsd_key_is_recognised_not_silently_reused() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            "[contexts.box]\ntype = \"Ssh\"\nhost = \"build-box\"\nnitsd = \"/opt/bin/nitsd\"\n",
+        )
+        .unwrap();
+
+        let cfg = Config::load(&path).expect("an old config still loads");
+        let (_, ctx) = cfg.resolve(Some("box")).unwrap();
+        assert_eq!(ctx.legacy_nitsd(), Some("/opt/bin/nitsd"));
+        // Crucially not adopted as the binary to run: `/opt/bin/nitsd daemon
+        // stdio` is not a command the old daemon understands.
+        assert!(matches!(ctx, Context::Ssh { bin: None, .. }));
+        assert!(Context::LEGACY_NITSD_HELP.contains("bin = "));
+
+        // A migrated config has no legacy key and names `nits`.
+        std::fs::write(
+            &path,
+            "[contexts.box]\ntype = \"Ssh\"\nhost = \"build-box\"\nbin = \"nits\"\n",
+        )
+        .unwrap();
+        let (_, ctx) = Config::load(&path).unwrap().resolve(Some("box")).unwrap();
+        assert_eq!(ctx.legacy_nitsd(), None);
+        assert!(matches!(ctx, Context::Ssh { bin: Some(b), .. } if b == "nits"));
     }
 }

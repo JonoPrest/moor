@@ -1,4 +1,5 @@
-//! `nits`: command-line client for `nitsd` (plan 2.6). Every subcommand is a
+//! `nits`: the whole tool in one binary (plan 2.6) — client, daemon
+//! (`daemon serve`) and MCP server (`mcp`). Every client subcommand is a
 //! printer over [`nitsd::ops::Ops`]; `--json` prints the protocol values
 //! verbatim for scripting.
 
@@ -159,13 +160,16 @@ enum ContextCmd {
         #[arg(long)]
         socket: Option<PathBuf>,
     },
-    /// A daemon on another machine via `ssh HOST nitsd --stdio`.
+    /// A daemon on another machine via `ssh HOST nits daemon stdio`.
     AddSsh {
         name: String,
         /// Host as understood by your ssh config (`user@host`, alias).
         host: String,
         /// Remote `nits` binary. Default: `nits` on the remote PATH.
-        #[arg(long = "bin", alias = "nitsd")]
+        /// No `--nitsd` alias on purpose: that flag named a binary which
+        /// cannot serve `daemon stdio`, so accepting it would write a
+        /// context that fails on first use.
+        #[arg(long = "bin")]
         bin: Option<String>,
         /// Extra arguments for the remote daemon, e.g. `--data-dir /x`.
         #[arg(long = "arg")]
@@ -1242,6 +1246,7 @@ fn context_cmd(
             &Context::Ssh {
                 host,
                 bin,
+                legacy_nitsd: None,
                 args,
                 ssh: None,
             },
