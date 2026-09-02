@@ -86,10 +86,12 @@ pub enum Row {
         left: Cell,
         right: Cell,
     },
-    /// "show N more lines".
+    /// "show N more lines". `gap` names the hidden run so a client can
+    /// ask for more of *this* one (`RenderOpts::expanded`).
     Expander {
         hidden: u32,
         dir: ExpandDir,
+        gap: u32,
     },
     /// The whole file differs only in whitespace and `ignore_whitespace` is on.
     WhitespaceOnly,

@@ -749,6 +749,11 @@
   .row-expander {
     @apply cursor-pointer text-center text-muted select-none;
   }
+  /* One control per direction the gap opens in (the mouse alias of
+     `z u`/`z d`). */
+  .expander-arrow {
+    @apply px-1 py-0;
+  }
   .row-whitespace-only {
     @apply italic text-muted;
   }

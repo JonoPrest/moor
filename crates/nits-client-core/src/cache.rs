@@ -56,7 +56,7 @@ impl RenderKey {
             repo_id: header.repo_id,
             path: header.path.clone(),
             target: header.target.clone(),
-            opts: header.opts,
+            opts: header.opts.clone(),
         }
     }
 }

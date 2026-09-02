@@ -4,7 +4,7 @@
 //! it means right now, or says why it means nothing.
 
 use nits_protocol::{
-    Anchor, BlobOid, ContextHash, DiffScope, LineNo, LineRange, RenderTarget, Row, Side,
+    Anchor, BlobOid, ContextHash, DiffScope, ExpandDir, LineNo, LineRange, RenderTarget, Row, Side,
 };
 use serde::{Deserialize, Serialize};
 use strum::EnumDiscriminants;
@@ -700,12 +700,23 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                         file: diff.file.clone(),
                     });
                 }
+                let here = diff.rows.iter().find(|r| r.index == row);
+                // On an expander, enter opens that hidden run — the mouse
+                // can click it, so the keyboard must reach it too.
+                if let Some(crate::diff::DiffRow {
+                    row: Row::Expander { dir, gap, .. },
+                    ..
+                }) = here
+                {
+                    return Ok(Action::ExpandGap {
+                        file: diff.file.clone(),
+                        gap: *gap,
+                        dir: *dir,
+                    });
+                }
                 // The focused half's thread first: on a modified row the
                 // red and the green cell can each carry one.
-                let thread = diff
-                    .rows
-                    .iter()
-                    .find(|r| r.index == row)
+                let thread = here
                     .and_then(|r| {
                         r.threads
                             .iter()
@@ -1055,9 +1066,10 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
         Command::ActionPalette => Ok(Action::ActionPalette {
             open: !view.action_palette,
         }),
-        // The directional expands re-render the whole file with more
-        // context until band splicing gives them distinct semantics.
-        Command::ExpandContext | Command::ExpandUp | Command::ExpandDown => {
+        // `x` widens the whole file (UI-DESIGN §expanders); `z u`/`z d`
+        // open the hidden run above or below the cursor's hunk, leaving
+        // the rest of the file where it is.
+        Command::ExpandContext => {
             let Focus::Diff { .. } = focus else {
                 return Err(nothing());
             };
@@ -1114,6 +1126,19 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 crate::view::ScrollAlign::Center
             };
             Ok(Action::ScrollView { align })
+        }
+        Command::ExpandUp | Command::ExpandDown => {
+            let Focus::Diff { row, .. } = focus else {
+                return Err(nothing());
+            };
+            let diff = view.diff.as_ref().ok_or(NoTarget::NoOpenFile)?;
+            let up = command == Command::ExpandUp;
+            let gap = nearest_gap(diff, row, up).ok_or(NoTarget::AtEdge)?;
+            Ok(Action::ExpandGap {
+                file: diff.file.clone(),
+                gap,
+                dir: if up { ExpandDir::Up } else { ExpandDir::Down },
+            })
         }
         Command::CommentOnFile => {
             let file = target_file(view, focus).ok_or_else(nothing)?;
@@ -1215,6 +1240,30 @@ fn line_anchor(file: &FileRef, target: &RenderTarget, row: &Row, side: Side) -> 
         lines: LineRange::single(line),
         context_hash: ContextHash::new(0),
     })
+}
+
+/// The gap the cursor would open going up (or down): the nearest hidden
+/// run above (below) `row`, which is the one bordering the hunk the
+/// cursor is in. `None` when nothing is hidden that way.
+fn nearest_gap(diff: &crate::diff::DiffView, row: u32, up: bool) -> Option<u32> {
+    let gap_of = |r: &crate::diff::DiffRow| match r.row {
+        Row::Expander { gap, .. } => Some(gap),
+        Row::HunkHeader { .. }
+        | Row::Context { .. }
+        | Row::Added { .. }
+        | Row::Removed { .. }
+        | Row::Modified { .. }
+        | Row::WhitespaceOnly => None,
+    };
+    if up {
+        diff.rows
+            .iter()
+            .rev()
+            .filter(|r| r.index <= row)
+            .find_map(gap_of)
+    } else {
+        diff.rows.iter().filter(|r| r.index >= row).find_map(gap_of)
+    }
 }
 
 #[cfg(test)]

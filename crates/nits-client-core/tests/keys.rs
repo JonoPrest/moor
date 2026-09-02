@@ -13,11 +13,11 @@ use nits_client_core::{
 };
 use nits_protocol::{
     Anchor, Author, BuildInfo, ChangeKind, ChunkIndex, ClientId, ClientMsg, Comment, CommentId,
-    CommentKind, CommentState, FileChange, FileRenderHeader, NonEmpty, Oid, ProtocolVersion,
-    RefSpec, RenderChunk, RenderContent, RenderOpts, RenderTarget, RepoId, RepoPath, Request,
-    Review, ReviewId, ReviewSnapshot, ReviewStatus, ReviewTarget, Row, SchemaVersion, Seq,
-    ServerMsg, Side, StreamItem, Timestamp, TreeEntry, TreeEntryKind, TreeOid, TreeSnapshot,
-    ViewSection, WorkspaceId,
+    CommentKind, CommentState, ExpandDir, FileChange, FileRenderHeader, NonEmpty, Oid,
+    ProtocolVersion, RefSpec, RenderChunk, RenderContent, RenderOpts, RenderTarget, RepoId,
+    RepoPath, Request, Review, ReviewId, ReviewSnapshot, ReviewStatus, ReviewTarget, Row,
+    SchemaVersion, Seq, ServerMsg, Side, StreamItem, Timestamp, TreeEntry, TreeEntryKind, TreeOid,
+    TreeSnapshot, ViewSection, WorkspaceId,
 };
 use strum::IntoEnumIterator;
 
@@ -173,9 +173,10 @@ fn chunk(index: u32) -> RenderChunk {
         rows: (0..100)
             .map(|i| {
                 let n = index * 100 + i + 1;
-                // A hunk with one of every commentable row shape, so the
-                // side-aware paths have something to aim at: row 4 is
-                // modified (two cells), row 6 added, row 8 removed.
+                // One of every commentable row shape, so the side-aware
+                // paths have something to aim at (row 4 modified, 6 added,
+                // 8 removed), and a hidden run between the two hunks for
+                // the expander paths.
                 match n {
                     1 | 150 => Row::HunkHeader {
                         text: format!("@@ {n} @@"),
@@ -186,6 +187,11 @@ fn chunk(index: u32) -> RenderChunk {
                     },
                     7 => Row::Added { right: cell(n) },
                     9 => Row::Removed { left: cell(n) },
+                    149 => Row::Expander {
+                        hidden: 40,
+                        dir: ExpandDir::Both,
+                        gap: 1,
+                    },
                     _ => Row::Context {
                         left: cell(n),
                         right: cell(n),
@@ -498,6 +504,8 @@ fn every_action_is_reachable_from_a_binding() {
         }))
         .unwrap();
     states.push(with_file);
+    // On an expander row: `enter` and `z u`/`z d` open that hidden run.
+    states.push(on_row(EXPANDER_ROW, Side::Head));
     // Visual mode on: `esc` (Back) and `V` resolve to LeaveVisual.
     let mut with_visual = ready();
     with_visual
@@ -1138,7 +1146,8 @@ fn on_row(row: u32, side: Side) -> ClientCore {
             path: path("src/a.rs"),
         },
         first_row: 0,
-        last_row: 59,
+        // Wide enough for the expander at row 148 to be in the window.
+        last_row: 199,
     }))
     .unwrap();
     core.handle(Input::User(Action::SetFocus {
@@ -1214,6 +1223,28 @@ fn a_row_with_one_cell_has_no_other_side_to_move_to() {
         Focus::Diff {
             row: REMOVED_ROW,
             side: Side::Base
+        }
+    );
+}
+
+/// The rows of `chunk()`: the expander sits at index 148, between the
+/// hunk headers at 0 and 149.
+const EXPANDER_ROW: u32 = 148;
+
+#[test]
+fn enter_on_an_expander_opens_that_hidden_run() {
+    // The mouse can click an expander, so the keyboard has to reach it.
+    let core = on_row(EXPANDER_ROW, Side::Head);
+    let action = nits_client_core::resolve_command(&core, nits_client_core::Command::Open).unwrap();
+    assert_eq!(
+        action,
+        Action::ExpandGap {
+            file: nits_client_core::FileRef {
+                repo_id: repo_id(),
+                path: path("src/a.rs"),
+            },
+            gap: 1,
+            dir: ExpandDir::Both,
         }
     );
 }
@@ -1419,6 +1450,46 @@ fn stepping_over_a_file_boundary_follows_but_a_jump_pins() {
 }
 
 #[test]
+fn the_directional_expands_open_the_gap_beside_the_cursor() {
+    // Inside the second hunk: `z u` opens the run above it. Both used to
+    // resolve to the same undirected whole-file re-render.
+    let core = on_row(160, Side::Head);
+    let up = nits_client_core::resolve_command(&core, nits_client_core::Command::ExpandUp).unwrap();
+    assert_eq!(
+        up,
+        Action::ExpandGap {
+            file: nits_client_core::FileRef {
+                repo_id: repo_id(),
+                path: path("src/a.rs"),
+            },
+            gap: 1,
+            dir: ExpandDir::Up,
+        }
+    );
+    // Above the gap, `z d` opens the same run from the other end.
+    let core = on_row(100, Side::Head);
+    let down =
+        nits_client_core::resolve_command(&core, nits_client_core::Command::ExpandDown).unwrap();
+    assert_eq!(
+        down,
+        Action::ExpandGap {
+            file: nits_client_core::FileRef {
+                repo_id: repo_id(),
+                path: path("src/a.rs"),
+            },
+            gap: 1,
+            dir: ExpandDir::Down,
+        }
+    );
+    // Nothing hidden that way: the command means nothing rather than
+    // re-rendering the file.
+    let core = on_row(160, Side::Head);
+    assert!(
+        nits_client_core::resolve_command(&core, nits_client_core::Command::ExpandDown).is_err()
+    );
+}
+
+#[test]
 fn re_opening_the_file_already_open_keeps_its_window_and_pins_it() {
     // `enter` on the tree item for the open file (and its mouse alias,
     // the tree click, which runs the same command) must not throw the
@@ -1448,5 +1519,24 @@ fn re_opening_the_file_already_open_keeps_its_window_and_pins_it() {
         core.view().scroll.map(|s| s.align),
         Some(nits_client_core::ScrollAlign::Top),
         "picking a file out of the tree pins it, open or not"
+    );
+}
+
+#[test]
+fn opening_a_gap_re_renders_only_that_file_with_the_gap_recorded() {
+    let mut core = on_row(EXPANDER_ROW, Side::Head);
+    press(&mut core, "enter").unwrap();
+    let opts = core
+        .view()
+        .review
+        .as_ref()
+        .and_then(|o| o.open_file.as_ref())
+        .map(|f| f.render.opts.clone())
+        .expect("a file is open");
+    assert_eq!(opts.expanded.of(1), (20, 20), "both ends of gap 1 opened");
+    assert_eq!(
+        opts.context_lines,
+        nits_protocol::RenderOpts::default().context_lines,
+        "the file's own context is untouched — other hunks do not move"
     );
 }

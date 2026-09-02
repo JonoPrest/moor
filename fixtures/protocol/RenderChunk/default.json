@@ -96,6 +96,7 @@
     },
     {
       "dir": "Down",
+      "gap": 1,
       "hidden": 40,
       "type": "Expander"
     }

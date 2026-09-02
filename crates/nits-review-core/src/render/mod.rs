@@ -23,7 +23,8 @@ mod intraline;
 mod lines;
 
 use nits_protocol::{
-    Cell, ChunkIndex, ColRange, ExpandDir, LineNo, RenderChunk, RenderContent, RenderOpts, Row,
+    Cell, ChunkIndex, ColRange, ExpandDir, Expansions, LineNo, RenderChunk, RenderContent,
+    RenderOpts, Row,
 };
 
 pub use highlight::{Highlighter, detect_lang};
@@ -97,7 +98,7 @@ pub fn render_file(
     old: Option<&[u8]>,
     new: Option<&[u8]>,
     lang: Option<&str>,
-    opts: RenderOpts,
+    opts: &RenderOpts,
 ) -> Rendered {
     if old.is_some_and(crate::git::is_binary) || new.is_some_and(crate::git::is_binary) {
         return Rendered {
@@ -134,6 +135,7 @@ pub fn render_file(
         &new_spans,
         &hunks,
         opts.context_lines,
+        &opts.expanded,
     );
     let total_rows = u32::try_from(rows.len()).unwrap_or(u32::MAX);
     Rendered {
@@ -281,6 +283,7 @@ fn build_rows(
     new_spans: &[Vec<nits_protocol::Span>],
     hunks: &[Hunk],
     context: u32,
+    expanded: &Expansions,
 ) -> (Vec<Row>, u32, u32) {
     let ctx = context as usize;
     let mut rows = Vec::new();
@@ -288,11 +291,24 @@ fn build_rows(
     let to_u32 = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
 
     if hunks.is_empty() {
+        // One gap, the whole file; opening it reveals lines from either
+        // end, since there is no hunk to expand away from.
         if !old.is_empty() {
-            rows.push(Row::Expander {
-                hidden: to_u32(old.len()),
-                dir: ExpandDir::Both,
-            });
+            let (up, down) = expanded.of(0);
+            let shown = (up as usize).saturating_add(down as usize).min(old.len());
+            let head = (down as usize).min(shown);
+            let tail = shown - head;
+            emit_context(&mut rows, old, new, old_spans, new_spans, 0, 0, head);
+            let hidden = old.len() - shown;
+            if hidden > 0 {
+                rows.push(Row::Expander {
+                    hidden: to_u32(hidden),
+                    dir: ExpandDir::Both,
+                    gap: 0,
+                });
+            }
+            let from = old.len() - tail;
+            emit_context(&mut rows, old, new, old_spans, new_spans, from, from, tail);
         }
         return (rows, 0, 0);
     }
@@ -315,8 +331,13 @@ fn build_rows(
     for (g_idx, g) in groups.iter().enumerate() {
         let first = &hunks[g.start];
         let last = &hunks[g.end - 1];
-        // Visible window: ctx lines before the first change, ctx after the last.
-        let vis_start_o = (first.before.start as usize).saturating_sub(ctx).max(oi);
+        // Visible window: ctx lines before the first change, ctx after the
+        // last, plus however far this group's own gaps have been opened —
+        // the gap above it upward, the gap below it downward.
+        let (up, _) = expanded.of(to_u32(g_idx));
+        let (_, down) = expanded.of(to_u32(g_idx + 1));
+        let lead = ctx.saturating_add(up as usize);
+        let vis_start_o = (first.before.start as usize).saturating_sub(lead).max(oi);
         let vis_start_n = ni + (vis_start_o - oi);
         let hidden_before = vis_start_o - oi;
         if hidden_before > 0 {
@@ -327,18 +348,31 @@ fn build_rows(
                 } else {
                     ExpandDir::Both
                 },
+                gap: to_u32(g_idx),
             });
         }
-        let vis_end_o = (last.before.end as usize + ctx).min(old.len());
+        let trail = ctx.saturating_add(down as usize);
+        // A gap opened from below stops at the next group's first change:
+        // past that point the lines belong to the next window.
+        let next_change = groups
+            .get(g_idx + 1)
+            .map_or(old.len(), |ng| hunks[ng.start].before.start as usize);
+        let vis_end_o = (last.before.end as usize + trail)
+            .min(old.len())
+            .min(next_change);
         let vis_end_n = last.after.end as usize + (vis_end_o - last.before.end as usize);
-        rows.push(Row::HunkHeader {
-            text: hunk_header(
-                vis_start_o,
-                vis_end_o - vis_start_o,
-                vis_start_n,
-                vis_end_n - vis_start_n,
-            ),
-        });
+        // A gap opened until it closed leaves the two groups touching:
+        // one header, as git would print for overlapping hunks.
+        if hidden_before > 0 || g_idx == 0 {
+            rows.push(Row::HunkHeader {
+                text: hunk_header(
+                    vis_start_o,
+                    vis_end_o - vis_start_o,
+                    vis_start_n,
+                    vis_end_n - vis_start_n,
+                ),
+            });
+        }
 
         let (mut co, mut cn) = (vis_start_o, vis_start_n);
         for h in &hunks[g.clone()] {
@@ -380,11 +414,12 @@ fn build_rows(
         ni = vis_end_n;
     }
 
-    let tail = old.len() - oi;
-    if tail > 0 {
+    let hidden_tail = old.len() - oi;
+    if hidden_tail > 0 {
         rows.push(Row::Expander {
-            hidden: to_u32(tail),
+            hidden: to_u32(hidden_tail),
             dir: ExpandDir::Down,
+            gap: to_u32(groups.len()),
         });
     }
     (rows, additions, deletions)

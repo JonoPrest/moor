@@ -11,6 +11,7 @@
   "lang": "Rust",
   "opts": {
     "context_lines": 3,
+    "expanded": [],
     "ignore_whitespace": false
   },
   "path": "src/lib.rs",

@@ -730,6 +730,11 @@ enum_fixture!(
             file: file_ref()?,
             full: false
         },
+        Action::ExpandGap {
+            file: file_ref()?,
+            gap: 1,
+            dir: ExpandDir::Up
+        },
         Action::SetBrowseRef {
             repo_id: repo_id()?,
             ref_spec: Some(RefSpec::Branch {

@@ -715,7 +715,8 @@ expression: r
     {
       "type": "Expander",
       "hidden": 10,
-      "dir": "Both"
+      "dir": "Both",
+      "gap": 1
     },
     {
       "type": "HunkHeader",

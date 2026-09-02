@@ -300,7 +300,7 @@ describe("Palette", () => {
 })
 
 describe("Context expanders", () => {
-  test("an expander row click and the expand-file button dispatch ExpandContext", () => {
+  test("the expand-file button dispatches ExpandContext for the whole file", () => {
     let dispatch = fn()
     let base = Fixtures.parse(View.DiffView.schema, "client", "DiffView", "default")
     let _ = render(
@@ -308,14 +308,27 @@ describe("Context expanders", () => {
     )
     FireEvent.click(Screen.getByText("expand file"))
     expect(dispatch)->toHaveBeenLastCalledWith(Action.ExpandContext({file: base.file, full: true}))
-    cleanup()
+  })
+
+  test("an expander opens its own gap, in the direction that was clicked", () => {
+    // The fixture expander is `Both` on gap 1: two arrows, each opening
+    // that one hidden run rather than re-rendering the whole file.
     let row = Fixtures.parse(Render.Row.schema, "protocol", "Row", "Expander")
     let expand = fn()
-    let _ = render(
-      <Row row layout=Unified index=0 focused=false threads=[] onExpand={() => expand()} />,
+    let {container} = render(
+      <Row
+        row layout=Unified index=0 focused=false threads=[] onExpand={(g, d) => expand((g, d))}
+      />,
     )
+    let arrows = Element.querySelectorAll(container, ".expander-arrow")
+    expect(Array.length(arrows))->toBe(2)
+    FireEvent.click(arrows->Array.getUnsafe(0))
+    expect(expand)->toHaveBeenLastCalledWith((1, Render.ExpandDir.Up))
+    FireEvent.click(arrows->Array.getUnsafe(1))
+    expect(expand)->toHaveBeenLastCalledWith((1, Render.ExpandDir.Down))
+    // Clicking the row itself opens the gap in its own direction.
     FireEvent.click(Screen.getByTextRe(/more lines/))
-    expect(expand)->toHaveBeenCalled
+    expect(expand)->toHaveBeenLastCalledWith((1, Render.ExpandDir.Both))
   })
 })
 

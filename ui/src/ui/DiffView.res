@@ -174,7 +174,7 @@ let make = (
                 focusedSide
                 threads=r.threads
                 onClick={side => dispatch(SetFocus({focus: Focus.Diff({row: item.index, side})}))}
-                onExpand={() => dispatch(ExpandContext({file: diff.file, full: false}))}
+                onExpand={(gap, dir) => dispatch(ExpandGap({file: diff.file, gap, dir}))}
               />
               {r.threads
               ->Array.map((t: View.RowThread.t) => t.thread)

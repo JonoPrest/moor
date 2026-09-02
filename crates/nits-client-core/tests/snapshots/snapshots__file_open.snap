@@ -1186,7 +1186,8 @@ expression: core.view()
         },
         "opts": {
           "ignore_whitespace": false,
-          "context_lines": 3
+          "context_lines": 3,
+          "expanded": []
         }
       },
       {
@@ -1201,7 +1202,8 @@ expression: core.view()
         },
         "opts": {
           "ignore_whitespace": false,
-          "context_lines": 3
+          "context_lines": 3,
+          "expanded": []
         }
       }
     ],
@@ -1219,7 +1221,8 @@ expression: core.view()
         },
         "opts": {
           "ignore_whitespace": false,
-          "context_lines": 3
+          "context_lines": 3,
+          "expanded": []
         }
       },
       "first_row": 0,

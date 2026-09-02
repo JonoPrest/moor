@@ -83,9 +83,14 @@ light both):
 - **Hide whitespace** (`w`), persisted; re-keys renders.
 - **Syntax highlighting** everywhere (daemon-rendered `SpanClass` spans;
   already implemented; falls back to plain past the size cap).
-- **Context expanders** on every collapsed band (GitHub-style): `↥`/`↧`
-  expand ±20 lines, clicking the band expands it fully, plus an
-  "expand full file" affordance per file. Key `x` expands at the cursor.
+- ✓ **Context expanders** on every collapsed band (GitHub-style): each
+  band is a numbered *gap* on the wire (`Row::Expander { gap, dir }`),
+  and expanding one opens THAT gap by 20 lines — `RenderOpts::expanded`
+  carries the opened gaps, so no other hunk in the file moves. `↑`/`↓` on
+  the band expand up/down, `enter` on a focused band does the same from
+  the keyboard, and `z u`/`z d` open the gap above/below the cursor's
+  hunk. `x` widens the whole file's context and the header's affordance
+  expands it fully.
 - Word-level change highlights within modified lines (already rendered).
 
 ## Comments and threads

@@ -192,7 +192,7 @@ let make = (
                     setDrag(_ => Some({...d, current: line}))
                   | (Some(_), Some(_) | None) | (None, _) => ()
                   }}
-                onExpand={() => dispatch(ExpandContext({file: diff.file, full: false}))}
+                onExpand={(gap, dir) => dispatch(ExpandGap({file: diff.file, gap, dir}))}
               />
             <div
               key={Int.toString(r.index)}

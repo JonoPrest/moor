@@ -98,6 +98,7 @@
         },
         {
           "dir": "Down",
+          "gap": 1,
           "hidden": 40,
           "type": "Expander"
         }
@@ -117,6 +118,7 @@
     "lang": "Rust",
     "opts": {
       "context_lines": 3,
+      "expanded": [],
       "ignore_whitespace": false
     },
     "path": "src/lib.rs",

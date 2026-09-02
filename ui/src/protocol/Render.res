@@ -55,7 +55,7 @@ module Row = {
     | @as("Removed") Removed({left: Cell.t})
     | @as("Added") Added({right: Cell.t})
     | @as("Modified") Modified({left: Cell.t, right: Cell.t})
-    | @as("Expander") Expander({hidden: int, dir: ExpandDir.t})
+    | @as("Expander") Expander({hidden: int, dir: ExpandDir.t, gap: int})
     | @as("WhitespaceOnly") WhitespaceOnly({})
   @@warning("+27")
 }

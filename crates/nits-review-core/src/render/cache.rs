@@ -41,7 +41,7 @@ from_redb!(
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
 pub struct RenderKey<'a> {
     pub target: &'a RenderTarget,
-    pub opts: RenderOpts,
+    pub opts: &'a RenderOpts,
     pub lang: Option<&'a str>,
 }
 
@@ -124,7 +124,7 @@ mod tests {
             Some(b"a\nb\n"),
             Some(b"a\nc\n"),
             None,
-            RenderOpts::default(),
+            &RenderOpts::default(),
         );
         let target = RenderTarget::Diff {
             change: ChangeKind::Modified {
@@ -132,9 +132,10 @@ mod tests {
                 new: BlobOid::from_bytes([2; 20]),
             },
         };
+        let default_opts = RenderOpts::default();
         let key = RenderKey {
             target: &target,
-            opts: RenderOpts::default(),
+            opts: &default_opts,
             lang: None,
         };
         assert!(cache.header(&key).unwrap().is_none());
@@ -145,11 +146,13 @@ mod tests {
             rendered.chunk(ChunkIndex::FIRST)
         );
         assert!(cache.chunk(&key, ChunkIndex::new(9)).unwrap().is_none());
+        let ws_opts = RenderOpts {
+            ignore_whitespace: true,
+            context_lines: 3,
+            ..RenderOpts::default()
+        };
         let other = RenderKey {
-            opts: RenderOpts {
-                ignore_whitespace: true,
-                context_lines: 3,
-            },
+            opts: &ws_opts,
             ..key
         };
         assert!(cache.header(&other).unwrap().is_none());

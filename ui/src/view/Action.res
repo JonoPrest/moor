@@ -85,6 +85,7 @@ type t =
   | @as("SetScope") SetScope({scope: ScopeChoice.t})
   | @as("OpenOriginalDiff") OpenOriginalDiff({@as("thread_id") threadId: threadId})
   | @as("ExpandContext") ExpandContext({file: View.FileRef.t, full: bool})
+  | @as("ExpandGap") ExpandGap({file: View.FileRef.t, gap: int, dir: Render.ExpandDir.t})
   | @as("SetBrowseRef")
   SetBrowseRef({
       @as("repo_id") repoId: repoId,

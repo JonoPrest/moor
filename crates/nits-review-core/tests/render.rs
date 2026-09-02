@@ -1,7 +1,7 @@
 #![allow(clippy::format_collect, clippy::naive_bytecount)] // test data builders
 //! Render model: snapshot corpus + invariants.
 
-use nits_protocol::{ChunkIndex, ExpandDir, RenderContent, RenderOpts, Row};
+use nits_protocol::{ChunkIndex, ExpandDir, Expansions, RenderContent, RenderOpts, Row};
 use nits_review_core::render::{CHUNK_ROWS, Highlighter, Rendered, render_blob, render_file};
 use proptest::prelude::*;
 use std::sync::LazyLock;
@@ -12,6 +12,7 @@ fn opts(ignore_ws: bool) -> RenderOpts {
     RenderOpts {
         ignore_whitespace: ignore_ws,
         context_lines: 3,
+        ..RenderOpts::default()
     }
 }
 
@@ -152,7 +153,7 @@ fn corpus() -> Vec<Case> {
 fn snapshot_corpus() {
     for case in corpus() {
         for ignore_ws in [false, true] {
-            let r = render_file(&HL, case.old, case.new, case.lang, opts(ignore_ws));
+            let r = render_file(&HL, case.old, case.new, case.lang, &opts(ignore_ws));
             check_invariants(&r, case.old, case.new);
             let suffix = if ignore_ws { "ignore_ws" } else { "exact" };
             insta::assert_json_snapshot!(format!("{}__{suffix}", case.name), r);
@@ -172,7 +173,7 @@ fn blob_render_is_all_context() {
 fn ignore_whitespace_hides_reindent_but_keeps_text() {
     let old = b"fn a() {\n    x();\n    y();\n}\n";
     let new = b"fn a() {\n        x();\n        y();\n}\n";
-    let exact = render_file(&HL, Some(old), Some(new), None, opts(false));
+    let exact = render_file(&HL, Some(old), Some(new), None, &opts(false));
     assert_eq!(
         exact
             .rows
@@ -181,13 +182,13 @@ fn ignore_whitespace_hides_reindent_but_keeps_text() {
             .count(),
         2
     );
-    let ws = render_file(&HL, Some(old), Some(new), None, opts(true));
+    let ws = render_file(&HL, Some(old), Some(new), None, &opts(true));
     assert_eq!(ws.rows, vec![Row::WhitespaceOnly]);
 
     // With a real change elsewhere, the reindented lines are plain context
     // and still carry their real (reindented) text.
     let new2 = b"fn a() {\n        x();\n        y();\n}\nextra\n";
-    let ws2 = render_file(&HL, Some(old), Some(new2), None, opts(true));
+    let ws2 = render_file(&HL, Some(old), Some(new2), None, &opts(true));
     assert_eq!(
         ws2.rows
             .iter()
@@ -223,9 +224,10 @@ fn chunks_are_fixed_size_and_concatenate() {
         Some(old.as_bytes()),
         Some(new.as_bytes()),
         None,
-        RenderOpts {
+        &RenderOpts {
             ignore_whitespace: false,
             context_lines: 1000,
+            ..RenderOpts::default()
         },
     );
     let RenderContent::Text {
@@ -259,7 +261,7 @@ fn large_file_renders_quickly_and_without_highlight_above_cap() {
         Some(old.as_bytes()),
         Some(new.as_bytes()),
         Some("Rust"),
-        opts(false),
+        &opts(false),
     );
     let elapsed = start.elapsed();
     let RenderContent::Text {
@@ -394,7 +396,7 @@ proptest! {
 
     #[test]
     fn invariants_hold(old in text_strategy(), new in text_strategy(), ctx in 0u32..5, ws in any::<bool>()) {
-        let r = render_file(&HL, Some(&old), Some(&new), None, RenderOpts { ignore_whitespace: ws, context_lines: ctx });
+        let r = render_file(&HL, Some(&old), Some(&new), None, &RenderOpts { ignore_whitespace: ws, context_lines: ctx, ..RenderOpts::default() });
         check_invariants(&r, Some(&old), Some(&new));
     }
 
@@ -405,7 +407,153 @@ proptest! {
     ) {
         let old: String = lines.iter().map(|l| format!("{l}\n")).collect();
         let new: String = lines.iter().zip(indents.iter().cycle()).map(|(l, i)| format!("{}{l}\n", " ".repeat(*i))).collect();
-        let r = render_file(&HL, Some(old.as_bytes()), Some(new.as_bytes()), None, opts(true));
+        let r = render_file(&HL, Some(old.as_bytes()), Some(new.as_bytes()), None, &opts(true));
         prop_assert!(r.rows.iter().all(|row| !matches!(row, Row::Modified { .. } | Row::Added { .. } | Row::Removed { .. })), "{:?}", r.rows);
     }
+}
+
+// ---- per-gap expansion -----------------------------------------------------
+
+/// A file with two changes far apart, so the render has three gaps:
+/// before the first hunk (0), between the hunks (1), after the last (2).
+fn two_hunks() -> (String, String) {
+    let old: String = (1..=200).map(|i| format!("line {i}\n")).collect();
+    let new = old
+        .replace("line 20\n", "line 20 changed\n")
+        .replace("line 180\n", "line 180 changed\n");
+    (old, new)
+}
+
+fn expanded(gap: u32, up: u32, down: u32) -> RenderOpts {
+    RenderOpts {
+        expanded: Expansions::default().opened(
+            gap,
+            match (up, down) {
+                (0, _) => ExpandDir::Down,
+                (_, 0) => ExpandDir::Up,
+                _ => ExpandDir::Both,
+            },
+            up.max(down),
+        ),
+        ..opts(false)
+    }
+}
+
+/// The lines each side shows, and the hidden run of each gap.
+fn shown(r: &Rendered) -> (Vec<u32>, Vec<(u32, u32)>) {
+    let mut lines = Vec::new();
+    let mut gaps = Vec::new();
+    for row in &r.rows {
+        match row {
+            Row::Context { left, .. } | Row::Modified { left, .. } | Row::Removed { left } => {
+                lines.push(left.line_no.get());
+            }
+            Row::Expander { hidden, gap, .. } => gaps.push((*gap, *hidden)),
+            Row::Added { .. } | Row::HunkHeader { .. } | Row::WhitespaceOnly => {}
+        }
+    }
+    (lines, gaps)
+}
+
+#[test]
+fn every_gap_is_numbered_and_expansion_moves_only_its_own_gap() {
+    let (old, new) = two_hunks();
+    let (old, new) = (old.as_bytes(), new.as_bytes());
+    let base = render_file(&HL, Some(old), Some(new), None, &opts(false));
+    let (base_lines, base_gaps) = shown(&base);
+    assert_eq!(
+        base_gaps.iter().map(|(g, _)| *g).collect::<Vec<_>>(),
+        vec![0, 1, 2],
+        "one gap before each hunk group and one after the last"
+    );
+    check_invariants(&base, Some(old), Some(new));
+
+    // Open the middle gap upward: the lines revealed sit above the second
+    // hunk, gap 1 shrinks by exactly that many, and nothing else moves.
+    let up = render_file(&HL, Some(old), Some(new), None, &expanded(1, 10, 0));
+    let (up_lines, up_gaps) = shown(&up);
+    check_invariants(&up, Some(old), Some(new));
+    assert_eq!(gap_hidden(&base_gaps, 1) - gap_hidden(&up_gaps, 1), 10);
+    assert_eq!(gap_hidden(&base_gaps, 0), gap_hidden(&up_gaps, 0));
+    assert_eq!(gap_hidden(&base_gaps, 2), gap_hidden(&up_gaps, 2));
+    let revealed: Vec<u32> = up_lines
+        .iter()
+        .copied()
+        .filter(|l| !base_lines.contains(l))
+        .collect();
+    assert_eq!(revealed.len(), 10);
+    assert!(
+        revealed.iter().all(|l| *l < 177 && *l > 166),
+        "revealed above the second hunk: {revealed:?}"
+    );
+
+    // Downward opens the same gap from the other end.
+    let down = render_file(&HL, Some(old), Some(new), None, &expanded(1, 0, 10));
+    let (down_lines, down_gaps) = shown(&down);
+    check_invariants(&down, Some(old), Some(new));
+    assert_eq!(gap_hidden(&base_gaps, 1) - gap_hidden(&down_gaps, 1), 10);
+    let revealed: Vec<u32> = down_lines
+        .iter()
+        .copied()
+        .filter(|l| !base_lines.contains(l))
+        .collect();
+    assert!(
+        revealed.iter().all(|l| *l > 23 && *l < 34),
+        "revealed below the first hunk: {revealed:?}"
+    );
+
+    // Widening the file's context, by contrast, moves every hunk.
+    let wide = render_file(
+        &HL,
+        Some(old),
+        Some(new),
+        None,
+        &RenderOpts {
+            context_lines: 13,
+            ..opts(false)
+        },
+    );
+    let (_, wide_gaps) = shown(&wide);
+    assert!(gap_hidden(&base_gaps, 0) > gap_hidden(&wide_gaps, 0));
+    assert!(gap_hidden(&base_gaps, 2) > gap_hidden(&wide_gaps, 2));
+}
+
+fn gap_hidden(gaps: &[(u32, u32)], gap: u32) -> u32 {
+    gaps.iter().find(|(g, _)| *g == gap).map_or(0, |(_, h)| *h)
+}
+
+#[test]
+fn a_gap_opened_past_its_end_closes_and_leaves_one_header() {
+    let (old, new) = two_hunks();
+    let (old, new) = (old.as_bytes(), new.as_bytes());
+    let all = render_file(&HL, Some(old), Some(new), None, &expanded(1, 500, 500));
+    let (_, gaps) = shown(&all);
+    check_invariants(&all, Some(old), Some(new));
+    assert_eq!(gap_hidden(&gaps, 1), 0, "the middle run is fully revealed");
+    let headers = all
+        .rows
+        .iter()
+        .filter(|r| matches!(r, Row::HunkHeader { .. }))
+        .count();
+    assert_eq!(
+        headers, 1,
+        "two groups that now touch print one header, as git does"
+    );
+    // The gaps at the ends are untouched.
+    assert!(gap_hidden(&gaps, 0) > 0 && gap_hidden(&gaps, 2) > 0);
+}
+
+#[test]
+fn a_file_with_no_hunks_opens_from_both_ends() {
+    let same: String = (1..=100).map(|i| format!("line {i}\n")).collect();
+    let bytes = same.as_bytes();
+    let closed = render_file(&HL, Some(bytes), Some(bytes), None, &opts(false));
+    let (lines, gaps) = shown(&closed);
+    assert!(lines.is_empty());
+    assert_eq!(gaps, vec![(0, 100)]);
+    let opened = render_file(&HL, Some(bytes), Some(bytes), None, &expanded(0, 5, 5));
+    let (lines, gaps) = shown(&opened);
+    check_invariants(&opened, Some(bytes), Some(bytes));
+    assert_eq!(gap_hidden(&gaps, 0), 90);
+    assert_eq!(lines, vec![1, 2, 3, 4, 5, 96, 97, 98, 99, 100]);
 }

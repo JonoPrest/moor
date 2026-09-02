@@ -16,7 +16,8 @@ expression: r
     {
       "type": "Expander",
       "hidden": 3,
-      "dir": "Both"
+      "dir": "Both",
+      "gap": 0
     }
   ]
 }

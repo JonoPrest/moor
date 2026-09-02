@@ -9,6 +9,7 @@ use crate::ids::{
     BlobOid, CommentId, CommitOid, RepoId, ReviewId, ThreadId, Timestamp, TreeOid, WorkspaceId,
 };
 use crate::invariants::{LineRange, NonEmpty, RepoPath};
+use crate::render::ExpandDir;
 
 /// A named group of repositories.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -384,13 +385,78 @@ pub struct ViewedMark {
     pub blob_oid: Option<BlobOid>,
 }
 
-/// Options that change the render model; part of every render cache key.
+/// How far one hidden run has been pushed apart. `up` is revealed going
+/// up from the hunk below the gap, `down` going down from the hunk above
+/// it, in lines; the render clamps both to what the gap actually holds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct GapExpansion {
+    /// Which gap: gap `i` is the hidden run before visible group `i`, and
+    /// the last one is the run after the final group. Groups are decided
+    /// by `context_lines` alone, so a gap keeps its number however far it
+    /// is opened.
+    pub gap: u32,
+    pub up: u32,
+    pub down: u32,
+}
+
+/// The gaps a render has opened: at most one entry per gap, ordered by
+/// gap, so the same set of expansions is always the same cache key.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(transparent)]
+pub struct Expansions(Vec<GapExpansion>);
+
+impl Expansions {
+    #[must_use]
+    pub fn as_slice(&self) -> &[GapExpansion] {
+        &self.0
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// What `gap` has been opened to, `(up, down)`, zero when untouched.
+    #[must_use]
+    pub fn of(&self, gap: u32) -> (u32, u32) {
+        self.0
+            .iter()
+            .find(|e| e.gap == gap)
+            .map_or((0, 0), |e| (e.up, e.down))
+    }
+
+    /// Open `gap` by `step` more lines in `dir`, keeping the entries
+    /// ordered and unique.
+    #[must_use]
+    pub fn opened(&self, gap: u32, dir: ExpandDir, step: u32) -> Self {
+        let (up, down) = self.of(gap);
+        let (up, down) = match dir {
+            ExpandDir::Up => (up.saturating_add(step), down),
+            ExpandDir::Down => (up, down.saturating_add(step)),
+            ExpandDir::Both => (up.saturating_add(step), down.saturating_add(step)),
+        };
+        let mut out: Vec<GapExpansion> = self.0.iter().filter(|e| e.gap != gap).copied().collect();
+        out.push(GapExpansion { gap, up, down });
+        out.sort_by_key(|e| e.gap);
+        Self(out)
+    }
+}
+
+/// Options that change the render model; part of every render cache key.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct RenderOpts {
     pub ignore_whitespace: bool,
     pub context_lines: u32,
+    /// Hidden runs the reader has opened, one gap at a time (`enter` on an
+    /// expander, `z u`/`z d`). Widening `context_lines` instead would move
+    /// every other hunk in the file.
+    #[serde(default)]
+    pub expanded: Expansions,
 }
 
 impl Default for RenderOpts {
@@ -398,6 +464,7 @@ impl Default for RenderOpts {
         Self {
             ignore_whitespace: false,
             context_lines: 3,
+            expanded: Expansions::default(),
         }
     }
 }
