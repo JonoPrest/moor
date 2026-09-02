@@ -186,12 +186,12 @@ describe("Tree", () => {
     expect(Element.hasAttribute(items->Array.getUnsafe(2), "data-focused"))->toBe(true)
     FireEvent.click(items->Array.getUnsafe(2))
     let calls = mock(dispatch).calls
-    // A tree click is the mouse alias of `enter` on a tree file: the same
-    // deliberate open, pinned to the top of the viewport.
+    // A tree click is the mouse alias of `enter` on a tree file: it runs
+    // the same command, so the two cannot drift.
     let opened = calls->Array.some(
       args =>
         switch args->Array.getUnsafe(0) {
-        | Action.OpenFileAt({landing: Pin}) => true
+        | Action.RunCommand({command: Open}) => true
         | _ => false
         },
     )
@@ -644,14 +644,15 @@ describe("Tree (rows)", () => {
     expect(Screen.getByText("−1"))->toBeTruthy
     let badge = Element.querySelector(container, ".tree-threads")->Nullable.toOption->Option.getExn
     expect(Element.textContent(badge))->toBe("2")
-    // Clicking a file opens it.
+    // Clicking a file focuses it and runs `Open` — the chord's own
+    // decision, including where in an already-open file to land.
     FireEvent.click(Screen.getByText("lib.rs"))
     let calls = mock(dispatch).calls
-    switch calls->Array.getUnsafe(Array.length(calls) - 1)->Array.getUnsafe(0) {
-    | Action.OpenFileAt({file, landing}) => {
-        expect(file.path)->toBe("src/lib.rs")
-        expect(landing)->toBe(Pin)
-      }
+    let last = calls->Array.getUnsafe(Array.length(calls) - 1)->Array.getUnsafe(0)
+    let focused = calls->Array.getUnsafe(Array.length(calls) - 2)->Array.getUnsafe(0)
+    expect(last)->toEqual(Action.RunCommand({command: Open}))
+    switch focused {
+    | Action.SetFocus({focus: Tree({index})}) => expect(index)->toBe(2)
     | _ => expect(false)->toBe(true)
     }
   })

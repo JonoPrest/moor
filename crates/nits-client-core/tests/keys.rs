@@ -1417,3 +1417,36 @@ fn stepping_over_a_file_boundary_follows_but_a_jump_pins() {
         "a file picked out of the tree is pinned"
     );
 }
+
+#[test]
+fn re_opening_the_file_already_open_keeps_its_window_and_pins_it() {
+    // `enter` on the tree item for the open file (and its mouse alias,
+    // the tree click, which runs the same command) must not throw the
+    // reader back to row 0 — it lands on the window they are looking at,
+    // pinned so a file scrolled off screen comes back.
+    let mut core = on_row(120, Side::Head);
+    let first_row = core.view().diff.as_ref().expect("a file is open").first_row;
+    assert!(first_row > 0, "the viewport has moved off the start");
+    let want = path("src/a.rs");
+    let index = nits_client_core::visible_nodes(core.view())
+        .iter()
+        .position(|n| matches!(n, nits_client_core::TreeNode::File { path, .. } if *path == want))
+        .expect("a.rs is in the tree");
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::Tree { index },
+    }))
+    .unwrap();
+    press(&mut core, "enter").unwrap();
+    assert_eq!(
+        core.view().focus,
+        Focus::Diff {
+            row: first_row,
+            side: Side::Head
+        }
+    );
+    assert_eq!(
+        core.view().scroll.map(|s| s.align),
+        Some(nits_client_core::ScrollAlign::Top),
+        "picking a file out of the tree pins it, open or not"
+    );
+}
