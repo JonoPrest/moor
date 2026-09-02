@@ -26,11 +26,12 @@ module Item = {
     ~onApply: unit => unit,
     ~onOriginal: unit => unit,
   ) => {
-    let flags = [
-      thread.resolved ? "resolved" : "",
-      thread.outdated ? "outdated" : "",
-      thread.pending ? "pending" : "",
-    ]->Array.filter(s => s != "")
+    let flags =
+      [
+        thread.resolved ? "resolved" : "",
+        thread.outdated ? "outdated" : "",
+        thread.pending ? "pending" : "",
+      ]->Array.filter(s => s != "")
     Attrs.focused(
       <li className={"thread-item " ++ flags->Array.join(" ")} onClick={_ => onSelect()}>
         <div className="thread-meta">
@@ -39,7 +40,9 @@ module Item = {
           {thread.replies > 0
             ? <UI.Badge text={Int.toString(thread.replies) ++ " replies"} />
             : React.null}
-          {thread.pending ? <span className="thread-pending"> {React.string("…")} </span> : React.null}
+          {thread.pending
+            ? <span className="thread-pending"> {React.string("…")} </span>
+            : React.null}
         </div>
         {focused
           ? <ul className="thread-comments">
@@ -51,7 +54,9 @@ module Item = {
                     <span title={Stepper.absolute(c.created)}>
                       {React.string(Stepper.relative(c.created))}
                     </span>
-                    {c.pending ? <span className="thread-pending"> {React.string("…")} </span> : React.null}
+                    {c.pending
+                      ? <span className="thread-pending"> {React.string("…")} </span>
+                      : React.null}
                   </div>
                   <div className="thread-body"> {React.string(c.body)} </div>
                 </li>

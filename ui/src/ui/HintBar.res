@@ -38,7 +38,8 @@ let make = (
     </span>
     {leader != "" && !pending
       ? <span className="leader-chip" title={"leader: " ++ leader}>
-          <UI.Kbd keys=leader /> {React.string(" leader")}
+          <UI.Kbd keys=leader />
+          {React.string(" leader")}
         </span>
       : React.null}
     {pending
@@ -53,7 +54,8 @@ let make = (
     {hints
     ->Array.map(h =>
       <span key={h.keys ++ h.label} className="hint">
-        <UI.Kbd keys=h.keys /> {React.string(" " ++ h.label)}
+        <UI.Kbd keys=h.keys />
+        {React.string(" " ++ h.label)}
       </span>
     )
     ->React.array}

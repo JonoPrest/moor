@@ -118,14 +118,15 @@ let make = (
         </div>
       : React.null}
     <div
-      className={"diff-scroll" ++ (collapsed ? " hidden" : "")}
-      ref={ReactDOM.Ref.domRef(scrollRef)}>
+      className={"diff-scroll" ++ (collapsed ? " hidden" : "")} ref={ReactDOM.Ref.domRef(scrollRef)}
+    >
       <div
         className="diff-rows"
         style={{
           height: Int.toString(virtualizer->Virtual.getTotalSize) ++ "px",
           position: "relative",
-        }}>
+        }}
+      >
         {items
         ->Array.map(item => {
           let style: ReactDOM.Style.t = {
@@ -158,7 +159,12 @@ let make = (
                 | _ => React.null
                 }
                 <InlineThread
-                  key=thread.id thread focused={focusedThread == Some(ti)} index=ti composer dispatch
+                  key=thread.id
+                  thread
+                  focused={focusedThread == Some(ti)}
+                  index=ti
+                  composer
+                  dispatch
                 />
               })
               ->React.array}
@@ -178,7 +184,8 @@ let make = (
               ref={ReactDOM.Ref.callbackDomRef(el => {
                 (virtualizer->Virtual.measureElement)(el)
                 None
-              })}>
+              })}
+            >
               inner
             </div>
           Attrs.withData(el, [("data-index", Int.toString(item.index))])

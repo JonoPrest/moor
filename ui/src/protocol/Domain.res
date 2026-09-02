@@ -56,8 +56,7 @@ module ResolvedSource = {
   @schema @tag("type")
   type t =
     | @as("Commit") Commit({oid: commitOid})
-    | @as("WorkingTree")
-    WorkingTree({dirty: array<string>, branch: @s.null option<string>})
+    | @as("WorkingTree") WorkingTree({dirty: array<string>, branch: @s.null option<string>})
 }
 
 module ResolvedRef = {
@@ -129,7 +128,12 @@ module Anchor = {
   @schema @tag("type")
   type t =
     | @as("Review") Review({})
-    | @as("File") File({@as("repo_id") repoId: repoId, path: string, @as("blob_oid") blobOid: blobOid})
+    | @as("File")
+    File({
+        @as("repo_id") repoId: repoId,
+        path: string,
+        @as("blob_oid") blobOid: blobOid,
+      })
     | @as("Lines")
     Lines({
         @as("repo_id") repoId: repoId,
@@ -266,7 +270,11 @@ module TreeEntry = {
 
 module TreeSnapshot = {
   @schema
-  type t = {@as("repo_id") repoId: repoId, @as("root_oid") rootOid: treeOid, entries: array<TreeEntry.t>}
+  type t = {
+    @as("repo_id") repoId: repoId,
+    @as("root_oid") rootOid: treeOid,
+    entries: array<TreeEntry.t>,
+  }
 }
 
 module TreeDelta = {

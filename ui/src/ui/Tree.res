@@ -16,7 +16,12 @@ let rec flatten = (nodes: array<TreeNode.t>, depth: int, out: array<(TreeNode.t,
   })
 
 @react.component
-let make = (~tree: TreeView.t, ~focus: Focus.t, ~home: option<string>=?, ~dispatch: Action.t => unit) => {
+let make = (
+  ~tree: TreeView.t,
+  ~focus: Focus.t,
+  ~home: option<string>=?,
+  ~dispatch: Action.t => unit,
+) => {
   let rows = []
   flatten(tree.roots, 0, rows)
   let focusedIndex = switch focus {
@@ -33,7 +38,8 @@ let make = (~tree: TreeView.t, ~focus: Focus.t, ~home: option<string>=?, ~dispat
           type_="button"
           className="tree-home"
           title="back to reviews (esc esc)"
-          onClick={_ => dispatch(CloseReview({}))}>
+          onClick={_ => dispatch(CloseReview({}))}
+        >
           {React.string("⌂ " ++ name)}
         </button>
       | None => React.string("Files")
@@ -55,7 +61,8 @@ let make = (~tree: TreeView.t, ~focus: Focus.t, ~home: option<string>=?, ~dispat
             onClick={ev => {
               onSelect(ev)
               dispatch(ToggleDir({repoId, path}))
-            }}>
+            }}
+          >
             <span className="tree-glyph"> {React.string(expanded ? "▾" : "▸")} </span>
             <span className="tree-name"> {React.string(name)} </span>
             {changedBelow > 0
@@ -66,14 +73,14 @@ let make = (~tree: TreeView.t, ~focus: Focus.t, ~home: option<string>=?, ~dispat
           <li
             key={Int.toString(i)}
             className={"tree-file" ++
-            (open_ ? " tree-open" : "") ++
-            (viewed == Viewed ? " tree-viewed-done" : "")}
+            (open_ ? " tree-open" : "") ++ (viewed == Viewed ? " tree-viewed-done" : "")}
             role="treeitem"
             style
             onClick={ev => {
               onSelect(ev)
               dispatch(Viewport({file: {repoId, path}, firstRow: 0, lastRow: 59}))
-            }}>
+            }}
+          >
             <span className="tree-glyph" />
             <span className="tree-name"> {React.string(name)} </span>
             {viewed == Viewed

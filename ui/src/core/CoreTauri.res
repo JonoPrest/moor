@@ -21,7 +21,10 @@ let errorCommand = "client_error"
 /// Console plus the host log (the console is invisible in a packaged app).
 let reportError = (message: string) => {
   Console.error(message)
-  invoke(errorCommand, JSON.Encode.object(Dict.fromArray([("message", JSON.Encode.string(message))])))
+  invoke(
+    errorCommand,
+    JSON.Encode.object(Dict.fromArray([("message", JSON.Encode.string(message))])),
+  )
   ->Promise.then(_ => Promise.resolve())
   ->Promise.catch(_ => Promise.resolve())
   ->ignore
@@ -32,16 +35,15 @@ let make = (~onError: string => unit=reportError): Core.t => {
   // `listen` registers asynchronously; anything the host emits before it
   // resolves is lost, so `attach` (which makes the host emit every
   // section) waits for it.
-  let listening =
-    listen(viewEvent, ev =>
-      switch Core.patchesOfJson(ev.payload) {
-      | Ok(patches) => Core.Store.apply(store, patches)
-      | Error(e) => onError("view event: " ++ e)
-      }
-    )->Promise.catch(exn => {
-      onError("listen: " ++ Core.message(exn))
-      Promise.resolve(() => ())
-    })
+  let listening = listen(viewEvent, ev =>
+    switch Core.patchesOfJson(ev.payload) {
+    | Ok(patches) => Core.Store.apply(store, patches)
+    | Error(e) => onError("view event: " ++ e)
+    }
+  )->Promise.catch(exn => {
+    onError("listen: " ++ Core.message(exn))
+    Promise.resolve(() => ())
+  })
   {
     dispatch: action => {
       let args = JSON.Encode.object(Dict.fromArray([("action", Core.actionToJson(action))]))

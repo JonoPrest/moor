@@ -142,7 +142,10 @@ let make = (
           {React.string("Actions")}
         </span>
         <span className="palette-hint">
-          <UI.Kbd keys="tab" /> {React.string(" switch · ")} <UI.Kbd keys="esc" /> {React.string(" close")}
+          <UI.Kbd keys="tab" />
+          {React.string(" switch · ")}
+          <UI.Kbd keys="esc" />
+          {React.string(" close")}
         </span>
       </div>
       <UI.TextInput
@@ -194,7 +197,8 @@ let make = (
                       }
                       None
                     })}
-                    onClick={_ => openHit(h)}>
+                    onClick={_ => openHit(h)}
+                  >
                     <span className="hit-path">
                       {React.string(h.path ++ ":" ++ Int.toString(h.line))}
                     </span>
@@ -203,7 +207,9 @@ let make = (
                 )
                 ->React.array}
                 {c.truncated
-                  ? <li className="palette-truncated"> {React.string("more matches not shown")} </li>
+                  ? <li className="palette-truncated">
+                      {React.string("more matches not shown")}
+                    </li>
                   : React.null}
               </ul>
             | None => React.null
@@ -229,7 +235,8 @@ let make = (
               onClick={_ => {
                 dispatch(ActionPalette({open_: false}))
                 dispatch(RunCommand({command: h.command}))
-              }}>
+              }}
+            >
               <span className="hit-text"> {React.string(h.label)} </span>
               <UI.Kbd keys=h.keys />
             </li>

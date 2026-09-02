@@ -113,7 +113,11 @@ module Shell = {
       <Tree tree=model.tree focus=model.focus ?home dispatch />
     } else {
       <ReviewList
-        reviews=model.reviews workspaces=model.workspaces connection=model.connection focus=model.focus dispatch
+        reviews=model.reviews
+        workspaces=model.workspaces
+        connection=model.connection
+        focus=model.focus
+        dispatch
       />
     }
     // The sidebar auto-expands to fit full file names while the tree is
@@ -129,7 +133,8 @@ module Shell = {
               type_="button"
               className="sidebar-rail"
               title=?{Chrome.tip(model.chrome, ToggleSidebar)}
-              onClick={_ => dispatch(ToggleSidebar({}))}>
+              onClick={_ => dispatch(ToggleSidebar({}))}
+            >
               {React.string("⟩")}
             </button>
           : <aside className={"app-left" ++ (treeFocused ? " app-left-expanded" : "")}>
@@ -142,7 +147,8 @@ module Shell = {
                 type_="button"
                 className="sidebar-collapse"
                 title=?{Chrome.tip(model.chrome, ToggleSidebar)}
-                onClick={_ => dispatch(ToggleSidebar({}))}>
+                onClick={_ => dispatch(ToggleSidebar({}))}
+              >
                 {React.string("⟨ hide")}
               </button>
             </aside>}
@@ -234,9 +240,7 @@ module Shell = {
           }}
         </div>
       </div>
-      <WhichKey
-        pendingKeys=model.pendingKeys pendingLabel=model.pendingLabel hints=model.hints
-      />
+      <WhichKey pendingKeys=model.pendingKeys pendingLabel=model.pendingLabel hints=model.hints />
       <HintBar
         hints=model.hints
         pendingKeys=model.pendingKeys

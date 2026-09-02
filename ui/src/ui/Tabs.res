@@ -19,7 +19,8 @@ let make = (
         ariaSelected=active
         className="tab"
         title=?{Chrome.tip(chrome, command)}
-        onClick={_ => dispatch(SetTab({tab: target}))}>
+        onClick={_ => dispatch(SetTab({tab: target}))}
+      >
         {React.string(label)}
         {switch count {
         | Some(n) => <UI.Badge text={Int.toString(n)} />

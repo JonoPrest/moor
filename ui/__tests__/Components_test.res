@@ -13,31 +13,37 @@ let kebab = (name: string) =>
 
 describe("Row", () => {
   Fixtures.variants("protocol", "Row")->Array.forEach(v => {
-    [View.Layout.Unified, Split]->Array.forEach(layout => {
-      let layoutName = layout == Unified ? "Unified" : "Split"
-      test(`renders ${v} (${layoutName}) with its semantic class`, () => {
-        let row = Fixtures.parse(Render.Row.schema, "protocol", "Row", v)
-        let {container} = render(
-          <Row row layout index=3 focused={v == "Added"} threads={v == "Modified" ? 2 : 0} />,
+    [View.Layout.Unified, Split]->Array.forEach(
+      layout => {
+        let layoutName = layout == Unified ? "Unified" : "Split"
+        test(
+          `renders ${v} (${layoutName}) with its semantic class`,
+          () => {
+            let row = Fixtures.parse(Render.Row.schema, "protocol", "Row", v)
+            let {container} = render(
+              <Row row layout index=3 focused={v == "Added"} threads={v == "Modified" ? 2 : 0} />,
+            )
+            let el =
+              Element.querySelector(container, "[role=\"row\"]")->Nullable.toOption->Option.getExn
+            expect(Element.className(el))->toContain("row-" ++ kebab(v))
+            expect(Element.className(el))->toContain(layout == Split ? "row-split" : "row-unified")
+            expect(Element.getAttribute(el, "data-row-index"))->toEqual(Nullable.make("3"))
+            expect(Element.hasAttribute(el, "data-focused"))->toBe(v == "Added")
+            if v == "Modified" {
+              expect(Element.querySelector(el, ".row-threads"))->not_->toBeNull
+              expect(Element.querySelector(el, ".span-keyword"))->not_->toBeNull
+              expect(Element.querySelector(el, ".cell-changed"))->not_->toBeNull
+            }
+
+            // Split layout always shows both sides for line rows.
+            if ["Context", "Removed", "Added", "Modified"]->Array.includes(v) && layout == Split {
+              expect(Element.querySelector(el, ".cell-left"))->not_->toBeNull
+              expect(Element.querySelector(el, ".cell-right"))->not_->toBeNull
+            }
+          },
         )
-        let el =
-          Element.querySelector(container, "[role=\"row\"]")->Nullable.toOption->Option.getExn
-        expect(Element.className(el))->toContain("row-" ++ kebab(v))
-        expect(Element.className(el))->toContain(layout == Split ? "row-split" : "row-unified")
-        expect(Element.getAttribute(el, "data-row-index"))->toEqual(Nullable.make("3"))
-        expect(Element.hasAttribute(el, "data-focused"))->toBe(v == "Added")
-        if v == "Modified" {
-          expect(Element.querySelector(el, ".row-threads"))->not_->toBeNull
-          expect(Element.querySelector(el, ".span-keyword"))->not_->toBeNull
-          expect(Element.querySelector(el, ".cell-changed"))->not_->toBeNull
-        }
-        // Split layout always shows both sides for line rows.
-        if ["Context", "Removed", "Added", "Modified"]->Array.includes(v) && layout == Split {
-          expect(Element.querySelector(el, ".cell-left"))->not_->toBeNull
-          expect(Element.querySelector(el, ".cell-right"))->not_->toBeNull
-        }
-      })
-    })
+      },
+    )
   })
 })
 
@@ -100,11 +106,7 @@ describe("InlineThread", () => {
     // While a reply is being written the composer replaces the actions.
     rerender(
       <InlineThread
-        thread
-        focused=true
-        index=3
-        composer={<div> {React.string("the composer")} </div>}
-        dispatch
+        thread focused=true index=3 composer={<div> {React.string("the composer")} </div>} dispatch
       />,
     )
     expect(Screen.getByText("the composer"))->toBeTruthy
@@ -175,18 +177,20 @@ describe("Tree", () => {
     expect(Element.hasAttribute(items->Array.getUnsafe(2), "data-focused"))->toBe(true)
     FireEvent.click(items->Array.getUnsafe(2))
     let calls = mock(dispatch).calls
-    let opened = calls->Array.some(args =>
-      switch args->Array.getUnsafe(0) {
-      | Action.Viewport(_) => true
-      | _ => false
-      }
+    let opened = calls->Array.some(
+      args =>
+        switch args->Array.getUnsafe(0) {
+        | Action.Viewport(_) => true
+        | _ => false
+        },
     )
     expect(opened)->toBe(true)
     FireEvent.click(items->Array.getUnsafe(1))
     let calls = mock(dispatch).calls
-    let focused = calls->Array.some(args =>
-      args->Array.getUnsafe(0) == Action.SetFocus({focus: Tree({index: 1})})
-    )
+    let focused =
+      calls->Array.some(
+        args => args->Array.getUnsafe(0) == Action.SetFocus({focus: Tree({index: 1})}),
+      )
     expect(focused)->toBe(true)
     switch calls->Array.getUnsafe(Array.length(calls) - 1)->Array.getUnsafe(0) {
     | Action.ToggleDir(_) => ()
@@ -215,7 +219,9 @@ describe("Threads", () => {
     let dispatch = fn()
     let thread = Fixtures.parse(View.ThreadView.schema, "client", "ThreadView", "default")
     let _ = render(
-      <Threads title="Threads" threads=[thread] focus={Thread({index: 0})} indexOffset=0 dispatch />,
+      <Threads
+        title="Threads" threads=[thread] focus={Thread({index: 0})} indexOffset=0 dispatch
+      />,
     )
     FireEvent.click(Screen.getByText("Apply suggestion (a)"))
     // The click also bubbles to the row (SetFocus), so not the last call.
@@ -232,16 +238,19 @@ describe("Threads", () => {
     let dispatch = fn()
     let thread = Fixtures.parse(View.ThreadView.schema, "client", "ThreadView", "default")
     let {container} = render(
-      <Threads title="Threads" threads=[thread] focus={Thread({index: 0})} indexOffset=0 dispatch />,
+      <Threads
+        title="Threads" threads=[thread] focus={Thread({index: 0})} indexOffset=0 dispatch
+      />,
     )
     let bodies = Element.querySelectorAll(container, ".thread-body")
     expect(Array.length(bodies))->toBe(Array.length(thread.comments))
     FireEvent.click(Element.querySelector(container, ".thread-item")->Nullable.getExn)
-    let opened = mock(dispatch).calls->Array.some(args =>
-      switch args->Array.getUnsafe(0) {
-      | Action.Viewport(_) => true
-      | _ => false
-      }
+    let opened = mock(dispatch).calls->Array.some(
+      args =>
+        switch args->Array.getUnsafe(0) {
+        | Action.Viewport(_) => true
+        | _ => false
+        },
     )
     expect(opened)->toBe(true)
     cleanup()
@@ -260,11 +269,12 @@ describe("Palette", () => {
     let hit = cs.hits->Array.getUnsafe(0)
     FireEvent.click(Screen.getByText(hit.path ++ ":" ++ Int.toString(hit.line)))
     let calls = mock(dispatch).calls
-    let jumped = calls->Array.some(args =>
-      switch args->Array.getUnsafe(0) {
-      | Action.Viewport({file}) => file.path == hit.path
-      | _ => false
-      }
+    let jumped = calls->Array.some(
+      args =>
+        switch args->Array.getUnsafe(0) {
+        | Action.Viewport({file}) => file.path == hit.path
+        | _ => false
+        },
     )
     expect(jumped)->toBe(true)
     cleanup()
@@ -288,8 +298,10 @@ describe("Context expanders", () => {
     cleanup()
     let row = Fixtures.parse(Render.Row.schema, "protocol", "Row", "Expander")
     let expand = fn()
-    let _ = render(<Row row layout=Unified index=0 focused=false threads=0 onExpand={() => expand()} />)
-    FireEvent.click(Screen.getByTextRe(%re("/more lines/")))
+    let _ = render(
+      <Row row layout=Unified index=0 focused=false threads=0 onExpand={() => expand()} />,
+    )
+    FireEvent.click(Screen.getByTextRe(/more lines/))
     expect(expand)->toHaveBeenCalled
   })
 })
@@ -305,19 +317,21 @@ describe("Jump to original diff", () => {
       context: Some(Fixtures.parse(Domain.ChangeKind.schema, "protocol", "ChangeKind", "Modified")),
     }
     let _ = render(
-      <Threads title="Threads" threads=[outdated] focus={Thread({index: 0})} indexOffset=0 dispatch />,
+      <Threads
+        title="Threads" threads=[outdated] focus={Thread({index: 0})} indexOffset=0 dispatch
+      />,
     )
     FireEvent.click(Screen.getByText("Open original diff (enter)"))
     expect(dispatch)->toHaveBeenCalledWith(Action.OpenOriginalDiff({threadId: outdated.id}))
     // Clicking the row itself also jumps to the original, not the moved-on diff.
     let calls = mock(dispatch).calls
-    let jumped =
-      calls->Array.every(args =>
+    let jumped = calls->Array.every(
+      args =>
         switch args->Array.getUnsafe(0) {
         | Action.Viewport(_) => false
         | _ => true
-        }
-      )
+        },
+    )
     expect(jumped)->toBe(true)
   })
 
@@ -329,9 +343,7 @@ describe("Jump to original diff", () => {
     )
     expect(Element.querySelector(container, ".original-banner"))->not_->toBeNull
     cleanup()
-    let {container} = render(
-      <DiffView diff=base layout=Unified focus={Diff({row: 0})} dispatch />,
-    )
+    let {container} = render(<DiffView diff=base layout=Unified focus={Diff({row: 0})} dispatch />)
     expect(Element.querySelector(container, ".original-banner"))->toBeNull
   })
 })
@@ -341,7 +353,9 @@ describe("DiffView (viewed)", () => {
     let dispatch = fn()
     let base = Fixtures.parse(View.DiffView.schema, "client", "DiffView", "default")
     let viewed = {...base, viewed: Viewed}
-    let {container} = render(<DiffView diff=viewed layout=Unified focus={Diff({row: 121})} dispatch />)
+    let {container} = render(
+      <DiffView diff=viewed layout=Unified focus={Diff({row: 121})} dispatch />,
+    )
     expect(Element.querySelector(container, ".diff-collapsed"))->not_->toBeNull
     expect(Element.querySelector(container, ".diff-scroll.hidden"))->not_->toBeNull
     FireEvent.click(Screen.getByText("show anyway"))
@@ -369,7 +383,9 @@ describe("RefSpecText", () => {
       WorkingTree({}),
       Head({}),
       Upstream({}),
-    ]->Array.forEach(spec => expect(RefSpecText.parse(RefSpecText.print(spec)))->toEqual(Some(spec)))
+    ]->Array.forEach(
+      spec => expect(RefSpecText.parse(RefSpecText.print(spec)))->toEqual(Some(spec)),
+    )
   })
 })
 
@@ -408,7 +424,7 @@ describe("NewReview (no repos)", () => {
     let dispatch = fn()
     let _ = render(<NewReview workspaces=[] onClose={() => ()} dispatch />)
     expect(Array.length(Screen.queryAllByText("Create")))->toBe(0)
-    let _ = Screen.getByTextRe(%re("/workspace attach/"))
+    let _ = Screen.getByTextRe(/workspace attach/)
     expect(dispatch)->not_->toHaveBeenCalled
   })
 })
@@ -535,18 +551,19 @@ describe("ScopeControl", () => {
     let review = Fixtures.parse(Domain.Review.schema, "protocol", "Review", "default")
     let ws = Fixtures.parse(Domain.Workspace.schema, "protocol", "Workspace", "default")
     let prefs = View.ViewModel.empty.prefs
-    let render_ = (scope, stepper) => render(
-      <ReviewHeader
-        reviews=[review]
-        workspaces=[ws]
-        resolvedTargets=[]
-        openReview=Some(review.id)
-        prefs
-        scope
-        ?stepper
-        dispatch
-      />,
-    )
+    let render_ = (scope, stepper) =>
+      render(
+        <ReviewHeader
+          reviews=[review]
+          workspaces=[ws]
+          resolvedTargets=[]
+          openReview=Some(review.id)
+          prefs
+          scope
+          ?stepper
+          dispatch
+        />,
+      )
     let _ = render_(Domain.DiffScope.All({}), None)
     let all = Screen.getByText("All changes")
     expect(Element.hasAttribute(all, "data-active"))->toBe(true)
@@ -582,12 +599,8 @@ describe("ScopeControl", () => {
 describe("Tabs", () => {
   test("marks the active tab, shows counts, dispatches SetTab on click", () => {
     let dispatch = fn()
-    let chrome: array<View.Hint.t> = [
-      {keys: "2", command: TabConversation, label: "conversation"},
-    ]
-    let {container} = render(
-      <Tabs tab=FilesChanged fileCount=4 threadCount=2 chrome dispatch />,
-    )
+    let chrome: array<View.Hint.t> = [{keys: "2", command: TabConversation, label: "conversation"}]
+    let {container} = render(<Tabs tab=FilesChanged fileCount=4 threadCount=2 chrome dispatch />)
     let tabs = Element.querySelectorAll(container, "[role=\"tab\"]")
     expect(Array.length(tabs))->toBe(3)
     expect(Element.hasAttribute(tabs->Array.getUnsafe(0), "data-active"))->toBe(true)
@@ -612,8 +625,7 @@ describe("Tree (rows)", () => {
     // lib.rs carries +9 −1 and a 2-thread badge (from the fixture).
     expect(Screen.getByText("+9"))->toBeTruthy
     expect(Screen.getByText("−1"))->toBeTruthy
-    let badge =
-      Element.querySelector(container, ".tree-threads")->Nullable.toOption->Option.getExn
+    let badge = Element.querySelector(container, ".tree-threads")->Nullable.toOption->Option.getExn
     expect(Element.textContent(badge))->toBe("2")
     // Clicking a file opens it.
     FireEvent.click(Screen.getByText("lib.rs"))

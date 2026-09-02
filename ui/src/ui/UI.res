@@ -26,7 +26,14 @@ module Box = {
 module Panel = {
   /// A bordered region with a header; `grow` fills the remaining height.
   @react.component
-  let make = (~title: string, ~children, ~grow=false, ~actions=React.null, ~role=?, ~ariaLabel=?) => {
+  let make = (
+    ~title: string,
+    ~children,
+    ~grow=false,
+    ~actions=React.null,
+    ~role=?,
+    ~ariaLabel=?,
+  ) => {
     let className = "panel flex flex-col" ++ (grow ? " min-h-0 flex-1" : "")
     <section className ?role ?ariaLabel>
       <header className="panel-header">
@@ -48,7 +55,9 @@ module Button = {
     | Ghost => "btn btn-ghost"
     }
     // Explicit type: inside a <form> a bare <button> would submit it.
-    <button type_="button" className ?title onClick={_ => onClick()}> {React.string(label)} </button>
+    <button type_="button" className ?title onClick={_ => onClick()}>
+      {React.string(label)}
+    </button>
   }
 }
 
@@ -87,12 +96,18 @@ module Badge = {
 module Select = {
   /// A native select over `(value, label)` options.
   @react.component
-  let make = (~value: string, ~options: array<(string, string)>, ~onChange: string => unit, ~ariaLabel=?) =>
+  let make = (
+    ~value: string,
+    ~options: array<(string, string)>,
+    ~onChange: string => unit,
+    ~ariaLabel=?,
+  ) =>
     <select
       className="text-input"
       value
       ?ariaLabel
-      onChange={ev => onChange(ReactEvent.Form.target(ev)["value"])}>
+      onChange={ev => onChange(ReactEvent.Form.target(ev)["value"])}
+    >
       {options
       ->Array.map(((v, label)) => <option key=v value=v> {React.string(label)} </option>)
       ->React.array}

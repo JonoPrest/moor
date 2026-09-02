@@ -9,7 +9,11 @@ let firstRepo = (ws: Workspace.t): option<target> =>
   ws.repos[0]->Option.map(r => {repoId: r.id, base: "main", head: "worktree"})
 
 @react.component
-let make = (~workspaces: array<Workspace.t>, ~onClose: unit => unit, ~dispatch: Action.t => unit) => {
+let make = (
+  ~workspaces: array<Workspace.t>,
+  ~onClose: unit => unit,
+  ~dispatch: Action.t => unit,
+) => {
   let (title, setTitle) = React.useState(() => "")
   // Workspaces arrive after mount (listed on subscribe), so the selection is
   // resolved from props on every render; state only holds an explicit pick.
@@ -36,7 +40,8 @@ let make = (~workspaces: array<Workspace.t>, ~onClose: unit => unit, ~dispatch: 
     | _ => None
     }
   )
-  let valid = String.trim(title) != "" && Array.length(parsed) > 0 && parsed->Array.every(Option.isSome)
+  let valid =
+    String.trim(title) != "" && Array.length(parsed) > 0 && parsed->Array.every(Option.isSome)
   let submit = () =>
     if valid {
       dispatch(
@@ -51,6 +56,7 @@ let make = (~workspaces: array<Workspace.t>, ~onClose: unit => unit, ~dispatch: 
     }
   let update = (i, f: target => target) =>
     setTargets(ts => ts->Array.mapWithIndex((t, j) => i == j ? f(t) : t))
+
   {
     <form
       className="new-review panel"
@@ -58,7 +64,8 @@ let make = (~workspaces: array<Workspace.t>, ~onClose: unit => unit, ~dispatch: 
       onSubmit={ev => {
         ReactEvent.Form.preventDefault(ev)
         submit()
-      }}>
+      }}
+    >
       <UI.TextInput
         value=title
         placeholder="Title"
@@ -88,8 +95,16 @@ let make = (~workspaces: array<Workspace.t>, ~onClose: unit => unit, ~dispatch: 
             ->Option.getOr([])}
             onChange={id => update(i, t => {...t, repoId: id})}
           />
-          <UI.TextInput value=t.base placeholder="base (main, tag:v1, commit:…)" onChange={b => update(i, t => {...t, base: b})} />
-          <UI.TextInput value=t.head placeholder="head (worktree, head, branch)" onChange={h => update(i, t => {...t, head: h})} />
+          <UI.TextInput
+            value=t.base
+            placeholder="base (main, tag:v1, commit:…)"
+            onChange={b => update(i, t => {...t, base: b})}
+          />
+          <UI.TextInput
+            value=t.head
+            placeholder="head (worktree, head, branch)"
+            onChange={h => update(i, t => {...t, head: h})}
+          />
           <UI.Button
             label="−"
             kind=Ghost

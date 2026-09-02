@@ -15,7 +15,8 @@ module Seg = {
         className="seg"
         ?title
         ariaPressed={active ? #"true" : #"false"}
-        onClick={_ => onClick()}>
+        onClick={_ => onClick()}
+      >
         {React.string(label)}
       </button>
     active ? Attrs.withData(el, [("data-active", "true")]) : el
@@ -178,9 +179,13 @@ let make = (
           />
           <span className="header-totals">
             {React.string(Int.toString(progress.total) ++ " files · ")}
-            <span className="stat-add"> {React.string("+" ++ Int.toString(progress.additions))} </span>
+            <span className="stat-add">
+              {React.string("+" ++ Int.toString(progress.additions))}
+            </span>
             {React.string(" ")}
-            <span className="stat-del"> {React.string("−" ++ Int.toString(progress.deletions))} </span>
+            <span className="stat-del">
+              {React.string("−" ++ Int.toString(progress.deletions))}
+            </span>
           </span>
           <span className={"conn-dot conn-" ++ conn} title=conn />
         </span>

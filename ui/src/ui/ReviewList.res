@@ -36,7 +36,8 @@ let make = (
         onClick={_ => {
           dispatch(SetFocus({focus: Focus.ReviewList({index: i})}))
           dispatch(OpenReview({reviewId: r.id}))
-        }}>
+        }}
+      >
         <span className="review-title"> {React.string(r.title)} </span>
         {r.status == Open ? React.null : <UI.Badge text=status />}
       </li>,
@@ -45,14 +46,20 @@ let make = (
   }
   <UI.Panel
     title="Workspaces"
-    actions={<UI.Button label="refresh (R)" kind=Ghost onClick={() => dispatch(ListWorkspaces({}))} />}>
+    actions={<UI.Button
+      label="refresh (R)" kind=Ghost onClick={() => dispatch(ListWorkspaces({}))}
+    />}
+  >
     {Array.length(workspaces) == 0
       ? <UI.Empty
           text="No workspaces. Run `nits workspace add <name>` then `nits workspace attach <id> [path]`, and refresh (R)."
         />
       : workspaces
         ->Array.map(ws => {
-          let mine = reviews->Array.mapWithIndex((r, i) => (r, i))->Array.filter(((r, _)) => r.workspaceId == ws.id)
+          let mine =
+            reviews
+            ->Array.mapWithIndex((r, i) => (r, i))
+            ->Array.filter(((r, _)) => r.workspaceId == ws.id)
           <section key=ws.id className="workspace-group" ariaLabel=ws.name>
             <header className="workspace-header">
               <span className="workspace-glyph" ariaHidden=true> {React.string("▸")} </span>

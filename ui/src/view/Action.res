@@ -42,7 +42,11 @@ type t =
   | @as("UnresolveThread") UnresolveThread({@as("thread_id") threadId: threadId})
   | @as("ApplySuggestion") ApplySuggestion({@as("comment_id") commentId: commentId})
   | @as("Viewport")
-  Viewport({file: View.FileRef.t, @as("first_row") firstRow: int, @as("last_row") lastRow: int})
+  Viewport({
+      file: View.FileRef.t,
+      @as("first_row") firstRow: int,
+      @as("last_row") lastRow: int,
+    })
   | @as("CloseFile") CloseFile({})
   | @as("ToggleDir") ToggleDir({@as("repo_id") repoId: repoId, path: @s.null option<string>})
   | @as("FileSearch") FileSearch({query: @s.null option<string>})
@@ -62,7 +66,10 @@ type t =
   | @as("CollapseParent") CollapseParent({})
   | @as("CollapseAll") CollapseAll({})
   | @as("SetRenderOpts")
-  SetRenderOpts({@as("ignore_whitespace") ignoreWhitespace: bool, @as("context_lines") contextLines: int})
+  SetRenderOpts({
+      @as("ignore_whitespace") ignoreWhitespace: bool,
+      @as("context_lines") contextLines: int,
+    })
   | @as("MarkViewed") MarkViewed({file: View.FileRef.t})
   | @as("UnmarkViewed") UnmarkViewed({file: View.FileRef.t})
   | @as("ListCommits") ListCommits({@as("repo_id") repoId: repoId})
@@ -71,9 +78,15 @@ type t =
   | @as("OpenOriginalDiff") OpenOriginalDiff({@as("thread_id") threadId: threadId})
   | @as("ExpandContext") ExpandContext({file: View.FileRef.t, full: bool})
   | @as("SetBrowseRef")
-  SetBrowseRef({@as("repo_id") repoId: repoId, @as("ref_spec") refSpec: @s.null option<Domain.RefSpec.t>})
+  SetBrowseRef({
+      @as("repo_id") repoId: repoId,
+      @as("ref_spec") refSpec: @s.null option<Domain.RefSpec.t>,
+    })
   | @as("ContentSearch")
-  ContentSearch({query: @s.null option<string>, @as("all_files") allFiles: bool})
+  ContentSearch({
+      query: @s.null option<string>,
+      @as("all_files") allFiles: bool,
+    })
   | @as("ActionPalette") ActionPalette({@as("open") open_: bool})
   | @as("RunCommand") RunCommand({command: View.Command.t})
   | @as("EnterVisual") EnterVisual({})
