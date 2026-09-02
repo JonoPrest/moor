@@ -4,32 +4,21 @@ on:
     branches: [main]
   pull_request:
 
+# A superseded run tells you nothing; let a new push cancel it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  rust:
+  # Cheap, no Rust toolchain: fails in seconds rather than behind a build.
+  scripts:
+    name: scripts and workflows
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-          components: clippy, rustfmt
-      - uses: taiki-e/install-action@nextest
-      - uses: Swatinem/rust-cache@v2
-      - name: tauri system libraries (nits-client-tauri)
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
-      # `tauri::generate_context!` and nits-client-web's `include_dir!` embed
-      # `crates/nits-client-web/dist` at compile time; `pnpm build` writes it.
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: ui/pnpm-lock.yaml
-      - name: build the web bundle the Rust crates embed
-        working-directory: ui
-        run: pnpm install --frozen-lockfile && pnpm build
       - name: release scripts are sound
         run: shellcheck scripts/*.sh
       # The release workflow is only ever exercised by hand, so lint it here:
@@ -39,14 +28,70 @@ jobs:
         run: |
           bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
           ./actionlint -color
+
+  lint:
+    name: fmt, clippy, wasm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy, rustfmt
+      # Per-job cache key: this job builds check artifacts, `test` builds dev
+      # with codegen and `bench` builds release. One shared cache would have
+      # them overwriting each other's profile on every run.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: lint
+          # A single lint failure on main would otherwise leave main with no
+          # cache at all, and every PR branched from it then builds cold.
+          cache-on-failure: true
+          # Caches are branch-scoped and PR branches are evicted quickly, so
+          # only main's cache is worth keeping; PRs restore from it.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: ./.github/actions/web-bundle
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo check -p nits-protocol -p nits-client-core --target wasm32-unknown-unknown
+
+  test:
+    name: tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@nextest
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: test
+          # A single lint failure on main would otherwise leave main with no
+          # cache at all, and every PR branched from it then builds cold.
+          cache-on-failure: true
+          # Caches are branch-scoped and PR branches are evicted quickly, so
+          # only main's cache is worth keeping; PRs restore from it.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: ./.github/actions/web-bundle
       - run: cargo nextest run --workspace
-      - name: benchmark triggers (small scale)
-        run: NITS_BENCH_FILES=2000 cargo bench -p nits-review-core -p nitsd
       - name: fixtures are up to date
         run: cargo xtask fixtures && git diff --exit-code -- fixtures
+
+  # Benchmarks are a regression *trigger*, not a correctness gate, and cost a
+  # whole release-profile build of the workspace. Run them on main, and on a
+  # PR only when it is labelled `perf`.
+  bench:
+    name: benchmark triggers
+    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'perf')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: bench
+          cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: NITS_BENCH_FILES=2000 cargo bench -p nits-review-core -p nitsd
 
   ui:
     runs-on: ubuntu-latest
