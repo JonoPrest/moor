@@ -73,16 +73,19 @@ jobs:
           cargo xtask release-plan --package '${{ inputs.package }}' | tee plan.json
           version=$(jq -r .version plan.json)
           tag=$(jq -r .tag plan.json)
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "dir=$(jq -r .dir plan.json)" >> "$GITHUB_OUTPUT"
-          # Space-separated, so the build job can loop over it in shell.
-          echo "binaries=$(jq -r '.binaries | join(" ")' plan.json)" >> "$GITHUB_OUTPUT"
-          # "<name>:<dir>" pairs, one system package per binary shipped.
-          echo "packages=$(jq -r '[.packages[] | "\(.name):\(.dir)"] | join(" ")' plan.json)" >> "$GITHUB_OUTPUT"
-          echo "tag_state=$(jq -r .tag_state plan.json)" >> "$GITHUB_OUTPUT"
-          [ "$(jq -r .tag_state plan.json)" = at_head ] && \
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "dir=$(jq -r .dir plan.json)"
+            # Space-separated, so the build job can loop over it in shell.
+            echo "binaries=$(jq -r '.binaries | join(" ")' plan.json)"
+            # "<name>:<dir>" pairs, one system package per binary shipped.
+            echo "packages=$(jq -r '[.packages[] | "\(.name):\(.dir)"] | join(" ")' plan.json)"
+            echo "tag_state=$(jq -r .tag_state plan.json)"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$(jq -r .tag_state plan.json)" = at_head ]; then
             echo "::notice::tag $tag already exists on this commit — resuming a partial release"
+          fi
           if [ "$(jq -r .collision plan.json)" = "true" ]; then
             reason=$(jq -r .collision_reason plan.json)
             echo "::error::$reason — bump the version in Cargo.toml before releasing."
@@ -244,8 +247,17 @@ jobs:
           %__gpg_sign_cmd %{__gpg} gpg --batch --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --no-armor --no-secmem-warning -u "%{_gpg_name}" -sbo %{__signature_filename} %{__plaintext_filename}
           EOF
           for f in dist/*.rpm; do rpmsign --addsign "$f"; done
-          rpm --import <(gpg --export --armor "$GPG_KEY_ID")
-          for f in dist/*.rpm; do rpm --checksig "$f" | grep -q 'pgp.*OK\|signatures OK'; done
+          # `rpm --import` needs a real, seekable file: given a process
+          # substitution it fails with "import read failed(0)".
+          gpg --export --armor "$GPG_KEY_ID" > "$RUNNER_TEMP/nits-pubkey.asc"
+          rpm --import "$RUNNER_TEMP/nits-pubkey.asc"
+          for f in dist/*.rpm; do
+            if ! rpm --checksig "$f" | grep -qE 'pgp.*OK|signatures OK'; then
+              echo "::error::$f is not signed"
+              rpm --checksig "$f"
+              exit 1
+            fi
+          done
           ( cd dist && for f in *.deb *.rpm; do shasum -a 256 "$f" > "$f.sha256"; done )
           ls -l dist
       - uses: actions/upload-artifact@v4
@@ -344,9 +356,21 @@ jobs:
                    aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu; do
             grep -q "$t.tar.gz" formula.rb || { echo "::error::formula is missing $t"; exit 1; }
           done
-          # Every sha256 must be a real 64-hex digest, not an empty string.
-          grep -oE 'sha256 "[^"]*"' formula.rb | grep -vqE 'sha256 "[0-9a-f]{64}"' \
-            && { echo '::error::formula has a malformed sha256'; exit 1; } || true
+          # Every sha256 must be a real 64-hex digest. Count them too: with
+          # `pipefail`, a `grep | grep -vq` pipeline reports success on a
+          # formula containing no sha256 lines at all, which is the very thing
+          # this is meant to catch.
+          mapfile -t shas < <(grep -oE 'sha256 "[^"]*"' formula.rb | cut -d'"' -f2) || true
+          if [ "${#shas[@]}" -ne 4 ]; then
+            echo "::error::formula has ${#shas[@]} sha256 entries, expected 4"
+            exit 1
+          fi
+          for sha in "${shas[@]}"; do
+            if ! printf '%s' "$sha" | grep -qE '^[0-9a-f]{64}$'; then
+              echo "::error::formula has a malformed sha256: '$sha'"
+              exit 1
+            fi
+          done
           # `ruby -c` accepts a test block that runs the wrong binary, so check
           # that every binary the formula installs or invokes is one it ships.
           shipped=" ${{ needs.plan.outputs.binaries }} "
@@ -400,10 +424,15 @@ jobs:
           # The two files are written separately; a mismatch ships a package
           # whose metadata disagrees with its own build recipe.
           for arch in x86_64 aarch64; do
-            pk=$(grep -oE "sha256sums_$arch=\('[0-9a-f]{64}'\)" out/PKGBUILD | grep -oE '[0-9a-f]{64}')
-            si=$(grep -oE "sha256sums_$arch = [0-9a-f]{64}" out/.SRCINFO | grep -oE '[0-9a-f]{64}')
-            [ -n "$pk" ] && [ "$pk" = "$si" ] || {
-              echo "::error::PKGBUILD/.SRCINFO sha256 mismatch for $arch"; exit 1; }
+            # `|| true`: without it a missing checksum aborts the step under
+            # `set -e` at the assignment, before the diagnostic below can say
+            # which file and architecture were wrong.
+            pk=$(grep -oE "sha256sums_$arch=\('[0-9a-f]{64}'\)" out/PKGBUILD | grep -oE '[0-9a-f]{64}' || true)
+            si=$(grep -oE "sha256sums_$arch = [0-9a-f]{64}" out/.SRCINFO | grep -oE '[0-9a-f]{64}' || true)
+            if [ -z "$pk" ] || [ "$pk" != "$si" ]; then
+              echo "::error::PKGBUILD/.SRCINFO sha256 mismatch for $arch (PKGBUILD=${pk:-none} SRCINFO=${si:-none})"
+              exit 1
+            fi
           done
           grep -q "pkgver=${{ needs.plan.outputs.version }}" out/PKGBUILD
           grep -q "pkgver = ${{ needs.plan.outputs.version }}" out/.SRCINFO
