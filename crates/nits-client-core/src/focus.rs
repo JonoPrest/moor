@@ -1143,18 +1143,11 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 return Err(nothing());
             };
             let diff = view.diff.as_ref().ok_or(NoTarget::NoOpenFile)?;
-            let open = view.review.as_ref().ok_or(NoTarget::NoOpenReview)?;
-            let render = open
-                .open_file
-                .as_ref()
-                .map(|f| &f.render)
-                .ok_or(NoTarget::NoOpenFile)?;
             let up = command == Command::ExpandUp;
-            // Every cached row, not the viewport's slice: in a hunk taller
-            // than the window the bordering expander is off screen, and
-            // the chord still means that gap.
-            let rows = crate::diff::all_rows(core.cache(), &open.snapshot, render);
-            let gap = nearest_gap(&rows, row, up).ok_or(NoTarget::AtEdge)?;
+            // From the header's gap table, not from the rows: a hunk can
+            // be taller than the viewport — or than what the cache holds —
+            // and the chord still means the gap bordering it.
+            let gap = nearest_gap(&diff.content, row, up).ok_or(NoTarget::AtEdge)?;
             Ok(Action::ExpandGap {
                 file: diff.file.clone(),
                 gap,
@@ -1266,23 +1259,18 @@ fn line_anchor(file: &FileRef, target: &RenderTarget, row: &Row, side: Side) -> 
 /// The gap the cursor would open going up (or down): the nearest hidden
 /// run above (below) `row`, which is the one bordering the hunk the
 /// cursor is in. `None` when nothing is hidden that way.
-fn nearest_gap(rows: &[crate::diff::DiffRow], row: u32, up: bool) -> Option<nits_protocol::Gap> {
-    let gap_of = |r: &crate::diff::DiffRow| match r.row {
-        Row::Expander { gap, .. } => Some(gap),
-        Row::HunkHeader { .. }
-        | Row::Context { .. }
-        | Row::Added { .. }
-        | Row::Removed { .. }
-        | Row::Modified { .. }
-        | Row::WhitespaceOnly => None,
+fn nearest_gap(
+    content: &nits_protocol::RenderContent,
+    row: u32,
+    up: bool,
+) -> Option<nits_protocol::Gap> {
+    let nits_protocol::RenderContent::Text { gaps, .. } = content else {
+        return None;
     };
     if up {
-        rows.iter()
-            .rev()
-            .filter(|r| r.index <= row)
-            .find_map(gap_of)
+        gaps.iter().rev().find(|g| g.row <= row).map(|g| g.gap)
     } else {
-        rows.iter().filter(|r| r.index >= row).find_map(gap_of)
+        gaps.iter().find(|g| g.row >= row).map(|g| g.gap)
     }
 }
 

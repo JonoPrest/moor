@@ -10,7 +10,13 @@ expression: r
     "chunk_count": 1,
     "highlighted": false,
     "additions": 4,
-    "deletions": 3
+    "deletions": 3,
+    "gaps": [
+      {
+        "gap": 1,
+        "row": 11
+      }
+    ]
   },
   "rows": [
     {

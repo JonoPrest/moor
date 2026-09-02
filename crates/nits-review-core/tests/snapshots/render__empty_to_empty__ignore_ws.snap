@@ -10,7 +10,8 @@ expression: r
     "chunk_count": 1,
     "highlighted": false,
     "additions": 0,
-    "deletions": 0
+    "deletions": 0,
+    "gaps": []
   },
   "rows": []
 }

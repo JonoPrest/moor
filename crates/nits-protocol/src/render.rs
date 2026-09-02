@@ -144,7 +144,22 @@ pub enum RenderContent {
         highlighted: bool,
         additions: u32,
         deletions: u32,
+        /// Where each still-hidden run's expander sits, in row order. The
+        /// header is always cached for an open file, so `z u`/`z d` can
+        /// name the gap beside the cursor without the chunk it lives in
+        /// (a hunk can be taller than what the cache holds).
+        #[serde(default)]
+        gaps: Vec<GapRow>,
     },
+}
+
+/// One gap's expander row: which gap, and the row it is on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct GapRow {
+    pub gap: crate::domain::Gap,
+    pub row: u32,
 }
 
 /// Header for a rendered file: everything but the rows.

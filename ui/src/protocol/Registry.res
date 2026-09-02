@@ -47,6 +47,7 @@ let schemas: dict<S.t<unknown>> = Dict.fromArray([
   ("Row", erase(Render.Row.schema)),
   ("RenderTarget", erase(Render.RenderTarget.schema)),
   ("RenderContent", erase(Render.RenderContent.schema)),
+  ("GapRow", erase(Render.GapRow.schema)),
   ("FileRenderHeader", erase(Render.FileRenderHeader.schema)),
   ("RenderChunk", erase(Render.RenderChunk.schema)),
   ("FileRender", erase(Render.FileRender.schema)),

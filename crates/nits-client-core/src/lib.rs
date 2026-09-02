@@ -824,6 +824,11 @@ impl ClientCore {
             self.view.progress = progress;
             sections.push(ViewSection::Progress);
         }
+        // Before the diff is built, so the window this pass serves is
+        // the shifted one.
+        if self.realign.is_some() {
+            self.apply_realign(&mut sections);
+        }
         let (diff, threads) = match &self.view.review {
             Some(open) => {
                 let pending = self.pending_ids();
@@ -894,9 +899,6 @@ impl ClientCore {
             self.view.diff = diff;
             self.view.diffs = diffs;
             sections.push(ViewSection::Diff);
-        }
-        if self.realign.is_some() {
-            self.apply_realign();
         }
         if threads != self.view.threads {
             let conversation = diff::conversation(&threads);
@@ -1345,15 +1347,18 @@ impl ClientCore {
     /// After a re-render lands: put the cursor back on the line it was on
     /// and shift the viewport by the same amount, so the reader keeps
     /// looking at what they were looking at.
-    fn apply_realign(&mut self) {
+    fn apply_realign(&mut self, sections: &mut Vec<ViewSection>) {
         let Some(want) = self.realign else {
             return;
         };
-        let Some(diff) = &self.view.diff else {
+        let Some(open) = &self.view.review else {
             return;
         };
-        let Some(now) = diff
-            .rows
+        let Some(render) = open.open_file.as_ref().map(|f| f.render.clone()) else {
+            return;
+        };
+        let rows = diff::all_rows(&self.content.cache, &open.snapshot, &render);
+        let Some(now) = rows
             .iter()
             .find(|r| diff::line_on(&r.row, want.side) == Some(want.line))
         else {
@@ -1365,6 +1370,9 @@ impl ClientCore {
         if delta == 0 {
             return;
         }
+        // The focus is settled before this pass compares it, so the patch
+        // has to be asked for here.
+        sections.push(ViewSection::Focus);
         let shift = |n: u32| u32::try_from((i64::from(n) + delta).max(0)).unwrap_or(0);
         if let Focus::Diff { row, side } = self.view.focus {
             self.view.focus = Focus::Diff {

@@ -822,6 +822,7 @@ fn stream_item_strategy() -> impl Strategy<Value = StreamItem> {
             highlighted: false,
             additions: 0,
             deletions: 0,
+            gaps: Vec::new(),
         },
     };
     prop_oneof![

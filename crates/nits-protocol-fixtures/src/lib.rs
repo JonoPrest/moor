@@ -172,6 +172,7 @@ registry!(
     ViewedMark,
     RenderOpts,
     GapExpansion,
+    GapRow,
     ChangeKind,
     DiffScope,
     ContentHit,
@@ -622,6 +623,10 @@ fn render_header() -> Result<FileRenderHeader, FixtureError> {
             highlighted: true,
             additions: 12,
             deletions: 4,
+            gaps: vec![GapRow {
+                gap: Gap::new(1),
+                row: 40,
+            }],
         },
     })
 }
@@ -791,6 +796,14 @@ enum_fixture!(
 );
 struct_fixture!(Thread, "Thread", thread());
 struct_fixture!(ViewedMark, "ViewedMark", viewed_mark()?);
+struct_fixture!(
+    GapRow,
+    "GapRow",
+    GapRow {
+        gap: Gap::new(1),
+        row: 40
+    }
+);
 struct_fixture!(
     GapExpansion,
     "GapExpansion",
@@ -1059,7 +1072,11 @@ enum_fixture!(
             chunk_count: 3,
             highlighted: true,
             additions: 12,
-            deletions: 4
+            deletions: 4,
+            gaps: vec![GapRow {
+                gap: Gap::new(1),
+                row: 40
+            }]
         },
     ]
 );

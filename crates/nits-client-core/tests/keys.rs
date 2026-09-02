@@ -156,6 +156,12 @@ fn header(p: &str) -> FileRenderHeader {
             highlighted: false,
             additions: 1,
             deletions: 1,
+            // The gap table the daemon carries on the header, so a chord
+            // can name a gap whose chunk is not cached.
+            gaps: vec![nits_protocol::GapRow {
+                gap: Gap::new(1),
+                row: EXPANDER_ROW,
+            }],
         },
     }
 }
@@ -1546,27 +1552,19 @@ fn opening_a_gap_re_renders_only_that_file_with_the_gap_recorded() {
 }
 
 #[test]
-fn the_gap_beside_the_cursor_is_found_beyond_the_viewport() {
-    // A hunk taller than the window: the expander bordering it is not in
-    // `diff.rows`, but the chord still means that gap.
+fn the_gap_beside_the_cursor_is_found_without_its_chunk() {
+    // `b.rs` has a header and no chunks: `diff.rows` is empty, so nothing
+    // about the gap can come from the rows. A hunk taller than what the
+    // cache holds is the same situation, and the chord still means the
+    // gap bordering the cursor.
     let mut core = ready();
     core.handle(Input::User(Action::Viewport {
         file: nits_client_core::FileRef {
             repo_id: repo_id(),
-            path: path("src/a.rs"),
+            path: path("b.rs"),
         },
-        first_row: 0,
+        first_row: 140,
         last_row: 199,
-    }))
-    .unwrap();
-    // Narrow the window so the expander at row 148 is outside it.
-    core.handle(Input::User(Action::Viewport {
-        file: nits_client_core::FileRef {
-            repo_id: repo_id(),
-            path: path("src/a.rs"),
-        },
-        first_row: 160,
-        last_row: 180,
     }))
     .unwrap();
     core.handle(Input::User(Action::SetFocus {
@@ -1580,8 +1578,8 @@ fn the_gap_beside_the_cursor_is_found_beyond_the_viewport() {
         core.view()
             .diff
             .as_ref()
-            .is_some_and(|d| d.rows.iter().all(|r| r.index != EXPANDER_ROW)),
-        "the expander really is off screen"
+            .is_some_and(|d| d.rows.is_empty() && !d.missing.is_empty()),
+        "no chunk of this file is cached"
     );
     let up = nits_client_core::resolve_command(&core, nits_client_core::Command::ExpandUp).unwrap();
     assert_eq!(
@@ -1589,11 +1587,15 @@ fn the_gap_beside_the_cursor_is_found_beyond_the_viewport() {
         Action::ExpandGap {
             file: nits_client_core::FileRef {
                 repo_id: repo_id(),
-                path: path("src/a.rs"),
+                path: path("b.rs"),
             },
             gap: Gap::new(1),
             dir: ExpandDir::Up,
         }
+    );
+    // Below the last gap there is nothing to open that way.
+    assert!(
+        nits_client_core::resolve_command(&core, nits_client_core::Command::ExpandDown).is_err()
     );
 }
 
@@ -1620,8 +1622,9 @@ fn expanded_rows(extra: u32) -> Vec<Row> {
     out
 }
 
-/// Answer the render request in flight with a file `extra` rows longer.
-fn deliver_render(core: &mut ClientCore, effects: &[Effect], extra: u32) {
+/// Answer the render request in flight with a file `extra` rows longer,
+/// returning what the core emitted for it.
+fn deliver_render(core: &mut ClientCore, effects: &[Effect], extra: u32) -> Vec<Effect> {
     let id = effects
         .iter()
         .find_map(|e| match e {
@@ -1649,27 +1652,37 @@ fn deliver_render(core: &mut ClientCore, effects: &[Effect], extra: u32) {
         highlighted: false,
         additions: 1,
         deletions: 1,
+        gaps: vec![nits_protocol::GapRow {
+            gap: Gap::new(1),
+            row: EXPANDER_ROW + extra,
+        }],
     };
-    core.handle(Input::Server(ServerMsg::StreamItem {
-        id,
-        item: StreamItem::Header { header },
-    }))
-    .unwrap();
-    for (ci, rows) in rows.chunks(100).enumerate() {
-        core.handle(Input::Server(ServerMsg::StreamItem {
+    let mut out = core
+        .handle(Input::Server(ServerMsg::StreamItem {
             id,
-            item: StreamItem::Chunk {
-                repo_id: repo_id(),
-                path: path("src/a.rs"),
-                chunk: RenderChunk {
-                    index: ChunkIndex::new(u32::try_from(ci).unwrap()),
-                    rows: rows.to_vec(),
-                },
-            },
+            item: StreamItem::Header { header },
         }))
         .unwrap();
+    for (ci, rows) in rows.chunks(100).enumerate() {
+        out.extend(
+            core.handle(Input::Server(ServerMsg::StreamItem {
+                id,
+                item: StreamItem::Chunk {
+                    repo_id: repo_id(),
+                    path: path("src/a.rs"),
+                    chunk: RenderChunk {
+                        index: ChunkIndex::new(u32::try_from(ci).unwrap()),
+                        rows: rows.to_vec(),
+                    },
+                },
+            }))
+            .unwrap(),
+        );
     }
-    core.handle(Input::Server(ServerMsg::StreamEnd { id })).ok();
+    if let Ok(end) = core.handle(Input::Server(ServerMsg::StreamEnd { id })) {
+        out.extend(end);
+    }
+    out
 }
 
 #[test]
@@ -1698,7 +1711,12 @@ fn the_cursor_keeps_its_line_when_a_gap_above_it_opens() {
     let before = text_at(core, 160).expect("a context row");
     let first_row = core.view().diff.as_ref().unwrap().first_row;
     let effects = press(core, "z u").unwrap();
-    deliver_render(core, &effects, 20);
+    let landed = deliver_render(core, &effects, 20);
+    // The host is told: without the focus patch it would keep the cursor
+    // on the old row number over the new rows.
+    let sections = rendered(&landed);
+    assert!(sections.contains(&ViewSection::Focus), "{sections:?}");
+    assert!(sections.contains(&ViewSection::Diff), "{sections:?}");
     assert_eq!(
         text_at(core, 180).as_deref(),
         Some(before.as_str()),
@@ -1717,4 +1735,18 @@ fn the_cursor_keeps_its_line_when_a_gap_above_it_opens() {
         first_row + 20,
         "the viewport followed, so the row keeps its place on screen"
     );
+    // And what the host reads for those sections is the moved cursor and
+    // the shifted window, in this pass rather than after the next input.
+    match core.view().patch(ViewSection::Focus) {
+        nits_client_core::ViewPatch::Focus { focus, .. } => {
+            assert_eq!(focus, Focus::Diff { row: 180 });
+        }
+        other => panic!("expected a focus patch, got {other:?}"),
+    }
+    match core.view().patch(ViewSection::Diff) {
+        nits_client_core::ViewPatch::Diff { diff, .. } => {
+            assert_eq!(diff.map(|d| d.first_row), Some(first_row + 20));
+        }
+        other => panic!("expected a diff patch, got {other:?}"),
+    }
 }

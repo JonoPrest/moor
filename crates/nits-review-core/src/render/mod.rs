@@ -119,6 +119,7 @@ pub fn render_file(
                 highlighted: false,
                 additions: 0,
                 deletions: 0,
+                gaps: Vec::new(),
             },
             rows: vec![Row::WhitespaceOnly],
         };
@@ -146,6 +147,7 @@ pub fn render_file(
             highlighted,
             additions,
             deletions,
+            gaps: gaps_of(&rows),
         },
         rows,
     }
@@ -183,6 +185,7 @@ pub fn render_blob(hl: &Highlighter, bytes: &[u8], lang: Option<&str>) -> Render
             highlighted,
             additions: 0,
             deletions: 0,
+            gaps: Vec::new(),
         },
         rows,
     }
@@ -270,6 +273,35 @@ fn cell(
     }
 }
 
+/// A group's visible window, in old and new line coordinates.
+struct Window {
+    start_o: usize,
+    end_o: usize,
+    start_n: usize,
+    end_n: usize,
+}
+
+/// Where each still-hidden run's expander sits. Carried on the header so
+/// a client can name the gap beside the cursor without holding the chunk
+/// the expander lives in.
+fn gaps_of(rows: &[Row]) -> Vec<nits_protocol::GapRow> {
+    rows.iter()
+        .enumerate()
+        .filter_map(|(i, r)| match r {
+            Row::Expander { gap, .. } => Some(nits_protocol::GapRow {
+                gap: *gap,
+                row: u32::try_from(i).unwrap_or(u32::MAX),
+            }),
+            Row::HunkHeader { .. }
+            | Row::Context { .. }
+            | Row::Added { .. }
+            | Row::Removed { .. }
+            | Row::Modified { .. }
+            | Row::WhitespaceOnly => None,
+        })
+        .collect()
+}
+
 /// Build the row list with context collapsing. Returns
 /// `(rows, additions, deletions)`.
 ///
@@ -331,12 +363,6 @@ fn build_rows(
     // opened — the gap above it upward, the gap below it downward. A
     // trailing expansion stops at the next group's first change; past
     // that the lines belong to the next window.
-    struct Window {
-        start_o: usize,
-        end_o: usize,
-        start_n: usize,
-        end_n: usize,
-    }
     let (mut oi, mut ni) = (0usize, 0usize);
     let mut windows: Vec<Window> = Vec::with_capacity(groups.len());
     for (g_idx, g) in groups.iter().enumerate() {

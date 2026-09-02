@@ -69,6 +69,12 @@ module RenderTarget = {
     | @as("Blob") Blob({oid: blobOid})
 }
 
+/// One gap's expander row: which gap, and the row it is on.
+module GapRow = {
+  @schema
+  type t = {gap: int, row: int}
+}
+
 module RenderContent = {
   @@warning("-27")
   @schema @tag("type")
@@ -82,6 +88,8 @@ module RenderContent = {
         highlighted: bool,
         additions: int,
         deletions: int,
+        /// Where each still-hidden run's expander sits, in row order.
+        gaps: array<GapRow.t>,
       })
   @@warning("+27")
 }
