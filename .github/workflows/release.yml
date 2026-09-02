@@ -275,12 +275,24 @@ jobs:
           cat dist/SHA256SUMS
       - name: tag
         if: '!inputs.dry_run'
+        # Idempotent, because `plan` has already established the tag is either
+        # absent or on this exact commit. A rerun after a failure later in the
+        # release must get past this step rather than dying on exit 128.
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git tag -a '${{ needs.plan.outputs.tag }}' -m '${{ inputs.package }} ${{ needs.plan.outputs.version }}'
-          git push origin '${{ needs.plan.outputs.tag }}'
+          tag='${{ needs.plan.outputs.tag }}'
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "local tag $tag already exists on this commit"
+          else
+            git tag -a "$tag" -m '${{ inputs.package }} ${{ needs.plan.outputs.version }}'
+          fi
+          if git ls-remote --exit-code --tags origin "$tag" >/dev/null 2>&1; then
+            echo "remote already has $tag"
+          else
+            git push origin "$tag"
+          fi
       - uses: softprops/action-gh-release@v2
         if: '!inputs.dry_run'
         with:

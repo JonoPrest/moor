@@ -32,6 +32,13 @@ jobs:
         run: pnpm install --frozen-lockfile && pnpm build
       - name: release scripts are sound
         run: shellcheck scripts/*.sh
+      # The release workflow is only ever exercised by hand, so lint it here:
+      # actionlint checks expressions, runner labels and job dependencies, and
+      # shellchecks every `run:` block.
+      - name: workflows are sound
+        run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -color
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo check -p nits-protocol -p nits-client-core --target wasm32-unknown-unknown
