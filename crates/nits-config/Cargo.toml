@@ -1,0 +1,23 @@
+[package]
+name = "nits-config"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+authors.workspace = true
+homepage.workspace = true
+description = "Client-side configuration: named contexts (local, ssh, websocket) and the current one"
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }
+toml = "0.9"
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

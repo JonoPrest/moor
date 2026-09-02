@@ -1,4 +1,4 @@
-// Identifiers and scalars (moor-protocol `ids.rs`, `version.rs`). All
+// Identifiers and scalars (nits-protocol `ids.rs`, `version.rs`). All
 // serde-transparent on the wire: ULIDs and OIDs are strings, counters are
 // numbers. u64 counters may exceed 2^31, so they are floats here.
 

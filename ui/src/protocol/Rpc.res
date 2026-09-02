@@ -1,4 +1,4 @@
-// RPC frames (moor-protocol `rpc.rs`).
+// RPC frames (nits-protocol `rpc.rs`).
 
 open Ids
 open Domain

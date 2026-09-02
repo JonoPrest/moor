@@ -1,0 +1,22 @@
+---
+source: crates/nits-review-core/tests/render.rs
+expression: r
+---
+{
+  "content": {
+    "type": "Text",
+    "total_rows": 1,
+    "chunk_rows": 500,
+    "chunk_count": 1,
+    "highlighted": false,
+    "additions": 0,
+    "deletions": 0
+  },
+  "rows": [
+    {
+      "type": "Expander",
+      "hidden": 2,
+      "dir": "Both"
+    }
+  ]
+}

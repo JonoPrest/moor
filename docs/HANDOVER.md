@@ -10,7 +10,7 @@ state since its filtered list is UI-side. Found and fixed en route: the
 App key handler now preventDefaults printable chars, because the chord
 that opens a text input (`t`/`F`/`:`) used to also type itself into the
 autofocused input (queries like "Fhandover"). All three flows verified
-headlessly. Note for future browser testing: `moor --port …` keeps ONE
+headlessly. Note for future browser testing: `nits --port …` keeps ONE
 client core per process, so state persists across page loads — restart
 the server between Playwright runs.
 
@@ -21,7 +21,7 @@ splicing lands; the shadow-test probe moved to `q`). Verified headlessly
 (which-key popup shows the group; `z c` opens the composer).
 
 Visual mode below is built, tested and verified headlessly (Playwright
-against `moor --port 7788 .`: V badge, j/k extend, c opens the composer
+against `nits --port 7788 .`: V badge, j/k extend, c opens the composer
 on the range, esc round-trips; zero console errors). Implementation
 followed the plan below almost exactly; deltas worth knowing:
 
@@ -40,14 +40,14 @@ followed the plan below almost exactly; deltas worth knowing:
   (explorer.rs obfuscated_if_else, keymap doc_markdown, keys_file
   redundant closure) — fixed in the same commit.
 
-`moor`/`moord` are NOT installed on this machine (`cargo install` them
+`nits`/`nitsd` are NOT installed on this machine (`cargo install` them
 before demoing); Playwright lives in the session scratchpad `pw/`.
 
 ## 2026-09-01 (evening): DONE — Visual mode (keyboard multiline comments)
 
 Everything below builds on the modal-keys system that landed today
 (space leader + persistent which-key, typed keys.toml + schemars schema
-via `moor keys init|schema|check`, per-panel focus `ge/gd/gt/gm`,
+via `nits keys init|schema|check`, per-panel focus `ge/gd/gt/gm`,
 tree verbs `y`/`c`/`C`/`z`, fold-aware cross-file motions with `C`
 fold / enter unfold / `X` expand-full, GitHub-style stacked diffs).
 All pushed; gates green. Read docs/UI-DESIGN.md (updated: "fully modal"
@@ -64,9 +64,9 @@ the selection highlight (the mouse-drag path already has
 
 The plumbing that already exists — use it, don't rebuild:
 - `Mode { Normal, Insert }` + `modes_of(Command)` validity + per-mode
-  keys.toml tables + per-mode schema (crates/moor-client-core/src/keymap.rs).
+  keys.toml tables + per-mode schema (crates/nits-client-core/src/keymap.rs).
   Add `Visual` to the enum: serde alias "visual", schema/table emission
-  is derived, so `moor keys init` and the schema pick it up automatically.
+  is derived, so `nits keys init` and the schema pick it up automatically.
 - `Action::CommentLines { file, side, start_line, end_line }` builds the
   ranged anchor (lib.rs) — the mouse drag uses it; Visual's `c` should
   resolve to exactly this.
@@ -75,7 +75,7 @@ The plumbing that already exists — use it, don't rebuild:
 
 ### Implementation plan
 
-1. **Core state** (moor-client-core):
+1. **Core state** (nits-client-core):
    - `keymap.rs`: `Mode::Visual` variant. `modes_of`: MoveDown/MoveUp/
      PageDown/PageUp/GoTop/GoBottom/Comment/Back gain Visual; add a new
      `Command::VisualMode` (Normal, bound `V` in Diff, label "select
@@ -106,7 +106,7 @@ The plumbing that already exists — use it, don't rebuild:
    LeaveVisual. Everything else falls through (or leaves Visual first).
 3. **Keys**: `V` → VisualMode → Action::EnterVisual (only in Diff focus,
    only when a commentable row is focused). keys.toml: `[bindings.visual]`
-   section appears in `moor keys init` output automatically once
+   section appears in `nits keys init` output automatically once
    modes_of is updated.
 4. **UI** (small): FileDiff row class when inside `model.visual` range
    and `isOpen`; VISUAL badge (`mode-badge` slot, add a `.mode-visual`
@@ -119,14 +119,14 @@ The plumbing that already exists — use it, don't rebuild:
    reached set naturally.
 
 Gotchas from today, for whoever picks this up:
-- ALWAYS `cd /Users/.../moor` (absolute) at the start of every shell
-  chain; cwd drift into ui/ or the ../moor-demo worktree burned hours.
+- ALWAYS `cd /Users/.../nits` (absolute) at the start of every shell
+  chain; cwd drift into ui/ or the ../nits-demo worktree burned hours.
 - Gate commits on real exit codes, not `| grep | tail` pipelines.
-- After core changes: `cargo install --path crates/moor-cli --force`,
-  `moor keys init --force` (regenerates the user's keys.toml +
+- After core changes: `cargo install --path crates/nits-cli --force`,
+  `nits keys init --force` (regenerates the user's keys.toml +
   keys.schema.json), restart the demo server with
-  `moor --port 7788 <dir>` and POST THE URL.
-- `INSTA_UPDATE=always cargo test -p moor-client-core` while iterating;
+  `nits --port 7788 <dir>` and POST THE URL.
+- `INSTA_UPDATE=always cargo test -p nits-client-core` while iterating;
   full workspace gates before the final push.
 
 ### Also specified, not started (build on the other machine)
@@ -140,7 +140,7 @@ them distinct semantics; `z c` → existing `Action::CommentFile`.
 Gotcha found when attempting: `keymap::tests::lookup_shadows_global_…`
 asserts `lookup(Diff, ['z']) == Lookup::None` — a `z` prefix in Diff
 makes that `Prefix`; update the test (use an unbound probe like `q`).
-Remember modes_of + View.res Command variants + `moor keys init --force`.
+Remember modes_of + View.res Command variants + `nits keys init --force`.
 
 **Search-result stepping** — in every search input (file find `t`,
 content search `F`, actions `:`), Down/Up move a highlighted selection
@@ -169,23 +169,23 @@ in the lists.
 - **crates.io publish**: everything is packaged/verified (9 crates,
   names free, LICENSE in). Blocked ONLY on verifying the email at
   https://crates.io/settings/profile — then `cargo publish -p
-  moor-protocol -p moor-config -p moor-review-core -p moor-client-core
-  -p moord -p moor-client-host -p moor-client-web -p moor-mcp -p moor
+  nits-protocol -p nits-config -p nits-review-core -p nits-client-core
+  -p nitsd -p nits-client-host -p nits-client-web -p nits-mcp -p nits
   --no-verify` from a clean tree.
 - **Tauri smoke run**: `pnpm --dir ui build && cargo run -p
-  moor-client-tauri` — the desktop shell embeds the same dist; check
+  nits-client-tauri` — the desktop shell embeds the same dist; check
   the clipboard permission for the new copy-path button.
 - **Demo worktree cleanup** when done: `git worktree remove
-  ../moor-demo --force && git branch -D jp/demo-review`.
+  ../nits-demo --force && git branch -D jp/demo-review`.
 
 ## 2026-09-01: UI-DESIGN build order COMPLETE (phases 1–3)
 
 All three phases of the agreed build order are built, tested and
-verified headlessly (Playwright against a live `moor <repo>` server;
+verified headlessly (Playwright against a live `nits <repo>` server;
 scripts in the session scratchpad `pw/`). Every commit is pushed and
 every gate is green (fmt, clippy -D warnings, all workspace tests minus
-moor-client-tauri locally — CI covers it —, wasm check, fixtures no-op,
-451 UI tests). Protocol bumped to 0.2.0; reinstall `moor`/`moord` and
+nits-client-tauri locally — CI covers it —, wasm check, fixtures no-op,
+451 UI tests). Protocol bumped to 0.2.0; reinstall `nits`/`nitsd` and
 restart the daemon before demoing.
 
 Landed since the last note, per phase:
@@ -197,7 +197,7 @@ Landed since the last note, per phase:
   reviews now list their branch commits. Client: `SetScope`/`ScopeChoice`
   (`g a`/`g c`/`g w`), by-commit stepping drives the file list, `n`/`p`
   step commits in that mode; header scope control with the step position.
-  keys.toml (`moor-client-host::keys_file`, `~/.config/moor/keys.toml`,
+  keys.toml (`nits-client-host::keys_file`, `~/.config/nits/keys.toml`,
   strict parse, loaded by every host). Jump-to-comment-original-diff:
   streamed `Request::ChangeRender`, `Action::OpenOriginalDiff`, read-only
   banner, Enter on an outdated thread jumps, Esc returns.
@@ -212,7 +212,7 @@ Landed since the last note, per phase:
   resolves a command like its key binding), `tab` cycles.
 - **Bug fix**: `create_review` pre-flight-resolves targets — a failed
   create (Upstream with no upstream) used to commit a ghost review that
-  `moor <path>` then kept finding. Old ghost reviews may still sit in
+  `nits <path>` then kept finding. Old ghost reviews may still sit in
   existing stores (delete or ignore).
 
 Known deviations / loose ends (documented, not blocking):
@@ -236,7 +236,7 @@ tooltips), center pane switches on `model.tab` (Conversation =
 full-width thread list, Browse placeholder), HintBar pending-leader mode
 from `model.pendingKeys`, split/whitespace toggles in ReviewHeader with
 keymap-derived tooltips (`Chrome.tip`), `.app-left` width from
-`prefs.sidebarWidth`. Verified headlessly (`target/debug/moor .` +
+`prefs.sidebarWidth`. Verified headlessly (`target/debug/nits .` +
 Playwright, scripts in the session scratchpad `pw/check.mjs`); pnpm
 gates green (417 tests). Still open from phase 1: palette shell
 (`F` content / `:` actions) — deferred to phase 2 since it wants core
@@ -249,7 +249,7 @@ Building docs/UI-DESIGN.md phase 1. The **core half is done and green**
 no-op, `pnpm rescript` + `pnpm test` 414 passing). What landed (this WIP
 commit):
 
-- **Keymap** (`crates/moor-client-core/src/keymap.rs`): `t` opens file
+- **Keymap** (`crates/nits-client-core/src/keymap.rs`): `t` opens file
   search (ctrl/meta+p stay as aliases); `1`/`2`/`3` → new commands
   `TabFiles`/`TabConversation`/`TabBrowse`; leader-`g` group per
   UI-DESIGN — `g s` split, `g h` whitespace, `g f`/`g F` next/prev file,
@@ -286,10 +286,10 @@ commit):
 4. Arrow keys already bound (unadvertised). Palette shell (`F`/`:`) is
    still open — needs core commands first if done properly; fine to defer
    to phase 2.
-5. Verify headlessly: `moor .` in the repo, then Playwright scripts in
+5. Verify headlessly: `nits .` in the repo, then Playwright scripts in
    the scratchpad `pw/` dir pattern (see below); keep every gate green.
-   NOTE: `~/.cargo/bin/moor*` predate all of this — `cargo install` the
-   cli/daemon and restart moord before demoing.
+   NOTE: `~/.cargo/bin/nits*` predate all of this — `cargo install` the
+   cli/daemon and restart nitsd before demoing.
 
 Then phases 2–3 as listed in the section below.
 
@@ -311,7 +311,7 @@ Build order agreed with Jono:
 2. **Core**: diff-scope switching (All changes ± working-tree toggle /
    By-commit stepping vs parent, worktree as last step — reuse
    StepperCommit + commit_step), keys.toml loading in hosts
-   (~/.config/moor/keys.toml; commands are enums, bad entries fail
+   (~/.config/nits/keys.toml; commands are enums, bad entries fail
    loudly), jump-to-comment-original-diff using Comment::context.
 3. **Protocol/daemon**: context expanders (±20 lines / expand-all /
    full file), content Search request, Browse tab (tree snapshots already
@@ -324,8 +324,8 @@ Already landed for this (all pushed, gates green):
 - `ResolvedSource::WorkingTree { branch }` (daemon captures symbolic-ref)
   and `ViewModel.{open_review, resolved_targets}` on the ReviewList
   section; ReviewHeader shows `base → branch (worktree)`.
-- Dev loop: `moor [PATH]` serves web UI (vite-style); browser testing via
-  headless Playwright (scratchpad pw/ has scripts); `moor-client-web` is
+- Dev loop: `nits [PATH]` serves web UI (vite-style); browser testing via
+  headless Playwright (scratchpad pw/ has scripts); `nits-client-web` is
   HTTP+WS on one port; the daemon was restarted on the new build.
 - Live daemon has real comments incl. context-bearing ones for testing.
 
@@ -338,8 +338,8 @@ Written 2026-08-27 at the end of the session that finished Milestone 3 and
 `main` is clean; every commit is pushed. Gates, all green:
 
 - Rust: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets
-  -- -D warnings` (clippy 1.97), `cargo check -p moor-protocol -p
-  moor-client-core --target wasm32-unknown-unknown`, `cargo test
+  -- -D warnings` (clippy 1.97), `cargo check -p nits-protocol -p
+  nits-client-core --target wasm32-unknown-unknown`, `cargo test
   --workspace`, `cargo xtask fixtures` (writes `fixtures/protocol` and
   `fixtures/client`; must be a no-op).
 - UI (`ui/`, pnpm 11, node 24): `pnpm install`, `pnpm rescript`,
@@ -351,10 +351,10 @@ Written 2026-08-27 at the end of the session that finished Milestone 3 and
 
 | area | crate / dir | notes |
 | --- | --- | --- |
-| client state machine | `crates/moor-client-core` | complete (3.1–3.5): cache, optimistic mutations, explorer, diff overlays, keymap/focus, `ViewPatch` |
-| client fixtures | `crates/moor-client-core-fixtures` → `fixtures/client/` | one example per type/variant; boundary test consumes them |
-| host loop | `crates/moor-client-host` | transport + KV + ticks + patches; tested against a real daemon |
-| two-client simulator | `crates/moor-test-support/src/sim.rs` | `Sim` drives N cores against a daemon model |
+| client state machine | `crates/nits-client-core` | complete (3.1–3.5): cache, optimistic mutations, explorer, diff overlays, keymap/focus, `ViewPatch` |
+| client fixtures | `crates/nits-client-core-fixtures` → `fixtures/client/` | one example per type/variant; boundary test consumes them |
+| host loop | `crates/nits-client-host` | transport + KV + ticks + patches; tested against a real daemon |
+| two-client simulator | `crates/nits-test-support/src/sim.rs` | `Sim` drives N cores against a daemon model |
 | UI scaffold | `ui/` | ReScript 12 + React 19 + Vite 8 + Tailwind v4; `src/styles/app.css` tokens + semantic classes; conventions follow the Envio UI (`~/code/ui`), see AGENTS.md |
 | UI schemas | `ui/src/protocol/*.res`, `ui/src/view/*.res` | `@schema`-derived Sury schemas (rescript-schema 9.3.0-rescript12.0 + ppx 9.0.1); `Registry` / `ClientRegistry` by Rust type name |
 | UI components | `ui/src/ui/*.res`, `ui/src/App.res` | design system `UI.res`; Row/DiffView (virtualized)/Tree/Threads/Composer/Stepper/HintBar/HelpOverlay/SearchBox; key capture in `App` |
@@ -365,7 +365,7 @@ Written 2026-08-27 at the end of the session that finished Milestone 3 and
 
 - Tauri commands the UI calls: `dispatch {action}`, `key {chord}`,
   `attach {}`. Events the host emits: `view` with an array of `ViewPatch`.
-  `moor_client_host::Handle::{dispatch,key,attach}` are those commands;
+  `nits_client_host::Handle::{dispatch,key,attach}` are those commands;
   the patch receiver is what `emit("view", …)` drains.
 - `ViewPatch` carries exactly one `ViewSection`; `review` (raw open review
   state) is never pushed. The UI keeps its own `ViewModel` copy
@@ -389,19 +389,19 @@ Written 2026-08-27 at the end of the session that finished Milestone 3 and
 
 ## Not done / blocked
 
-- **Tauri wrapper crate** (`moor-client-tauri`, binary `moor-desktop`):
+- **Tauri wrapper crate** (`nits-client-tauri`, binary `nits-desktop`):
   landed 2026-08-27 (macOS needs no extra libs; CI's rust job now installs
   webkit2gtk for Ubuntu). `tauri::Builder` with three commands that call
   `Handle`, a task draining the patch receiver into `app.emit("view", …)`,
-  socket via `moor-config` → `moord::contexts::local_spec` +
+  socket via `nits-config` → `nitsd::contexts::local_spec` +
   `ensure_daemon` (autostart), KV at `app_data_dir()/kv.redb`, seed from
-  `fastrand`. `moor-desktop [context]`; only `Local` contexts work (ssh/ws
+  `fastrand`. `nits-desktop [context]`; only `Local` contexts work (ssh/ws
   → `SetupError::NotLocal`, see 4.6). Run: `pnpm --dir ui build` then
-  `cargo run -p moor-client-tauri` (serves the embedded `ui/dist`; no
+  `cargo run -p nits-client-tauri` (serves the embedded `ui/dist`; no
   `devUrl` is configured, because with one a debug build loads
   `localhost:5173` and shows a blank page unless `vite` is running). Icon is a placeholder square. Smoke-tested by hand:
   launches, daemon autostarts, no panic; Playwright still not wired.
-  Gotcha: `moor_client_host::spawn` calls `tokio::spawn`, and Tauri's
+  Gotcha: `nits_client_host::spawn` calls `tokio::spawn`, and Tauri's
   `setup` runs outside its runtime — `start_host` enters
   `tauri::async_runtime::handle()` first.
 - 4.4: expanders — `Row::Expander` renders but has no action; the
@@ -410,9 +410,9 @@ Written 2026-08-27 at the end of the session that finished Milestone 3 and
   against the Tauri dev build is impossible here (no Tauri libs), so the
   smoke/keyboard-only flows exist only as component tests.
 - 4.6: remote connection UX (ssh target picker) is a host concern —
-  `moor-client-host` takes a socket path; the picker belongs in the Tauri
-  wrapper with `moor-config` contexts.
-- `moor [PATH]` (added 2026-08-31) is the vite-style entry point. No
+  `nits-client-host` takes a socket path; the picker belongs in the Tauri
+  wrapper with `nits-config` contexts.
+- `nits [PATH]` (added 2026-08-31) is the vite-style entry point. No
   path: serves the workspace menu. With a path: walks up
   to the repo root (worktree-aware — each worktree is its own repo),
   auto-creates workspace+repo on first use, finds or creates the open
@@ -420,18 +420,18 @@ Written 2026-08-27 at the end of the session that finished Milestone 3 and
   `main`), then serves the browser UI on a free port and prints
   `http://127.0.0.1:<port>/?review=<id>`; Ctrl-C stops it. `--headless`
   (needs a path) prints the review id and exits — the remote flow is
-  `moor -c <ctx> <path> --headless`, then find the review from a local
+  `nits -c <ctx> <path> --headless`, then find the review from a local
   client; remotes are named contexts only (an ad-hoc `--ssh` was tried
   and removed — one way of doing things). `--ui desktop` launches a
-  sibling `moor-desktop` (no deep link there yet); `--ui tui` reserved.
+  sibling `nits-desktop` (no deep link there yet); `--ui tui` reserved.
   The web UI itself still needs a local context (PLAN 4.6).
-- Browser dev/test path (added 2026-08-31): `moor-client-web` (`moor-web`
+- Browser dev/test path (added 2026-08-31): `nits-client-web` (`nits-web`
   bin) is now HTTP+WS on one port: `/` serves the `ui/dist` build embedded
   at compile time (build the UI before cargo — CI's rust job does), `/ws`
-  bridges `moor-client-host`; `CoreWs.res` is the
+  bridges `nits-client-host`; `CoreWs.res` is the
   browser adapter and `Main.res` picks it outside Tauri
   (same-origin `/ws`; `?ws=` overrides; Vite dev proxies `/ws` → 9777). Run
-  `cargo run -p moor-client-web`, serve `ui/dist` (or `pnpm dev`), open in
+  `cargo run -p nits-client-web`, serve `ui/dist` (or `pnpm dev`), open in
   a browser — agents can drive it with headless Playwright
   (`npm i playwright && npx playwright install chromium`; verified: page
   connects, review opens, threads render, zero console errors). Tauri

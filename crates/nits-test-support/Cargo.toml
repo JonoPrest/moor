@@ -1,0 +1,17 @@
+[package]
+name = "nits-test-support"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Test helpers for Nits: real git repository builders."
+publish = false
+
+[dependencies]
+tempfile = { workspace = true }
+anyhow = { workspace = true }
+nits-protocol = { workspace = true }
+nits-client-core = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

@@ -5,7 +5,7 @@
     "type": "Human"
   },
   "client": {
-    "name": "moor-client-tauri",
+    "name": "nits-client-tauri",
     "version": "0.1.0"
   },
   "client_id": "01HF7YAT000000000000000007",

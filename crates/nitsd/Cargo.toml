@@ -1,0 +1,73 @@
+[package]
+name = "nitsd"
+description = "Nits daemon: unix-socket/stdio server over nits-review-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+authors.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "nitsd"
+path = "src/main.rs"
+
+[dependencies]
+nits-protocol.workspace = true
+nits-review-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+gethostname.workspace = true
+notify.workspace = true
+tokio-tungstenite = "0.30.0"
+futures-util = "0.3.34"
+fastrand = "2.5.0"
+nits-config = { workspace = true }
+
+[dev-dependencies]
+nits-test-support.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true
+
+[[bench]]
+name = "triggers"
+harness = false
+
+# Linux packaging. `assets` uses the target-specific path because the release
+# workflow packages an already-built binary with `cargo deb --no-build`.
+[package.metadata.deb]
+name = "nitsd"
+maintainer = "Jono Prest <jjprest@gmail.com>"
+copyright = "Copyright (c) Jono Prest. MIT licensed."
+extended-description = "Nits daemon: unix-socket/stdio server over nits-review-core"
+section = "devel"
+priority = "optional"
+assets = [
+    ["target/release/nitsd", "usr/bin/", "755"],
+    ["../../README.md", "usr/share/doc/nitsd/README.md", "644"],
+    ["../../LICENSE", "usr/share/doc/nitsd/LICENSE", "644"],
+]
+
+[package.metadata.generate-rpm]
+name = "nitsd"
+summary = "Nits daemon: unix-socket/stdio server over nits-review-core"
+assets = [
+    { source = "target/release/nitsd", dest = "/usr/bin/nitsd", mode = "755" },
+    { source = "../../README.md", dest = "/usr/share/doc/nitsd/README.md", mode = "644", doc = true },
+    { source = "../../LICENSE", dest = "/usr/share/doc/nitsd/LICENSE", mode = "644", doc = true },
+]

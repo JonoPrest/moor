@@ -48,7 +48,7 @@ let make = (
     actions={<UI.Button label="refresh (R)" kind=Ghost onClick={() => dispatch(ListWorkspaces({}))} />}>
     {Array.length(workspaces) == 0
       ? <UI.Empty
-          text="No workspaces. Run `moor workspace add <name>` then `moor workspace attach <id> [path]`, and refresh (R)."
+          text="No workspaces. Run `nits workspace add <name>` then `nits workspace attach <id> [path]`, and refresh (R)."
         />
       : workspaces
         ->Array.map(ws => {

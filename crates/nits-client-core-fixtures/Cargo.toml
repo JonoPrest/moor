@@ -1,0 +1,19 @@
+[package]
+name = "nits-client-core-fixtures"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Example values for every nits-client-core view/action type, used to generate fixtures/client/ and to test coverage. Dev tooling only; never a runtime dependency."
+publish = false
+
+[dependencies]
+nits-client-core = { workspace = true }
+nits-protocol = { workspace = true }
+nits-protocol-fixtures = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+strum = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

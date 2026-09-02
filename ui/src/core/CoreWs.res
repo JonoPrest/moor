@@ -1,5 +1,5 @@
 // Browser adapter: the same contract as CoreTauri, over a WebSocket to
-// `moor-web` (crates/moor-client-web). Commands go out as
+// `nits-web` (crates/nits-client-web). Commands go out as
 // `{"cmd":"dispatch","action":…}` etc.; patch batches come back as JSON
 // arrays. Sends queue until the socket opens; `attach` catches the client
 // up, and a dropped connection retries with a fresh attach.
@@ -57,7 +57,7 @@ let make = (~url: string, ~onError: string => unit=e => Console.error(e)): Core.
     )
     Ws.onclose(ws, () => {
       if open_.contents {
-        onError("moor-web connection lost; retrying")
+        onError("nits-web connection lost; retrying")
       }
       open_ := false
       socket := None
@@ -75,7 +75,7 @@ let make = (~url: string, ~onError: string => unit=e => Console.error(e)): Core.
   }
 }
 
-/// `?ws=<url>` beats same-origin `/ws` (which `moor` and the Vite dev
+/// `?ws=<url>` beats same-origin `/ws` (which `nits` and the Vite dev
 /// proxy both serve).
 let defaultUrl = () => {
   let fromQuery = %raw(`new URLSearchParams(window.location.search).get("ws")`)
@@ -85,7 +85,7 @@ let defaultUrl = () => {
   }
 }
 
-/// `?review=<id>`: the review to open once subscribed (bare `moor` links
+/// `?review=<id>`: the review to open once subscribed (bare `nits` links
 /// here).
 let reviewParam = (): option<string> =>
   %raw(`new URLSearchParams(window.location.search).get("review")`)->Nullable.toOption

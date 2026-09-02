@@ -1,6 +1,6 @@
-# Moor — Architecture
+# Nits — Architecture
 
-Moor is a daemon-backed code review tool. Comments are *moored* to content (blobs), not to diffs or line numbers.
+Nits is a daemon-backed code review tool. Nits are anchored to content (blobs), not to diffs or line numbers.
 
 Status: **draft v1** — core decisions resolved (§10).
 
@@ -27,7 +27,7 @@ Non-goals (for now): multi-machine sync of comments, hosting/PR integration, aut
 ```
 ┌─────────────┐  ┌─────────────┐  ┌───────────┐  ┌──────────────┐
 │ Tauri app   │  │ Browser     │  │ TUI       │  │ Agent / CLI  │
-│ (webview UI)│  │ (wasm core) │  │ (ratatui) │  │ (MCP / moor)   │
+│ (webview UI)│  │ (wasm core) │  │ (ratatui) │  │ (MCP / nits)   │
 └──────┬──────┘  └──────┬──────┘  └─────┬─────┘  └──────┬───────┘
        │ unix sock      │ websocket     │ unix sock     │ MCP (stdio/ws)
        └────────────────┴───────┬───────┴───────────────┘
@@ -46,21 +46,21 @@ Non-goals (for now): multi-machine sync of comments, hosting/PR integration, aut
                     └───────────┘ └─────────┘
 ```
 
-Remote use: the client tunnels the daemon's socket/port over SSH (`ssh -L` or `ssh host moord --stdio`). SSH is the only auth layer.
+Remote use: the client tunnels the daemon's socket/port over SSH (`ssh -L` or `ssh host nitsd --stdio`). SSH is the only auth layer.
 
 ## 3. Crate / package layout
 
 ```
 crates/
-  moor-protocol/      wire types: requests, events, view/render models. serde. wasm-safe.
-  moor-review-core/   git access, diffing, anchoring, event store, review logic. daemon-only.
-  moord/              daemon: socket + websocket + MCP transports over review-core. file watcher.
-  moor-client-core/   sans-I/O client state machine: cache, optimistic state, ViewModel. wasm-safe.
-  moor-client-wasm/   wasm-bindgen shim around client-core.
-  moor-client-tauri/  Tauri host: runs client-core natively, exposes dispatch/subscribe to the webview.
-  moor-client-tui/    ratatui host (later).
-  moor-cli/           `moor` command; thin RPC client. Used by shell-based agents and scripts.
-  moor-mcp/           MCP stdio shim proxying to moord.
+  nits-protocol/      wire types: requests, events, view/render models. serde. wasm-safe.
+  nits-review-core/   git access, diffing, anchoring, event store, review logic. daemon-only.
+  nitsd/              daemon: socket + websocket + MCP transports over review-core. file watcher.
+  nits-client-core/   sans-I/O client state machine: cache, optimistic state, ViewModel. wasm-safe.
+  nits-client-wasm/   wasm-bindgen shim around client-core.
+  nits-client-tauri/  Tauri host: runs client-core natively, exposes dispatch/subscribe to the webview.
+  nits-client-tui/    ratatui host (later).
+  nits-cli/           `nits` command; thin RPC client. Used by shell-based agents and scripts.
+  nits-mcp/           MCP stdio shim proxying to nitsd.
 ui/              ReScript + React + Vite. Shared by Tauri and browser.
   src/core/      Core.res interface + CoreTauri.res / CoreWasm.res adapters
   src/protocol/  Protocol.res — hand-written Sury schemas mirroring the Rust types
@@ -68,13 +68,13 @@ ui/              ReScript + React + Vite. Shared by Tauri and browser.
   src/styles/    app.css — Tailwind v4 entry: `@theme` tokens + semantic diff classes
 ```
 
-Dependency rule: `moor-protocol` ← everything. `moor-client-core` never depends on `moor-review-core`. Nothing in `moor-client-core` or `moor-protocol` may use tokio, std I/O, threads, `Instant`, or non-`js` `rand` (enforced by a CI `cargo check --target wasm32-unknown-unknown`).
+Dependency rule: `nits-protocol` ← everything. `nits-client-core` never depends on `nits-review-core`. Nothing in `nits-client-core` or `nits-protocol` may use tokio, std I/O, threads, `Instant`, or non-`js` `rand` (enforced by a CI `cargo check --target wasm32-unknown-unknown`).
 
 ## 4. Daemon
 
 ### 4.1 Core API
 
-`moor-review-core` exposes one `Core` type with all operations. Transports (`unix`, `ws`, `mcp`) are adapters that map 1:1 onto it. There is no capability a transport adds; this is what guarantees human/agent parity.
+`nits-review-core` exposes one `Core` type with all operations. Transports (`unix`, `ws`, `mcp`) are adapters that map 1:1 onto it. There is no capability a transport adds; this is what guarantees human/agent parity.
 
 ### 4.2 Event-sourced store
 
@@ -180,7 +180,7 @@ Three levels of diff data:
 1. **Raw diff** — hunks of `+/-/context` lines from git. Daemon.
 2. **Render model** — the flat list of rows the screen shows. Daemon. Pure function of
    `(base_oid, head_oid, path, opts)`, cached on disk, identical for every client.
-3. **Overlays** — comment threads, selection, hover. `moor-client-core` / UI.
+3. **Overlays** — comment threads, selection, hover. `nits-client-core` / UI.
 
 Render model rows:
 
@@ -199,7 +199,7 @@ collapsing, and syntax highlighting (tree-sitter/syntect, native, run once). Uni
 split is a UI choice over the same rows. Whole-file views (explorer) are the same `Cell`
 list with no diff rows.
 
-Comment → row placement is done in `moor-client-core` (anchor `blob_oid + lines` → row by
+Comment → row placement is done in `nits-client-core` (anchor `blob_oid + lines` → row by
 `line_no` per side) so the daemon's render model stays comment-agnostic and cacheable.
 
 ### 4.7 Tree snapshots (file explorer)
@@ -222,21 +222,21 @@ TreeDelta    { from_root, to_root, added: [TreeEntry], removed: [path], changed:
 ### 4.8 Transports
 
 - **Unix socket**, length-prefixed JSON frames. Multiplexed: `Request{id}` / `Response{id}` / `Event{seq}`.
-- **WebSocket**, same JSON envelopes, one per binary (or text) message — the socket does the framing, so no length prefix. Plain TCP, opt-in via `moord --ws <addr>`, for browser clients and remote daemons. Inside `moord` both share `connection::serve_framed` over the `FrameRead`/`FrameWrite` traits.
-- **MCP**, `moor-mcp` on stdio (newline-delimited JSON-RPC), proxying to the daemon's unix socket or ws port. Tools: `list_workspaces`, `list_reviews`, `get_review` (snapshot + changed files), `create_review`, `update_review`, `get_diff`, `get_file` (numbered text, any side, unchanged files too), `list_comments`, `add_comment` (review / file / line anchors), `suggest`, `reply`, `resolve`, `request_review`, `subscribe_events` (long-poll; pass `last_seq` back as `since_seq`). Author is `Agent{name: clientInfo.name, model: $MOOR_AGENT_MODEL, session_id: $MOOR_SESSION_ID, invoked_by: $USER@host, via: Mcp}`. `mark_viewed` is deliberately not offered. Anchors go up with a zero `context_hash`; the daemon computes the real one.
-- **CLI**, `moor`, the same recipes (`moord::ops`) printed as text or `--json`. Human author from `$USER`/`--user`; `--agent NAME` attributes to `Agent{via: Cli, invoked_by: user}` for scripts driven by an agent. `events --follow` is a loop of long-polls resuming from `last_seq`.
-- **Contexts** (`moor-config`, `~/.config/moor/config.toml`): named places a daemon lives — `Local{data_dir?, socket?}`, `Ssh{host, moord?, args}`, `Ws{url}`. **Definitions only, no "current" context** and no current workspace/review either: shared mutable selection would let one project's CLI or MCP session redirect another's, or flip what the desktop app shows. Every process selects explicitly — ad-hoc flags (`--socket`, `--ws`) > `--context`/`MOOR_CONTEXT` > an implicit `local` — and the app keeps its selection in its own state. Workspace and repo default from the **working directory** (`Ops::locate`: the attached repo containing cwd) in both the CLI and MCP, so `moor review list` in a checkout just works and concurrent sessions in different projects never interfere. `moor context add-local|add-ssh|add-ws|list|show|remove`.
-- **Daemon lifecycle** (`moord::launch`, `moord::contexts`): **one daemon per machine**; the store is single-process so nothing else may open it. `moord --stdio` (what `ssh host moord --stdio` runs) is a *proxy*: it connects to the machine's socket, starting a detached daemon first if nothing answers (`nohup`, log in `<data_dir>/moord.log`, `--idle-exit 1800` so an auto-started daemon retires itself), then pipes bytes. `--stdio-if-running` exits 3 instead of starting, which is how a client probes or stops a remote without waking it. `Local` and `Ssh` contexts auto-start on connect (`--no-autostart` to refuse); `Ws` is somebody else's daemon. `Request::Shutdown` → `Response::ShuttingDown` stops any daemon from any client. `moor daemon status [--all] | start | stop` is the CLI face; the desktop app shows the same per-context status and buttons; `moor-mcp` auto-starts on `initialize` so an agent can always get going. Ssh specifics (keys, jumps, ports) stay in `~/.ssh/config`; `Context::Ssh.ssh` overrides the client binary (tests use a stand-in).
+- **WebSocket**, same JSON envelopes, one per binary (or text) message — the socket does the framing, so no length prefix. Plain TCP, opt-in via `nitsd --ws <addr>`, for browser clients and remote daemons. Inside `nitsd` both share `connection::serve_framed` over the `FrameRead`/`FrameWrite` traits.
+- **MCP**, `nits-mcp` on stdio (newline-delimited JSON-RPC), proxying to the daemon's unix socket or ws port. Tools: `list_workspaces`, `list_reviews`, `get_review` (snapshot + changed files), `create_review`, `update_review`, `get_diff`, `get_file` (numbered text, any side, unchanged files too), `list_comments`, `add_comment` (review / file / line anchors), `suggest`, `reply`, `resolve`, `request_review`, `subscribe_events` (long-poll; pass `last_seq` back as `since_seq`). Author is `Agent{name: clientInfo.name, model: $NITS_AGENT_MODEL, session_id: $NITS_SESSION_ID, invoked_by: $USER@host, via: Mcp}`. `mark_viewed` is deliberately not offered. Anchors go up with a zero `context_hash`; the daemon computes the real one.
+- **CLI**, `nits`, the same recipes (`nitsd::ops`) printed as text or `--json`. Human author from `$USER`/`--user`; `--agent NAME` attributes to `Agent{via: Cli, invoked_by: user}` for scripts driven by an agent. `events --follow` is a loop of long-polls resuming from `last_seq`.
+- **Contexts** (`nits-config`, `~/.config/nits/config.toml`): named places a daemon lives — `Local{data_dir?, socket?}`, `Ssh{host, nitsd?, args}`, `Ws{url}`. **Definitions only, no "current" context** and no current workspace/review either: shared mutable selection would let one project's CLI or MCP session redirect another's, or flip what the desktop app shows. Every process selects explicitly — ad-hoc flags (`--socket`, `--ws`) > `--context`/`NITS_CONTEXT` > an implicit `local` — and the app keeps its selection in its own state. Workspace and repo default from the **working directory** (`Ops::locate`: the attached repo containing cwd) in both the CLI and MCP, so `nits review list` in a checkout just works and concurrent sessions in different projects never interfere. `nits context add-local|add-ssh|add-ws|list|show|remove`.
+- **Daemon lifecycle** (`nitsd::launch`, `nitsd::contexts`): **one daemon per machine**; the store is single-process so nothing else may open it. `nitsd --stdio` (what `ssh host nitsd --stdio` runs) is a *proxy*: it connects to the machine's socket, starting a detached daemon first if nothing answers (`nohup`, log in `<data_dir>/nitsd.log`, `--idle-exit 1800` so an auto-started daemon retires itself), then pipes bytes. `--stdio-if-running` exits 3 instead of starting, which is how a client probes or stops a remote without waking it. `Local` and `Ssh` contexts auto-start on connect (`--no-autostart` to refuse); `Ws` is somebody else's daemon. `Request::Shutdown` → `Response::ShuttingDown` stops any daemon from any client. `nits daemon status [--all] | start | stop` is the CLI face; the desktop app shows the same per-context status and buttons; `nits-mcp` auto-starts on `initialize` so an agent can always get going. Ssh specifics (keys, jumps, ports) stay in `~/.ssh/config`; `Context::Ssh.ssh` overrides the client binary (tests use a stand-in).
 
 - **Subscriptions**: `subscribe(scope, since_seq)` streams events from `since_seq`. Reconnect = resubscribe from last seen seq; no other sync mechanism.
 - **Review open is one streamed request.** `open_review(id)` answers with an ordered stream — `ReviewSnapshot` (review, threads, comments) → `TreeSnapshot` per target ref → `FileRenderHeader` per changed file → first `RenderChunk` per file — rather than the client issuing hundreds of round-trips over SSH. The client consumes and its cache fills as a side effect; per-item requests remain for cache misses and viewport-driven chunks.
 - **Fresh clients never replay the log.** A client with no `last_seq` gets a materialized `ReviewSnapshot` plus `subscribe(since = current_seq)`. Only reconnects with a known `last_seq` replay, and only the gap.
 
-Encoding is an isolated layer; the Rust↔Rust hop may move to capnproto/flatbuffers later if measured to matter. JSON is the fixed contract between `moor-client-core` and the UI.
+Encoding is an isolated layer; the Rust↔Rust hop may move to capnproto/flatbuffers later if measured to matter. JSON is the fixed contract between `nits-client-core` and the UI.
 
 ### 4.9 Versioning and evolution
 
-Two independent versions, both typed in `moor-protocol::version`.
+Two independent versions, both typed in `nits-protocol::version`.
 
 **Wire protocol — `ProtocolVersion` (semver string, e.g. `"0.1.0"`).**
 
@@ -263,14 +263,14 @@ Two independent versions, both typed in `moor-protocol::version`.
 - Stamped in the redb `meta` table on creation. `SchemaVersion::CURRENT` is what this build
   writes.
 - On open: equal → proceed; older → run migrations forward in one transaction per step and
-  restamp; newer → refuse to open with a clear error (a newer `moord` wrote this; upgrade).
+  restamp; newer → refuse to open with a clear error (a newer `nitsd` wrote this; upgrade).
 - Events are stored as JSON with a per-event `schema` tag, so the event log itself migrates by
   re-serialisation, and materialised views can always be rebuilt from the migrated log.
 - The daemon reports `schema` in `Welcome` for diagnostics only; clients never depend on it.
 
 ## 5. Client core (sans-I/O)
 
-`moor-client-core` is a pure state machine. It performs no I/O; the host injects everything.
+`nits-client-core` is a pure state machine. It performs no I/O; the host injects everything.
 
 ```rust
 pub struct ClientCore { ... }
@@ -318,7 +318,7 @@ Ephemeral UI state (hover) lives in the UI. Navigational state (focus, open file
 
 ### 5.4 Deferred refresh
 
-Working-tree reviews auto-refresh, but `moor-client-core` will not swap in a new render model while the user has an open comment editor. Incoming `ReviewTargetsResolved` events are queued; when the draft is submitted or discarded, the queue is drained, the comment is re-anchored against the new head, and the view updates. The UI shows a subtle "changes pending" indicator while held.
+Working-tree reviews auto-refresh, but `nits-client-core` will not swap in a new render model while the user has an open comment editor. Incoming `ReviewTargetsResolved` events are queued; when the draft is submitted or discarded, the queue is drained, the comment is re-anchored against the new head, and the view updates. The UI shows a subtle "changes pending" indicator while held.
 
 ### 5.5 File explorer
 
@@ -375,7 +375,7 @@ Context = Global | ReviewList | Tree | Diff | Thread | Composer | CommitStepper 
 
 ### 6.5 Diff rendering
 
-The UI renders the daemon's render model (§4.6) plus `moor-client-core` overlays as a virtualized list (`@tanstack/react-virtual`). Unified vs split is a view option on the same rows. Review-level comments render in a review "conversation" panel; file-level comments render at the top of the file view.
+The UI renders the daemon's render model (§4.6) plus `nits-client-core` overlays as a virtualized list (`@tanstack/react-virtual`). Unified vs split is a view option on the same rows. Review-level comments render in a review "conversation" panel; file-level comments render at the top of the file view.
 
 ### 6.6 Styling
 
@@ -383,18 +383,18 @@ Tailwind v4 via `@tailwindcss/vite`; no CSS-in-JS, no runtime style computation.
 
 ## 7. Agent integration
 
-- Agents connect via MCP (or `moor` CLI) with `Author::Agent{...}` provenance. Provenance is a structured field, not a tag.
+- Agents connect via MCP (or `nits` CLI) with `Author::Agent{...}` provenance. Provenance is a structured field, not a tag.
 - `ReviewRequested` events show as a card in human clients; agents can subscribe to events addressed to them (`awaiting_agent`).
 - **Suggestions**: a comment kind carrying a unified diff against a specific `blob_oid`. The UI renders "apply", which writes to the working tree and records `SuggestionApplied`.
 - Threads keep agent `session_id`, so a human reply to an agent comment can be routed back to that session.
 
 ## 8. Remote / SSH
 
-The daemon is unaware of remoteness. Clients connect to a local socket/port; the user (or the client, as a convenience) forwards it over SSH. The `moor` CLI can be run remotely via `ssh host moord --stdio` as a fallback transport.
+The daemon is unaware of remoteness. Clients connect to a local socket/port; the user (or the client, as a convenience) forwards it over SSH. The `nits` CLI can be run remotely via `ssh host nitsd --stdio` as a fallback transport.
 
 ## 9. Persistence & lifecycle
 
-- One daemon per machine, data dir `~/.local/share/moor/` (`state.redb`, logs, per-repo diff cache).
+- One daemon per machine, data dir `~/.local/share/nits/` (`state.redb`, logs, per-repo diff cache).
 - Reviews persist until `ReviewDeleted`. Deletion tombstones; compaction is offline and optional.
 - Daemon restart: reopen store; clients resubscribe from `last_seq`.
 
@@ -434,7 +434,7 @@ Suspected bottlenecks with a ready solution, deliberately **not** built until a 
 | 14 | Highlighter | syntect |
 | 16 | Daemon concurrency | one writer thread (mutations + re-anchoring, strictly serialised) and the tokio blocking pool for reads/renders against the shared `Core`; events fan out via a broadcast channel, connections filter by scope |
 | 17 | Client cache when daemon is local | memory tier only; disk tier for remote daemons (§5.1) |
-| 18 | Daemon lifecycle | one daemon per machine; `moord --stdio` is a proxy that auto-starts it; clients hold named contexts (local/ssh/ws) and can probe/start/stop; ws contexts are unmanaged; no persisted current context/workspace — selection is per process, workspace/repo default from cwd | herdr-style remotes without a second store opener; kubectl-style switching for the app |
+| 18 | Daemon lifecycle | one daemon per machine; `nitsd --stdio` is a proxy that auto-starts it; clients hold named contexts (local/ssh/ws) and can probe/start/stop; ws contexts are unmanaged; no persisted current context/workspace — selection is per process, workspace/repo default from cwd | herdr-style remotes without a second store opener; kubectl-style switching for the app |
 | 19 | UI styling | Tailwind v4 (Vite plugin); utilities for chrome, semantic class set + `@theme` tokens for diff rows, `data-focused` variants (§6.6) | cheap rows at 10k lines; one palette for web and TUI |
 | 15 | Evolution | semver `ProtocolVersion` negotiated in `Hello`/`Welcome`, on every `Envelope`; integer `SchemaVersion` in redb `meta` with forward-only migrations (§4.9) |
 

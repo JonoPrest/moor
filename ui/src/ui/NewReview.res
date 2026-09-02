@@ -119,7 +119,7 @@ let make = (~workspaces: array<Workspace.t>, ~onClose: unit => unit, ~dispatch: 
       | None =>
         <p className="new-review-hint">
           {React.string(
-            "No repositories to review. Attach one first: `moor workspace add <name>` (prints an id) then `moor workspace attach <id> [path]`, and refresh (R).",
+            "No repositories to review. Attach one first: `nits workspace add <name>` (prints an id) then `nits workspace attach <id> [path]`, and refresh (R).",
           )}
         </p>
       }}

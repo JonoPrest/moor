@@ -1,4 +1,4 @@
-// The client `ViewModel` and everything it contains (moor-client-core
+// The client `ViewModel` and everything it contains (nits-client-core
 // `view.rs`, `explorer.rs`, `diff.rs`, `focus.rs`, `keymap.rs`), one module
 // per Rust type, schemas derived by `@schema`.
 

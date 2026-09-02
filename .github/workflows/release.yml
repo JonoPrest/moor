@@ -1,0 +1,489 @@
+# Manual, one package at a time. Pick the package and the channels; the version
+# comes from its Cargo.toml, and the run refuses to start if that version was
+# already released (crates.io has it, or its tag exists).
+#
+# Secrets, tap layout and the first-release checklist: docs/RELEASING.md.
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Which binary to release
+        type: choice
+        required: true
+        default: nits
+        options: [nits, nitsd, nits-mcp]
+      crates_io:
+        description: Publish to crates.io
+        type: boolean
+        default: true
+      homebrew:
+        description: Update the Homebrew tap
+        type: boolean
+        default: true
+      linux_packages:
+        description: Build .deb/.rpm and refresh the APT/YUM repo
+        type: boolean
+        default: true
+      aur:
+        description: Push the AUR package
+        type: boolean
+        default: true
+      dry_run:
+        description: Build and check everything, publish nothing
+        type: boolean
+        default: false
+
+# One release at a time, globally — not per package. Two packages share most of
+# their dependency closure (both publish nits-protocol, nitsd, …), the Homebrew
+# tap, and the APT/YUM repo, so per-package groups would let two runs both see a
+# shared crate as absent and race to publish it, or push the tap concurrently.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  plan:
+    name: plan (${{ inputs.package }})
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+      dir: ${{ steps.plan.outputs.dir }}
+      binaries: ${{ steps.plan.outputs.binaries }}
+      packages: ${{ steps.plan.outputs.packages }}
+      tag_state: ${{ steps.plan.outputs.tag_state }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags, so the collision check can see them
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - id: plan
+        name: resolve version and check for a collision
+        run: |
+          set -euo pipefail
+          cargo xtask release-plan --package '${{ inputs.package }}' | tee plan.json
+          version=$(jq -r .version plan.json)
+          tag=$(jq -r .tag plan.json)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "dir=$(jq -r .dir plan.json)" >> "$GITHUB_OUTPUT"
+          # Space-separated, so the build job can loop over it in shell.
+          echo "binaries=$(jq -r '.binaries | join(" ")' plan.json)" >> "$GITHUB_OUTPUT"
+          # "<name>:<dir>" pairs, one system package per binary shipped.
+          echo "packages=$(jq -r '[.packages[] | "\(.name):\(.dir)"] | join(" ")' plan.json)" >> "$GITHUB_OUTPUT"
+          echo "tag_state=$(jq -r .tag_state plan.json)" >> "$GITHUB_OUTPUT"
+          [ "$(jq -r .tag_state plan.json)" = at_head ] && \
+            echo "::notice::tag $tag already exists on this commit — resuming a partial release"
+          if [ "$(jq -r .collision plan.json)" = "true" ]; then
+            reason=$(jq -r .collision_reason plan.json)
+            echo "::error::$reason — bump the version in Cargo.toml before releasing."
+            exit 1
+          fi
+          {
+            echo "## Release plan"
+            echo
+            echo "\`${{ inputs.package }}\` **$version** → tag \`$tag\`"
+            echo
+            echo "Ships: $(jq -r '.binaries | join(", ")' plan.json)"
+            echo
+            echo "| crate | version | on crates.io |"
+            echo "| --- | --- | --- |"
+            jq -r '.crates[] | "| \(.name) | \(.version) | \(if .already_published then "yes" else "no" end) |"' plan.json
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: build ${{ matrix.target }}
+    needs: plan
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Native runners for every target: no cross toolchains to keep working.
+          # Windows is absent on purpose — nitsd and nits-client-host use
+          # std::os::unix unconditionally, so there is nothing to build yet.
+          # ubuntu-22.04/-arm begin brownouts on 2026-09-17, and macos-13 was
+          # retired on 2025-12-04. macos-15-intel is the last x86_64 macOS
+          # image (through Aug 2027). The glibc floor is therefore 24.04's
+          # 2.39; the musl targets are the static option for older systems.
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-24.04
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-24.04
+            musl: true
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
+            musl: true
+          - target: x86_64-apple-darwin
+            runner: macos-15-intel
+          - target: aarch64-apple-darwin
+            runner: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - if: matrix.musl
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: build
+        # Every binary in the set, not just the headline one: the clients spawn
+        # nitsd and are unusable without it.
+        run: |
+          set -euo pipefail
+          args=()
+          for bin in ${{ needs.plan.outputs.binaries }}; do args+=(--package "$bin"); done
+          cargo build --release --locked --target '${{ matrix.target }}' "${args[@]}"
+      - name: tarball
+        id: tarball
+        shell: bash
+        run: |
+          set -euo pipefail
+          name='${{ inputs.package }}-${{ needs.plan.outputs.version }}-${{ matrix.target }}'
+          staging="dist/$name"
+          mkdir -p "$staging"
+          for bin in ${{ needs.plan.outputs.binaries }}; do
+            cp "target/${{ matrix.target }}/release/$bin" "$staging/"
+            strip "$staging/$bin" || true
+          done
+          cp README.md LICENSE "$staging/"
+          tar -C dist -czf "dist/$name.tar.gz" "$name"
+          # shasum is the one checksum tool present on both runners.
+          ( cd dist && shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256" )
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.tarball.outputs.name }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+
+  linux-packages:
+    name: deb/rpm ${{ matrix.arch }}
+    needs: [plan, build]
+    if: inputs.linux_packages
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            arch: amd64
+          - target: aarch64-unknown-linux-gnu
+            arch: arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb,cargo-generate-rpm
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.package }}-${{ needs.plan.outputs.version }}-${{ matrix.target }}
+          path: incoming
+      - name: restage the binaries cargo-deb/cargo-generate-rpm expect
+        run: |
+          set -euo pipefail
+          tar -C incoming -xzf incoming/*.tar.gz
+          mkdir -p 'target/${{ matrix.target }}/release'
+          src='incoming/${{ inputs.package }}-${{ needs.plan.outputs.version }}-${{ matrix.target }}'
+          for bin in ${{ needs.plan.outputs.binaries }}; do
+            install -m 0755 "$src/$bin" 'target/${{ matrix.target }}/release/'"$bin"
+          done
+      - name: import the signing key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update && sudo apt-get install -y rpm
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          echo "GPG_KEY_ID=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec:/ {print $5; exit}')" >> "$GITHUB_ENV"
+      - name: build packages
+        # One system package per binary. Unlike an archive, a deb/rpm can
+        # express a dependency, so the clients depend on a separately packaged
+        # nitsd rather than each owning /usr/bin/nitsd and conflicting.
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for entry in ${{ needs.plan.outputs.packages }}; do
+            name=${entry%%:*}
+            dir=${entry#*:}
+            # --no-build/--no-strip: reuse the exact binaries that were released.
+            cargo deb --no-build --no-strip --target '${{ matrix.target }}' --package "$name" --output dist/
+            cargo generate-rpm --target '${{ matrix.target }}' --package "$dir" --output dist/
+          done
+      - name: sign the RPMs
+        # The published repo sets gpgcheck=1, which checks *package* signatures
+        # and is a separate check from repo_gpgcheck. cargo-generate-rpm's
+        # --signing-key takes a key file but has no passphrase option, so
+        # rpmsign with a loopback pinentry is what can use our key. Signing
+        # here, before upload, keeps the release artifact and the repo copy
+        # byte-identical.
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          cat > "$HOME/.rpmmacros" <<EOF
+          %_gpg_name $GPG_KEY_ID
+          %__gpg_sign_cmd %{__gpg} gpg --batch --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --no-armor --no-secmem-warning -u "%{_gpg_name}" -sbo %{__signature_filename} %{__plaintext_filename}
+          EOF
+          for f in dist/*.rpm; do rpmsign --addsign "$f"; done
+          rpm --import <(gpg --export --armor "$GPG_KEY_ID")
+          for f in dist/*.rpm; do rpm --checksig "$f" | grep -q 'pgp.*OK\|signatures OK'; done
+          ( cd dist && for f in *.deb *.rpm; do shasum -a 256 "$f" > "$f.sha256"; done )
+          ls -l dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: tag and GitHub release
+    needs: [plan, build, linux-packages]
+    # linux-packages is skippable; only a real failure should stop the release.
+    if: always() && needs.build.result == 'success' && needs.linux-packages.result != 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: incoming
+          merge-multiple: true
+      - name: collect artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          find incoming -type f \( -name '*.tar.gz' -o -name '*.deb' -o -name '*.rpm' \) -exec cp {} dist/ \;
+          ( cd dist && shasum -a 256 -- * > SHA256SUMS )
+          cat dist/SHA256SUMS
+      - name: tag
+        if: '!inputs.dry_run'
+        # Idempotent, because `plan` has already established the tag is either
+        # absent or on this exact commit. A rerun after a failure later in the
+        # release must get past this step rather than dying on exit 128.
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          tag='${{ needs.plan.outputs.tag }}'
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "local tag $tag already exists on this commit"
+          else
+            git tag -a "$tag" -m '${{ inputs.package }} ${{ needs.plan.outputs.version }}'
+          fi
+          if git ls-remote --exit-code --tags origin "$tag" >/dev/null 2>&1; then
+            echo "remote already has $tag"
+          else
+            git push origin "$tag"
+          fi
+      - uses: softprops/action-gh-release@v2
+        if: '!inputs.dry_run'
+        with:
+          tag_name: ${{ needs.plan.outputs.tag }}
+          name: ${{ inputs.package }} ${{ needs.plan.outputs.version }}
+          generate_release_notes: true
+          files: dist/*
+
+  crates-io:
+    name: crates.io
+    needs: [plan, release]
+    if: inputs.crates_io && !failure() && !cancelled()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: publish the dependency closure in order
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo xtask publish --package '${{ inputs.package }}' ${{ inputs.dry_run && '--dry-run' || '' }}
+
+  homebrew:
+    name: Homebrew tap
+    needs: [plan, release]
+    if: inputs.homebrew && !failure() && !cancelled()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: incoming
+          merge-multiple: true
+      - name: render the formula
+        run: |
+          set -euo pipefail
+          scripts/render-formula.sh \
+            '${{ inputs.package }}' \
+            '${{ needs.plan.outputs.version }}' \
+            '${{ needs.plan.outputs.tag }}' \
+            incoming ${{ needs.plan.outputs.binaries }} > formula.rb
+          cat formula.rb
+      - name: validate the formula
+        run: |
+          set -euo pipefail
+          # ruby -c catches syntax errors without needing Homebrew installed.
+          ruby -c formula.rb
+          for t in aarch64-apple-darwin x86_64-apple-darwin \
+                   aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu; do
+            grep -q "$t.tar.gz" formula.rb || { echo "::error::formula is missing $t"; exit 1; }
+          done
+          # Every sha256 must be a real 64-hex digest, not an empty string.
+          grep -oE 'sha256 "[^"]*"' formula.rb | grep -vqE 'sha256 "[0-9a-f]{64}"' \
+            && { echo '::error::formula has a malformed sha256'; exit 1; } || true
+          # `ruby -c` accepts a test block that runs the wrong binary, so check
+          # that every binary the formula installs or invokes is one it ships.
+          shipped=" ${{ needs.plan.outputs.binaries }} "
+          for ref in $(grep -oE 'bin(\.install |/)"[a-z-]+"' formula.rb | grep -oE '"[a-z-]+"' | tr -d '"' | sort -u); do
+            case "$shipped" in
+              *" $ref "*) ;;
+              *) echo "::error::formula references $ref, which it does not ship"; exit 1 ;;
+            esac
+          done
+      - name: commit to the tap
+        if: '!inputs.dry_run'
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          git clone "https://x-access-token:$GH_TOKEN@github.com/JonoPrest/homebrew-nits.git" tap
+          mkdir -p tap/Formula
+          cp formula.rb 'tap/Formula/${{ inputs.package }}.rb'
+          cd tap
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add 'Formula/${{ inputs.package }}.rb'
+          git diff --staged --quiet || git commit -m '${{ inputs.package }} ${{ needs.plan.outputs.version }}'
+          git push
+
+  aur:
+    name: AUR
+    needs: [plan, release]
+    if: inputs.aur && !failure() && !cancelled()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: incoming
+          merge-multiple: true
+      - name: render PKGBUILD and .SRCINFO
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          scripts/render-pkgbuild.sh \
+            '${{ inputs.package }}' \
+            '${{ needs.plan.outputs.version }}' \
+            '${{ needs.plan.outputs.tag }}' \
+            incoming out ${{ needs.plan.outputs.binaries }}
+          cat out/PKGBUILD out/.SRCINFO
+      - name: validate PKGBUILD and .SRCINFO
+        run: |
+          set -euo pipefail
+          bash -n out/PKGBUILD
+          # The two files are written separately; a mismatch ships a package
+          # whose metadata disagrees with its own build recipe.
+          for arch in x86_64 aarch64; do
+            pk=$(grep -oE "sha256sums_$arch=\('[0-9a-f]{64}'\)" out/PKGBUILD | grep -oE '[0-9a-f]{64}')
+            si=$(grep -oE "sha256sums_$arch = [0-9a-f]{64}" out/.SRCINFO | grep -oE '[0-9a-f]{64}')
+            [ -n "$pk" ] && [ "$pk" = "$si" ] || {
+              echo "::error::PKGBUILD/.SRCINFO sha256 mismatch for $arch"; exit 1; }
+          done
+          grep -q "pkgver=${{ needs.plan.outputs.version }}" out/PKGBUILD
+          grep -q "pkgver = ${{ needs.plan.outputs.version }}" out/.SRCINFO
+      - name: push to the AUR
+        if: '!inputs.dry_run'
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          ssh-keyscan -H aur.archlinux.org >> ~/.ssh/known_hosts
+          export GIT_SSH_COMMAND='ssh -i ~/.ssh/aur -o IdentitiesOnly=yes'
+          git clone "ssh://aur@aur.archlinux.org/${{ inputs.package }}-bin.git" aur || \
+            { mkdir aur && git -C aur init -b master && \
+              git -C aur remote add origin "ssh://aur@aur.archlinux.org/${{ inputs.package }}-bin.git"; }
+          cp out/PKGBUILD out/.SRCINFO aur/
+          cd aur
+          git config user.name 'Jono Prest'
+          git config user.email 'jjprest@gmail.com'
+          git add PKGBUILD .SRCINFO
+          git diff --staged --quiet || git commit -m '${{ inputs.package }} ${{ needs.plan.outputs.version }}'
+          git push origin master
+
+  linux-repo:
+    name: APT/YUM repo
+    needs: [plan, release, linux-packages]
+    if: inputs.linux_packages && !failure() && !cancelled()
+    runs-on: ubuntu-latest
+    concurrency:
+      # The repo is one gh-pages branch shared by every package.
+      group: linux-repo
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: incoming
+          merge-multiple: true
+      - run: sudo apt-get update && sudo apt-get install -y dpkg-dev createrepo-c gnupg
+      - name: import the signing key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          echo "GPG_KEY_ID=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec:/ {print $5; exit}')" >> "$GITHUB_ENV"
+      - name: rebuild the repository
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git clone --branch gh-pages --single-branch \
+            "https://x-access-token:$GH_TOKEN@github.com/${{ github.repository }}.git" pages \
+            || { git clone "https://x-access-token:$GH_TOKEN@github.com/${{ github.repository }}.git" pages \
+                 && git -C pages checkout --orphan gh-pages && git -C pages rm -rf . ; }
+          scripts/build-linux-repo.sh pages incoming "$GPG_KEY_ID"
+      - name: verify the repository indexes
+        run: |
+          set -euo pipefail
+          # apt resolves Filename against the base URL, which already ends in
+          # /deb — so an entry of "deb/x.deb" would 404. Catch that here.
+          grep -q '^Filename: \./' pages/deb/Packages \
+            || { echo '::error::deb Packages has non-relative Filename entries'; sed -n "/^Filename/p" pages/deb/Packages; exit 1; }
+          gpg --verify pages/deb/InRelease
+          gpg --verify pages/deb/Release.gpg pages/deb/Release
+          gpg --verify pages/rpm/repodata/repomd.xml.asc pages/rpm/repodata/repomd.xml
+          test -s pages/nits-archive-keyring.gpg && test -s pages/nits.asc
+      - name: publish to gh-pages
+        if: '!inputs.dry_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd pages
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --staged --quiet || git commit -m 'repo: ${{ inputs.package }} ${{ needs.plan.outputs.version }}'
+          git push origin gh-pages

@@ -1,6 +1,6 @@
 # UI design (settled 2026-08-31)
 
-The product design for moor's review UI, agreed on the design canvas
+The product design for nits's review UI, agreed on the design canvas
 (<https://claude.ai/code/artifact/f9e63a11-b6cd-4b8e-8ece-8a2d95f8c623>;
 working artboards in `design/`). This is the reference the web UI is built
 to and the TUI will follow. PLAN 4.4–4.6 items are superseded by this
@@ -13,7 +13,7 @@ where they differ.
   button's hover tooltip shows its shortcut. Pane focus cycles with
   `tab`/`shift-tab`; pane resizing is keyboard-native (`<`/`>` resize the
   sidebar, `=` resets), never drag-only.
-- **One keymap, all shells.** The keymap lives in `moor-client-core` and
+- **One keymap, all shells.** The keymap lives in `nits-client-core` and
   drives web, Tauri, and the future TUI identically. Hints, the `?` help
   overlay, and button tooltips are all derived from it — never
   hand-written. A control without a binding is a bug (testable, like the
@@ -32,18 +32,18 @@ where they differ.
   `<leader>` (default `space`), with which-key style group labels: a
   pending prefix pops the group's continuations. keys.toml is
   action-centric (`toggle_layout = ["s", "<leader> s"]`), validated
-  against a schemars-generated JSON schema (`moor keys schema`), and
-  `moor keys init` writes the full defaults. `:` runs any action by its
+  against a schemars-generated JSON schema (`nits keys schema`), and
+  `nits keys init` writes the full defaults. `:` runs any action by its
   snake_case name with fuzzy autocomplete. Collisions never reject a
-  config — they are reported (help overlay, `moor keys check`).
-- **User-configurable bindings.** `~/.config/moor/keys.toml` overrides
+  config — they are reported (help overlay, `nits keys check`).
+- **User-configurable bindings.** `~/.config/nits/keys.toml` overrides
   per-context bindings. Commands are an enum; an unknown command or
   unparsable chord fails loudly at load. Everything derived from the
   keymap (hints, help, tooltips) re-derives from the loaded map.
 
 ## Layout
 
-Claude-viewer anatomy, moor tokens (`ui/src/styles/app.css`; dark and
+Claude-viewer anatomy, nits tokens (`ui/src/styles/app.css`; dark and
 light both):
 
 - **Header**: review title · scope control (below) · `base → head` chips
@@ -193,7 +193,7 @@ Everything explicitly asked for, so no shell or rewrite loses them.
   the footer also shows `g Goto · …` while pending.
 - ✓ Typed keys.toml: action-centric, snake_case names, `<leader>`
   tokens, per-mode tables, schemars-generated JSON schema for editor
-  autocomplete; `moor keys init|schema|check`; collisions are reported,
+  autocomplete; `nits keys init|schema|check`; collisions are reported,
   never rejected.
 - ✓ `:` runs any action by name with fuzzy autocomplete (`:comment`).
 - ✓ Footer shows ONE key per command (first in config order); aliases
@@ -252,7 +252,7 @@ Everything explicitly asked for, so no shell or rewrite loses them.
 ### Panels & focus
 - ✓ Goto group: `g e` tree · `g d` diff · `g t` threads · `g m`
   commits (plus `g g` top, `G` bottom — vim-faithful).
-- ✓ All behavior in moor-client-core (one ViewModel for web/Tauri/TUI);
+- ✓ All behavior in nits-client-core (one ViewModel for web/Tauri/TUI);
   shells only render and own shell effects (clipboard).
 
 ### Chrome
