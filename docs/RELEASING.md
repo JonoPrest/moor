@@ -57,6 +57,11 @@ treats those as separate checks, and unsigned RPMs fail the first.
 `cargo-generate-rpm`'s `--signing-key` is not used: it takes a key file but has
 no passphrase option.
 
+crates.io rate-limits *new* crates: a small burst, then one per interval. A
+first release of several new crates therefore gets partway and is refused with
+429. `publish()` waits that out rather than failing, so this needs one run
+instead of a re-run per interval.
+
 `dry_run` renders and validates every channel — formula Ruby syntax and
 per-platform checksums, PKGBUILD/.SRCINFO agreement, and the APT/YUM indexes
 and their signatures — and skips only the steps that push. Bugs in those paths
@@ -130,8 +135,7 @@ first, not a build target.
 
 - **Homebrew tap** — create `JonoPrest/homebrew-nits` (public, empty). The
   workflow creates `Formula/` on first run. Users then get
-  `brew install jonoprest/nits/nits`. Homebrew core needs notability (roughly
-  75 stars or 30 forks) and can come later without changing anything here.
+  `brew install jonoprest/nits/nits`.
 - **AUR** — not set up, and the `aur` input therefore defaults to **off**.
   To enable it, register an SSH key at <https://aur.archlinux.org/account> and
   add `AUR_SSH_PRIVATE_KEY`; the first push creates `nits-bin`, and the
@@ -155,6 +159,24 @@ thin JS shim plus one package per platform holding the binary, selected via
 `optionalDependencies` with `os`/`cpu` fields — not napi, which would only earn
 its keep if we wanted `nits-client-core` as a JavaScript *library*.
 
-**Debian and Fedora proper.** Both need a sponsoring maintainer and take months.
-The APT/YUM repo above gives people `apt install nits` today; upstreaming into
-the distributions is a separate, later errand.
+**homebrew/core**, which is what `brew install nits` without the tap prefix
+would mean. Two things gate it, and the second is not just a matter of waiting:
+
+- Notability — at least 30 forks, 30 watchers or 75 stars on the canonical
+  repository, which must also be at least 30 days old.
+- Core formulae must **build from source**; ours downloads prebuilt binaries.
+  A core formula would be a different formula: the GitHub *source* tarball (not
+  the crates.io `.crate`, which contains only the `nits` package and so cannot
+  build `nitsd`), `depends_on "rust" => :build`, and a `cargo install` per
+  binary.
+
+So this is not "the same formula, later" — budget for writing a second one.
+
+**Debian and Fedora proper.** Not a matter of patience either. Debian forbids
+vendoring: a package must build from other Debian packages with no network
+access, so every dependency crate needs to exist in the archive as
+`librust-*-dev` first. `nits` currently pulls in about 200 crates. That plus a
+sponsoring Debian Developer, an ITP bug and the NEW queue makes this a
+months-to-years project, not a release chore. The APT/YUM repo above is the
+normal answer for software in this position — Docker, the GitHub CLI and
+Tailscale all ship the same way.
