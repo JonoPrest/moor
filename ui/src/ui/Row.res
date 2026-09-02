@@ -140,6 +140,7 @@ let make = (
   ~onMouseDown: Domain.Side.t => unit=_ => (),
   ~onMouseEnter: Domain.Side.t => unit=_ => (),
   ~onExpand: (int, Render.ExpandDir.t) => unit=(_, _) => (),
+  ~chrome: array<View.Hint.t>=[],
 ) => {
   let base = "row " ++ rowClassName(row)
   let className = switch layout {
@@ -190,11 +191,19 @@ let make = (
         | Down => "↓"
         | Both => "↕"
         }
-      let button = (d: Render.ExpandDir.t, title) =>
+      // Tooltips come from the keymap: these arrows are the mouse alias
+      // of `z u`/`z d` and must say so even after a rebinding.
+      let button = (d: Render.ExpandDir.t) =>
         <button
           type_="button"
           className="btn btn-ghost expander-arrow"
-          title
+          title=?{Chrome.tip(
+            chrome,
+            switch d {
+            | Up => ExpandUp
+            | Down | Both => ExpandDown
+            },
+          )}
           onClick={ev => {
             ReactEvent.Mouse.stopPropagation(ev)
             onExpand(gap, d)
@@ -206,11 +215,11 @@ let make = (
         {switch dir {
         | Both =>
           <>
-            {button(Up, "expand up")}
-            {button(Down, "expand down")}
+            {button(Up)}
+            {button(Down)}
           </>
-        | Up => button(Up, "expand up")
-        | Down => button(Down, "expand down")
+        | Up => button(Up)
+        | Down => button(Down)
         }}
         {React.string(" " ++ Int.toString(hidden) ++ " more lines — expand")}
       </div>

@@ -79,6 +79,17 @@ pub struct VisualAnchor {
     pub side: Side,
 }
 
+/// A line to put the cursor back on once a re-render renumbers the rows:
+/// opening a gap inserts lines, so the row index the cursor had names a
+/// different line afterwards.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Realign {
+    pub side: Side,
+    pub line: u32,
+    /// The row the line was on before, for shifting the viewport with it.
+    pub row: u32,
+}
+
 /// Why a command means nothing right now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum NoTarget {
@@ -1132,8 +1143,18 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 return Err(nothing());
             };
             let diff = view.diff.as_ref().ok_or(NoTarget::NoOpenFile)?;
+            let open = view.review.as_ref().ok_or(NoTarget::NoOpenReview)?;
+            let render = open
+                .open_file
+                .as_ref()
+                .map(|f| &f.render)
+                .ok_or(NoTarget::NoOpenFile)?;
             let up = command == Command::ExpandUp;
-            let gap = nearest_gap(diff, row, up).ok_or(NoTarget::AtEdge)?;
+            // Every cached row, not the viewport's slice: in a hunk taller
+            // than the window the bordering expander is off screen, and
+            // the chord still means that gap.
+            let rows = crate::diff::all_rows(core.cache(), &open.snapshot, render);
+            let gap = nearest_gap(&rows, row, up).ok_or(NoTarget::AtEdge)?;
             Ok(Action::ExpandGap {
                 file: diff.file.clone(),
                 gap,
@@ -1245,7 +1266,7 @@ fn line_anchor(file: &FileRef, target: &RenderTarget, row: &Row, side: Side) -> 
 /// The gap the cursor would open going up (or down): the nearest hidden
 /// run above (below) `row`, which is the one bordering the hunk the
 /// cursor is in. `None` when nothing is hidden that way.
-fn nearest_gap(diff: &crate::diff::DiffView, row: u32, up: bool) -> Option<u32> {
+fn nearest_gap(rows: &[crate::diff::DiffRow], row: u32, up: bool) -> Option<nits_protocol::Gap> {
     let gap_of = |r: &crate::diff::DiffRow| match r.row {
         Row::Expander { gap, .. } => Some(gap),
         Row::HunkHeader { .. }
@@ -1256,13 +1277,12 @@ fn nearest_gap(diff: &crate::diff::DiffView, row: u32, up: bool) -> Option<u32> 
         | Row::WhitespaceOnly => None,
     };
     if up {
-        diff.rows
-            .iter()
+        rows.iter()
             .rev()
             .filter(|r| r.index <= row)
             .find_map(gap_of)
     } else {
-        diff.rows.iter().filter(|r| r.index >= row).find_map(gap_of)
+        rows.iter().filter(|r| r.index >= row).find_map(gap_of)
     }
 }
 

@@ -310,6 +310,28 @@ describe("Context expanders", () => {
     expect(dispatch)->toHaveBeenLastCalledWith(Action.ExpandContext({file: base.file, full: true}))
   })
 
+  test("expander tooltips come from the keymap, not from the code", () => {
+    let chrome: array<View.Hint.t> = [
+      {keys: "z u", command: ExpandUp, label: "expand up"},
+      {keys: "z d", command: ExpandDown, label: "expand down"},
+    ]
+    let row = Fixtures.parse(Render.Row.schema, "protocol", "Row", "Expander")
+    let {container} = render(
+      <Row row layout=Unified index=0 focused=false threads=[] chrome onExpand={(_, _) => ()} />,
+    )
+    expect(Element.querySelector(container, "[title=\"expand up (z u)\"]"))->not_->toBeNull
+    expect(Element.querySelector(container, "[title=\"expand down (z d)\"]"))->not_->toBeNull
+    cleanup()
+    // Rebound: the tooltip follows.
+    let rebound: array<View.Hint.t> = [{keys: "] u", command: ExpandUp, label: "expand up"}]
+    let {container} = render(
+      <Row
+        row layout=Unified index=0 focused=false threads=[] chrome=rebound onExpand={(_, _) => ()}
+      />,
+    )
+    expect(Element.querySelector(container, "[title=\"expand up (] u)\"]"))->not_->toBeNull
+  })
+
   test("an expander opens its own gap, in the direction that was clicked", () => {
     // The fixture expander is `Both` on gap 1: two arrows, each opening
     // that one hidden run rather than re-rendering the whole file.

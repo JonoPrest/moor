@@ -1,7 +1,7 @@
 #![allow(clippy::format_collect, clippy::naive_bytecount)] // test data builders
 //! Render model: snapshot corpus + invariants.
 
-use nits_protocol::{ChunkIndex, ExpandDir, Expansions, RenderContent, RenderOpts, Row};
+use nits_protocol::{ChunkIndex, ExpandDir, Expansions, Gap, RenderContent, RenderOpts, Row};
 use nits_review_core::render::{CHUNK_ROWS, Highlighter, Rendered, render_blob, render_file};
 use proptest::prelude::*;
 use std::sync::LazyLock;
@@ -425,6 +425,7 @@ fn two_hunks() -> (String, String) {
 }
 
 fn expanded(gap: u32, up: u32, down: u32) -> RenderOpts {
+    let gap = Gap::new(gap);
     RenderOpts {
         expanded: Expansions::default().opened(
             gap,
@@ -440,7 +441,7 @@ fn expanded(gap: u32, up: u32, down: u32) -> RenderOpts {
 }
 
 /// The lines each side shows, and the hidden run of each gap.
-fn shown(r: &Rendered) -> (Vec<u32>, Vec<(u32, u32)>) {
+fn shown(r: &Rendered) -> (Vec<u32>, Vec<(Gap, u32)>) {
     let mut lines = Vec::new();
     let mut gaps = Vec::new();
     for row in &r.rows {
@@ -462,7 +463,7 @@ fn every_gap_is_numbered_and_expansion_moves_only_its_own_gap() {
     let base = render_file(&HL, Some(old), Some(new), None, &opts(false));
     let (base_lines, base_gaps) = shown(&base);
     assert_eq!(
-        base_gaps.iter().map(|(g, _)| *g).collect::<Vec<_>>(),
+        base_gaps.iter().map(|(g, _)| g.get()).collect::<Vec<_>>(),
         vec![0, 1, 2],
         "one gap before each hunk group and one after the last"
     );
@@ -518,7 +519,8 @@ fn every_gap_is_numbered_and_expansion_moves_only_its_own_gap() {
     assert!(gap_hidden(&base_gaps, 2) > gap_hidden(&wide_gaps, 2));
 }
 
-fn gap_hidden(gaps: &[(u32, u32)], gap: u32) -> u32 {
+fn gap_hidden(gaps: &[(Gap, u32)], gap: u32) -> u32 {
+    let gap = Gap::new(gap);
     gaps.iter().find(|(g, _)| *g == gap).map_or(0, |(_, h)| *h)
 }
 
@@ -530,15 +532,26 @@ fn a_gap_opened_past_its_end_closes_and_leaves_one_header() {
     let (_, gaps) = shown(&all);
     check_invariants(&all, Some(old), Some(new));
     assert_eq!(gap_hidden(&gaps, 1), 0, "the middle run is fully revealed");
-    let headers = all
+    let headers: Vec<String> = all
         .rows
         .iter()
-        .filter(|r| matches!(r, Row::HunkHeader { .. }))
-        .count();
-    assert_eq!(
-        headers, 1,
-        "two groups that now touch print one header, as git does"
-    );
+        .filter_map(|r| match r {
+            Row::HunkHeader { text } => Some(text.clone()),
+            Row::Context { .. }
+            | Row::Removed { .. }
+            | Row::Added { .. }
+            | Row::Modified { .. }
+            | Row::Expander { .. }
+            | Row::WhitespaceOnly => None,
+        })
+        .collect();
+    // One header, and it covers the whole joined block rather than the
+    // first group's window.
+    assert_eq!(headers, vec!["@@ -17,167 +17,167 @@".to_owned()]);
+    let shown_lines = shown(&all).0;
+    assert_eq!(shown_lines.first().copied(), Some(17));
+    assert_eq!(shown_lines.last().copied(), Some(183));
+    assert_eq!(shown_lines.len(), 167, "no gap inside the block");
     // The gaps at the ends are untouched.
     assert!(gap_hidden(&gaps, 0) > 0 && gap_hidden(&gaps, 2) > 0);
 }
@@ -550,7 +563,7 @@ fn a_file_with_no_hunks_opens_from_both_ends() {
     let closed = render_file(&HL, Some(bytes), Some(bytes), None, &opts(false));
     let (lines, gaps) = shown(&closed);
     assert!(lines.is_empty());
-    assert_eq!(gaps, vec![(0, 100)]);
+    assert_eq!(gaps, vec![(Gap::new(0), 100)]);
     let opened = render_file(&HL, Some(bytes), Some(bytes), None, &expanded(0, 5, 5));
     let (lines, gaps) = shown(&opened);
     check_invariants(&opened, Some(bytes), Some(bytes));

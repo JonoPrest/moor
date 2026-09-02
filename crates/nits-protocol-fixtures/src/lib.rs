@@ -653,7 +653,7 @@ fn render_chunk() -> Result<RenderChunk, FixtureError> {
             Row::Expander {
                 hidden: 40,
                 dir: ExpandDir::Down,
-                gap: 1,
+                gap: Gap::new(1),
             },
         ],
     })
@@ -795,7 +795,7 @@ struct_fixture!(
     GapExpansion,
     "GapExpansion",
     GapExpansion {
-        gap: 1,
+        gap: Gap::new(1),
         up: 20,
         down: 0
     }
@@ -807,7 +807,7 @@ struct_fixture!(
         ignore_whitespace: true,
         context_lines: 5,
         // One opened gap, so the boundary proves the shape both ways.
-        expanded: Expansions::default().opened(1, ExpandDir::Up, 20)
+        expanded: Expansions::default().opened(Gap::new(1), ExpandDir::Up, 20)
     }
 );
 enum_fixture!(
@@ -1033,7 +1033,7 @@ enum_fixture!(
         Row::Expander {
             hidden: 40,
             dir: ExpandDir::Both,
-            gap: 1
+            gap: Gap::new(1)
         },
         Row::WhitespaceOnly,
     ]

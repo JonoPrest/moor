@@ -61,7 +61,8 @@ pub use explorer::{
     viewed_state,
 };
 pub use focus::{
-    Focus, FocusKind, NoTarget, PAGE_ROWS, VisualAnchor, clamp as clamp_focus, visible_nodes,
+    Focus, FocusKind, NoTarget, PAGE_ROWS, Realign, VisualAnchor, clamp as clamp_focus,
+    visible_nodes,
 };
 pub use ids::IdSeed;
 pub use keymap::{
@@ -295,7 +296,7 @@ pub enum Action {
     /// gap moves.
     ExpandGap {
         file: FileRef,
-        gap: u32,
+        gap: nits_protocol::Gap,
         dir: nits_protocol::ExpandDir,
     },
     ExpandContext {
@@ -570,6 +571,11 @@ pub struct ClientCore {
     /// Visual mode (UI-DESIGN: modal keys): the diff row and side `V` was
     /// pressed on; the other end of the selection is the focused row.
     visual_anchor: Option<VisualAnchor>,
+    /// A re-render is in flight that will renumber the rows (opening a
+    /// gap inserts lines above the ones below it). The line the cursor
+    /// was on is remembered so the focus and the viewport can follow the
+    /// content rather than the row index (§6.5).
+    realign: Option<Realign>,
 }
 
 /// Browsing one repo at an arbitrary ref.
@@ -623,6 +629,7 @@ impl ClientCore {
             file_collapse: std::collections::BTreeMap::new(),
             browse: None,
             visual_anchor: None,
+            realign: None,
         }
     }
 
@@ -887,6 +894,9 @@ impl ClientCore {
             self.view.diff = diff;
             self.view.diffs = diffs;
             sections.push(ViewSection::Diff);
+        }
+        if self.realign.is_some() {
+            self.apply_realign();
         }
         if threads != self.view.threads {
             let conversation = diff::conversation(&threads);
@@ -1241,7 +1251,7 @@ impl ClientCore {
         opts: impl FnOnce(&nits_protocol::RenderOpts) -> nits_protocol::RenderOpts,
     ) -> Result<Vec<Effect>, CoreError> {
         self.require_subscribed()?;
-        let Some(open) = &mut self.view.review else {
+        let Some(open) = &self.view.review else {
             return Err(CoreError::NoOpenReview);
         };
         let review_id = open.snapshot.review.id;
@@ -1260,6 +1270,12 @@ impl ClientCore {
         if key == old {
             return Ok(Vec::new());
         }
+        // Remember the cursor's line, not its row index: the row numbers
+        // below an opened gap all shift by however much it revealed.
+        self.realign = self.focused_line(&old);
+        let Some(open) = &mut self.view.review else {
+            return Err(CoreError::NoOpenReview);
+        };
         open.files[i] = key.clone();
         // Keep viewing the file over the same rows; the render's row count
         // grows, so the window is re-evaluated when the header lands.
@@ -1283,6 +1299,11 @@ impl ClientCore {
             } else {
                 opts.context_lines.saturating_add(EXPAND_STEP)
             },
+            // Gap numbers come from the grouping that `context_lines`
+            // produces, so widening it can merge two groups and renumber
+            // every gap after them: the recorded expansions would then
+            // open runs nobody asked for. Widening subsumes them anyway.
+            expanded: nits_protocol::Expansions::default(),
             ..opts.clone()
         })
     }
@@ -1294,13 +1315,69 @@ impl ClientCore {
     fn expand_gap(
         &mut self,
         file: &FileRef,
-        gap: u32,
+        gap: nits_protocol::Gap,
         dir: nits_protocol::ExpandDir,
     ) -> Result<Vec<Effect>, CoreError> {
         self.re_render(file, |opts| nits_protocol::RenderOpts {
             expanded: opts.expanded.opened(gap, dir, EXPAND_STEP),
             ..opts.clone()
         })
+    }
+
+    /// The line the cursor is on in `render`, if that is the open file.
+    fn focused_line(&self, render: &RenderKey) -> Option<Realign> {
+        let Focus::Diff { row, .. } = self.view.focus else {
+            return None;
+        };
+        let open = self.view.review.as_ref()?;
+        if open.open_file.as_ref().map(|f| &f.render) != Some(render) {
+            return None;
+        }
+        let diff = self.view.diff.as_ref()?;
+        let r = diff.rows.iter().find(|r| r.index == row)?;
+        // A row with cells on both sides is followed by its head line.
+        let (side, line) = [nits_protocol::Side::Head, nits_protocol::Side::Base]
+            .into_iter()
+            .find_map(|side| diff::line_on(&r.row, side).map(|line| (side, line)))?;
+        Some(Realign { side, line, row })
+    }
+
+    /// After a re-render lands: put the cursor back on the line it was on
+    /// and shift the viewport by the same amount, so the reader keeps
+    /// looking at what they were looking at.
+    fn apply_realign(&mut self) {
+        let Some(want) = self.realign else {
+            return;
+        };
+        let Some(diff) = &self.view.diff else {
+            return;
+        };
+        let Some(now) = diff
+            .rows
+            .iter()
+            .find(|r| diff::line_on(&r.row, want.side) == Some(want.line))
+        else {
+            // The rows for that line have not arrived yet; keep waiting.
+            return;
+        };
+        self.realign = None;
+        let delta = i64::from(now.index) - i64::from(want.row);
+        if delta == 0 {
+            return;
+        }
+        let shift = |n: u32| u32::try_from((i64::from(n) + delta).max(0)).unwrap_or(0);
+        if let Focus::Diff { row, side } = self.view.focus {
+            self.view.focus = Focus::Diff {
+                row: shift(row),
+                side,
+            };
+        }
+        if let Some(open) = &mut self.view.review
+            && let Some(f) = &mut open.open_file
+        {
+            f.first_row = shift(f.first_row);
+            f.last_row = shift(f.last_row);
+        }
     }
 
     /// The Browse tab's tree root for `repo_id`, when picked and loaded.

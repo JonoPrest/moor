@@ -91,7 +91,7 @@ pub enum Row {
     Expander {
         hidden: u32,
         dir: ExpandDir,
-        gap: u32,
+        gap: crate::domain::Gap,
     },
     /// The whole file differs only in whitespace and `ignore_whitespace` is on.
     WhitespaceOnly,

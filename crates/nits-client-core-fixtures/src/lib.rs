@@ -732,7 +732,7 @@ enum_fixture!(
         },
         Action::ExpandGap {
             file: file_ref()?,
-            gap: 1,
+            gap: Gap::new(1),
             dir: ExpandDir::Up
         },
         Action::SetBrowseRef {
