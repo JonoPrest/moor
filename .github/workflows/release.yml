@@ -247,8 +247,17 @@ jobs:
           %__gpg_sign_cmd %{__gpg} gpg --batch --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --no-armor --no-secmem-warning -u "%{_gpg_name}" -sbo %{__signature_filename} %{__plaintext_filename}
           EOF
           for f in dist/*.rpm; do rpmsign --addsign "$f"; done
-          rpm --import <(gpg --export --armor "$GPG_KEY_ID")
-          for f in dist/*.rpm; do rpm --checksig "$f" | grep -q 'pgp.*OK\|signatures OK'; done
+          # `rpm --import` needs a real, seekable file: given a process
+          # substitution it fails with "import read failed(0)".
+          gpg --export --armor "$GPG_KEY_ID" > "$RUNNER_TEMP/nits-pubkey.asc"
+          rpm --import "$RUNNER_TEMP/nits-pubkey.asc"
+          for f in dist/*.rpm; do
+            if ! rpm --checksig "$f" | grep -qE 'pgp.*OK|signatures OK'; then
+              echo "::error::$f is not signed"
+              rpm --checksig "$f"
+              exit 1
+            fi
+          done
           ( cd dist && for f in *.deb *.rpm; do shasum -a 256 "$f" > "$f.sha256"; done )
           ls -l dist
       - uses: actions/upload-artifact@v4
