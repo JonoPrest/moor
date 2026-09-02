@@ -148,23 +148,30 @@ let make = (
   }
   let threadsOn = (side: Domain.Side.t) =>
     threads->Array.filter((t: View.RowThread.t) => t.side == side)->Array.length
-  // A row with one cell shows the focus on it whichever side the focus
-  // names; only a two-cell row can point at one half.
-  let bothCells = switch (row, layout) {
-  | (Modified(_), Unified | Split) | (Context(_), Split) => true
-  | (Context(_), Unified)
+  // One rendered cell standing for both sides: a unified context row has
+  // a line on each side but shows only one. Added and removed rows are
+  // NOT this — they genuinely have no cell on the other side, so they are
+  // not focused or selected when the other side is the target.
+  let oneCellBothSides = switch (row, layout) {
+  | (Context(_), Unified) => true
+  | (Context(_), Split)
+  | (Modified(_), Unified | Split)
   | (Added(_), Unified | Split)
   | (Removed(_), Unified | Split)
   | (HunkHeader(_), _)
   | (Expander(_), _)
   | (WhitespaceOnly(_), _) => false
   }
+  let onSide = (side: Domain.Side.t, target: Domain.Side.t) => side == target || oneCellBothSides
   let cell = (~cell: Cell.t, ~side: Domain.Side.t) =>
     <CellView
       cell
       side
-      focused={focused && (!bothCells || focusedSide == side)}
-      selected={selectedSide == Some(side) || (selectedSide->Option.isSome && !bothCells)}
+      focused={focused && onSide(side, focusedSide)}
+      selected={switch selectedSide {
+      | Some(target) => onSide(side, target)
+      | None => false
+      }}
       threads={threadsOn(side)}
       onClick={() => onClick(side)}
       onMouseDown={() => onMouseDown(side)}

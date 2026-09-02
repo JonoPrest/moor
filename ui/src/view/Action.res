@@ -47,6 +47,7 @@ type t =
       @as("first_row") firstRow: int,
       @as("last_row") lastRow: int,
     })
+  | @as("OpenFileAt") OpenFileAt({file: View.FileRef.t, row: int, side: Domain.Side.t})
   | @as("CloseFile") CloseFile({})
   | @as("ToggleDir") ToggleDir({@as("repo_id") repoId: repoId, path: @s.null option<string>})
   | @as("FileSearch") FileSearch({query: @s.null option<string>})

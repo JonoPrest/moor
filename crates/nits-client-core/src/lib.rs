@@ -192,6 +192,15 @@ pub enum Action {
         first_row: u32,
         last_row: u32,
     },
+    /// Open `file` around `row` and focus that half of it — the
+    /// jump-to-a-location transition (a thread in another file, the next
+    /// file, a file picked in the tree). The target is known before the
+    /// file's rows are, so the focus cannot be set by the host afterwards.
+    OpenFileAt {
+        file: FileRef,
+        row: u32,
+        side: nits_protocol::Side,
+    },
     CloseFile,
     /// Expand or collapse a directory of the explorer (`None` = repo root).
     ToggleDir {
@@ -1179,6 +1188,11 @@ impl ClientCore {
             }
             Anchor::Review => return Err(CoreError::NoOriginalDiff(thread_id)),
         };
+        // A comment's original diff opens on the side it was made on.
+        let side = match &root.anchor {
+            Anchor::Lines { side, .. } => *side,
+            Anchor::File { .. } | Anchor::Review => nits_protocol::Side::Head,
+        };
         let key = RenderKey {
             repo_id,
             path,
@@ -1193,10 +1207,7 @@ impl ClientCore {
                 last_row: PAGE_ROWS - 1,
             });
         }
-        self.view.focus = Focus::Diff {
-            row: 0,
-            side: nits_protocol::Side::Head,
-        };
+        self.view.focus = Focus::Diff { row: 0, side };
         let mut effects = Vec::new();
         self.want_open_render(review_id, &key, &mut effects);
         effects.push(render(&[ViewSection::Focus, ViewSection::Diff]));
@@ -1364,6 +1375,15 @@ impl ClientCore {
                 first_row,
                 last_row,
             } => self.viewport(file, first_row, last_row),
+            Action::OpenFileAt { file, row, side } => {
+                let first_row = row.saturating_sub(PAGE_ROWS / 2);
+                let mut effects = self.viewport(file, first_row, first_row + PAGE_ROWS - 1)?;
+                // Opening set the focus to the top of the window; the
+                // caller knows the row and side it opened the file for.
+                self.view.focus = Focus::Diff { row, side };
+                effects.push(render(&[ViewSection::Focus]));
+                Ok(effects)
+            }
             Action::CloseFile => {
                 self.visual_anchor = None;
                 self.close_file()

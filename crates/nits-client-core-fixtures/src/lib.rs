@@ -670,6 +670,11 @@ enum_fixture!(
             first_row: 120,
             last_row: 179,
         },
+        Action::OpenFileAt {
+            file: file_ref()?,
+            row: 121,
+            side: Side::Base,
+        },
         Action::CloseFile,
         Action::ToggleDir {
             repo_id: repo_id()?,

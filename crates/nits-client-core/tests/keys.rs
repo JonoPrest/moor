@@ -74,7 +74,8 @@ fn comment(n: u128, anchor: Anchor) -> Comment {
     }
 }
 
-/// Snapshot with one thread on line 5 (head) of a.rs and one review-level.
+/// Snapshot with one thread on line 5 (head) of a.rs, one on the removed
+/// side of line 5 of b.rs (a file that is not open), and one review-level.
 fn snapshot() -> ReviewSnapshot {
     use nits_protocol::{ContextHash, LineNo, LineRange, Side};
     let c1 = comment(
@@ -89,6 +90,17 @@ fn snapshot() -> ReviewSnapshot {
         },
     );
     let c2 = comment(2, Anchor::Review);
+    let c3 = comment(
+        3,
+        Anchor::Lines {
+            repo_id: repo_id(),
+            path: path("b.rs"),
+            side: Side::Base,
+            blob_oid: blob(10),
+            lines: LineRange::single(LineNo::new(5).unwrap()),
+            context_hash: ContextHash::new(0),
+        },
+    );
     let mut s = ReviewSnapshot {
         review: review(),
         resolved: Some(NonEmpty::singleton(nits_protocol::ResolvedTarget {
@@ -115,7 +127,7 @@ fn snapshot() -> ReviewSnapshot {
         author: c1.author.clone(),
         ts: Timestamp::from_millis(0),
     };
-    for c in [c1, c2] {
+    for c in [c1, c2, c3] {
         nits_client_core::apply_body(
             &mut s,
             &meta,
@@ -372,6 +384,8 @@ fn every_action_is_reachable_from_a_binding() {
         ActionKind::CommentLines, // mouse drag across lines
         ActionKind::CommentFile,  // the file header's comment button
         ActionKind::SearchStep,   // search inputs forward Down/Up
+        ActionKind::Viewport,     // the host reports what it shows; keys
+                                  // open a file with `OpenFileAt`, which knows the row and side
     ]
     .into_iter()
     .collect();
@@ -1263,5 +1277,40 @@ fn the_side_cannot_be_flipped_mid_selection() {
         core.view().visual.map(|v| v.side),
         Some(Side::Head),
         "the selection keeps the side it started on"
+    );
+}
+
+#[test]
+fn opening_a_thread_in_another_file_lands_on_its_side() {
+    // The base-side thread on b.rs, which is not the open file: the
+    // transition that opens the file has to carry the side, since the
+    // focus cannot be set once the rows arrive.
+    let mut core = ready();
+    let index = core
+        .view()
+        .threads
+        .iter()
+        .position(|t| {
+            matches!(&t.place, nits_client_core::ThreadPlace::Lines { file, side, .. }
+                if file.path == path("b.rs") && *side == Side::Base)
+        })
+        .expect("the b.rs thread is listed");
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::Thread { index },
+    }))
+    .unwrap();
+    press(&mut core, "enter").unwrap();
+    assert_eq!(
+        core.view().diff.as_ref().map(|d| d.file.path.clone()),
+        Some(path("b.rs")),
+        "the thread's file is open"
+    );
+    assert_eq!(
+        core.view().focus,
+        Focus::Diff {
+            row: 4,
+            side: Side::Base
+        },
+        "on the thread's row and side, not the top of the window"
     );
 }

@@ -170,11 +170,24 @@ fn side_of(focus: Focus) -> Side {
     }
 }
 
+/// Whether the open file is a plain blob (Browse) rather than a diff.
+fn blob_render(view: &ViewModel) -> bool {
+    view.review
+        .as_ref()
+        .and_then(|o| o.open_file.as_ref())
+        .is_some_and(|f| matches!(f.render.target, RenderTarget::Blob { .. }))
+}
+
 /// The side a diff focus settles on for `row`: the asked-for side when
 /// that row has a cell there, else the only side it does have. A row
 /// that is not cached (or has no cell at all, like a hunk header) keeps
 /// the asked-for side.
-fn settled_side(diff: &crate::diff::DiffView, row: u32, side: Side) -> Side {
+fn settled_side(view: &ViewModel, diff: &crate::diff::DiffView, row: u32, side: Side) -> Side {
+    // A blob render (Browse) duplicates one file into both cells and has
+    // no base tree behind it — see `line_anchor`.
+    if blob_render(view) {
+        return Side::Head;
+    }
     let Some(r) = diff.rows.iter().find(|r| r.index == row) else {
         return side;
     };
@@ -214,7 +227,7 @@ pub fn clamp(view: &ViewModel, focus: Focus) -> Focus {
                 };
                 Focus::Diff {
                     row,
-                    side: settled_side(diff, row, side),
+                    side: settled_side(view, diff, row, side),
                 }
             }
             // A file is open but its header has not landed: the diff pane
@@ -278,12 +291,11 @@ fn target_file(view: &ViewModel, focus: Focus) -> Option<FileRef> {
     }
 }
 
-fn open_file(file: FileRef, around_row: u32) -> Action {
-    let first_row = around_row.saturating_sub(PAGE_ROWS / 2);
-    Action::Viewport {
+fn open_file(file: FileRef, around_row: u32, side: Side) -> Action {
+    Action::OpenFileAt {
         file,
-        first_row,
-        last_row: first_row + PAGE_ROWS - 1,
+        row: around_row,
+        side,
     }
 }
 
@@ -328,6 +340,7 @@ fn adjacent_file(core: &ClientCore, forward: bool) -> Result<Action, NoTarget> {
             path: k.path.clone(),
         },
         row,
+        side_of(view.focus),
     ))
 }
 
@@ -577,6 +590,7 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                             path: k.path.clone(),
                         },
                         0,
+                        side_of(focus),
                     ));
                 }
                 let rows = crate::diff::all_rows(core.cache(), &open.snapshot, k);
@@ -593,6 +607,7 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                             path: k.path.clone(),
                         },
                         row,
+                        side_of(focus),
                     ));
                 }
             }
@@ -627,6 +642,7 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                     path: k.path.clone(),
                 },
                 0,
+                side_of(focus),
             ))
         }
         Command::Open => match focus {
@@ -650,7 +666,7 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                                 side: side_of(focus),
                             },
                         )),
-                        Some(_) | None => Ok(open_file(file, 0)),
+                        Some(_) | None => Ok(open_file(file, 0, side_of(focus))),
                     }
                 }
                 Some(TreeNode::Dir { repo_id, path, .. }) => Ok(Action::ToggleDir {
@@ -703,28 +719,22 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 if t.outdated && t.context.is_some() {
                     return Ok(Action::OpenOriginalDiff { thread_id: t.id });
                 }
-                let (file, row) = match &t.place {
-                    ThreadPlace::Lines { file, end, .. } => (file, end - 1),
-                    ThreadPlace::File { file } => (file, 0),
+                // A line thread is shown against the side it is anchored
+                // to, so stepping to it lands on that side — whether the
+                // file is already open or has to be opened first.
+                let (file, row, side) = match &t.place {
+                    ThreadPlace::Lines {
+                        file, end, side, ..
+                    } => (file, end - 1, *side),
+                    ThreadPlace::File { file } => (file, 0, Side::Head),
                     ThreadPlace::Review => return Err(nothing()),
                 };
                 // Already looking at that file: jump to the row (the
                 // viewport follows); otherwise open it around the row.
                 if view.diff.as_ref().is_some_and(|d| d.file == *file) {
-                    Ok(set_focus(
-                        view,
-                        Focus::Diff {
-                            row,
-                            // A line thread is shown against the side it is
-                            // anchored to, so stepping to it lands there.
-                            side: match &t.place {
-                                ThreadPlace::Lines { side, .. } => *side,
-                                ThreadPlace::File { .. } | ThreadPlace::Review => Side::Head,
-                            },
-                        },
-                    ))
+                    Ok(set_focus(view, Focus::Diff { row, side }))
                 } else {
-                    Ok(open_file(file.clone(), row))
+                    Ok(open_file(file.clone(), row, side))
                 }
             }
             Focus::CommitStepper { index } => Ok(Action::StepCommit {
@@ -1060,6 +1070,10 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
             let Focus::Diff { row, side } = focus else {
                 return Err(nothing());
             };
+            // A blob render has only a head side to be on.
+            if blob_render(view) {
+                return Err(NoTarget::AtEdge);
+            }
             if side == want {
                 return Err(NoTarget::AtEdge);
             }
@@ -1161,7 +1175,12 @@ fn line_anchor(file: &FileRef, target: &RenderTarget, row: &Row, side: Side) -> 
     let blob: BlobOid = match (target, side) {
         (RenderTarget::Diff { change }, Side::Head) => change.new_blob()?,
         (RenderTarget::Diff { change }, Side::Base) => change.old_blob()?,
-        (RenderTarget::Blob { oid }, Side::Head | Side::Base) => *oid,
+        // A blob render (Browse) is one file at one ref, duplicated into
+        // both cells. There is no base tree behind it, so a `Base` anchor
+        // here would be followed through an unrelated tree when the review
+        // targets move: blob views are head-only.
+        (RenderTarget::Blob { .. }, Side::Base) => return None,
+        (RenderTarget::Blob { oid }, Side::Head) => *oid,
     };
     Some(Anchor::Lines {
         repo_id: file.repo_id,
@@ -1171,4 +1190,80 @@ fn line_anchor(file: &FileRef, target: &RenderTarget, row: &Row, side: Side) -> 
         lines: LineRange::single(line),
         context_hash: ContextHash::new(0),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use nits_protocol::{BlobOid, Cell, ChangeKind, LineNo, RepoId, RepoPath};
+
+    use super::*;
+
+    fn cell(n: u32) -> Cell {
+        Cell {
+            line_no: LineNo::new(n).unwrap(),
+            text: format!("l{n}"),
+            spans: Vec::new(),
+            changed: Vec::new(),
+        }
+    }
+
+    fn file() -> FileRef {
+        FileRef {
+            repo_id: RepoId::from_parts(1, 1),
+            path: RepoPath::new("src/a.rs").unwrap(),
+        }
+    }
+
+    fn blob(n: u8) -> BlobOid {
+        BlobOid::from_bytes([n; 20])
+    }
+
+    #[test]
+    fn a_blob_render_has_no_base_side_to_anchor_to() {
+        // Browse renders one file at one ref and duplicates each line into
+        // both cells. A `Base` anchor there would name the blob as the
+        // review's base side and be followed through an unrelated tree
+        // when the targets move, so it must not be constructible.
+        let target = RenderTarget::Blob { oid: blob(11) };
+        let row = Row::Context {
+            left: cell(9),
+            right: cell(9),
+        };
+        assert_eq!(line_anchor(&file(), &target, &row, Side::Base), None);
+        let Some(Anchor::Lines { side, blob_oid, .. }) =
+            line_anchor(&file(), &target, &row, Side::Head)
+        else {
+            panic!("the head side of a blob row is commentable");
+        };
+        assert_eq!((side, blob_oid), (Side::Head, blob(11)));
+    }
+
+    #[test]
+    fn each_side_of_a_modified_row_anchors_to_its_own_blob() {
+        let target = RenderTarget::Diff {
+            change: ChangeKind::Modified {
+                old: blob(10),
+                new: blob(11),
+            },
+        };
+        let row = Row::Modified {
+            left: cell(9),
+            right: cell(12),
+        };
+        for (side, oid, line) in [(Side::Base, blob(10), 9), (Side::Head, blob(11), 12)] {
+            let Some(Anchor::Lines {
+                side: got,
+                blob_oid,
+                lines,
+                ..
+            }) = line_anchor(&file(), &target, &row, side)
+            else {
+                panic!("both halves of a modified row are commentable");
+            };
+            assert_eq!((got, blob_oid, lines.start().get()), (side, oid, line));
+        }
+        // An added row has no base half at all.
+        let added = Row::Added { right: cell(12) };
+        assert_eq!(line_anchor(&file(), &target, &added, Side::Base), None);
+    }
 }
