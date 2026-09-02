@@ -16,8 +16,8 @@ use nits_protocol::{
     CommentKind, CommentState, FileChange, FileRenderHeader, NonEmpty, Oid, ProtocolVersion,
     RefSpec, RenderChunk, RenderContent, RenderOpts, RenderTarget, RepoId, RepoPath, Request,
     Review, ReviewId, ReviewSnapshot, ReviewStatus, ReviewTarget, Row, SchemaVersion, Seq,
-    ServerMsg, StreamItem, Timestamp, TreeEntry, TreeEntryKind, TreeOid, TreeSnapshot, ViewSection,
-    WorkspaceId,
+    ServerMsg, Side, StreamItem, Timestamp, TreeEntry, TreeEntryKind, TreeOid, TreeSnapshot,
+    ViewSection, WorkspaceId,
 };
 use strum::IntoEnumIterator;
 
@@ -161,15 +161,23 @@ fn chunk(index: u32) -> RenderChunk {
         rows: (0..100)
             .map(|i| {
                 let n = index * 100 + i + 1;
-                if n == 1 || n == 150 {
-                    Row::HunkHeader {
+                // A hunk with one of every commentable row shape, so the
+                // side-aware paths have something to aim at: row 4 is
+                // modified (two cells), row 6 added, row 8 removed.
+                match n {
+                    1 | 150 => Row::HunkHeader {
                         text: format!("@@ {n} @@"),
-                    }
-                } else {
-                    Row::Context {
+                    },
+                    5 => Row::Modified {
                         left: cell(n),
                         right: cell(n),
-                    }
+                    },
+                    7 => Row::Added { right: cell(n) },
+                    9 => Row::Removed { left: cell(n) },
+                    _ => Row::Context {
+                        left: cell(n),
+                        right: cell(n),
+                    },
                 }
             })
             .collect(),
@@ -421,7 +429,10 @@ fn every_action_is_reachable_from_a_binding() {
     }
     // Comment from a diff row, then discard.
     core.handle(Input::User(Action::SetFocus {
-        focus: Focus::Diff { row: 4 },
+        focus: Focus::Diff {
+            row: 4,
+            side: Side::Head,
+        },
     }))
     .unwrap();
     press(&mut core, "c").unwrap();
@@ -466,7 +477,10 @@ fn every_action_is_reachable_from_a_binding() {
         .unwrap();
     with_file
         .handle(Input::User(Action::SetFocus {
-            focus: Focus::Diff { row: 4 },
+            focus: Focus::Diff {
+                row: 4,
+                side: Side::Head,
+            },
         }))
         .unwrap();
     states.push(with_file);
@@ -484,7 +498,10 @@ fn every_action_is_reachable_from_a_binding() {
         .unwrap();
     with_visual
         .handle(Input::User(Action::SetFocus {
-            focus: Focus::Diff { row: 4 },
+            focus: Focus::Diff {
+                row: 4,
+                side: Side::Head,
+            },
         }))
         .unwrap();
     press(&mut with_visual, "V").unwrap();
@@ -805,12 +822,21 @@ fn diff_focus_scrolls_the_viewport_and_navigates_hunks_and_comments() {
     }))
     .unwrap();
     core.handle(Input::User(Action::SetFocus {
-        focus: Focus::Diff { row: 0 },
+        focus: Focus::Diff {
+            row: 0,
+            side: Side::Head,
+        },
     }))
     .unwrap();
     // Page down twice: the second leaves the window, which follows.
     press(&mut core, "ctrl+d").unwrap();
-    assert_eq!(core.view().focus, Focus::Diff { row: 60 });
+    assert_eq!(
+        core.view().focus,
+        Focus::Diff {
+            row: 60,
+            side: Side::Head
+        }
+    );
     let f = core
         .view()
         .review
@@ -823,16 +849,40 @@ fn diff_focus_scrolls_the_viewport_and_navigates_hunks_and_comments() {
     // Every chunk is cached: no requests, just renders.
     let effects = press(&mut core, "ctrl+d").unwrap();
     assert!(requests(&effects).is_empty());
-    assert_eq!(core.view().focus, Focus::Diff { row: 120 });
+    assert_eq!(
+        core.view().focus,
+        Focus::Diff {
+            row: 120,
+            side: Side::Head
+        }
+    );
     // Next hunk from the top is the header at row 149; previous is row 0.
     press(&mut core, "g g").unwrap();
     press(&mut core, "n").unwrap();
-    assert_eq!(core.view().focus, Focus::Diff { row: 149 });
+    assert_eq!(
+        core.view().focus,
+        Focus::Diff {
+            row: 149,
+            side: Side::Head
+        }
+    );
     press(&mut core, "p").unwrap();
-    assert_eq!(core.view().focus, Focus::Diff { row: 0 });
+    assert_eq!(
+        core.view().focus,
+        Focus::Diff {
+            row: 0,
+            side: Side::Head
+        }
+    );
     // Next comment is the thread on line 5 (row 4); Enter focuses it.
     press(&mut core, "] c").unwrap();
-    assert_eq!(core.view().focus, Focus::Diff { row: 4 });
+    assert_eq!(
+        core.view().focus,
+        Focus::Diff {
+            row: 4,
+            side: Side::Head
+        }
+    );
     press(&mut core, "enter").unwrap();
     assert_eq!(core.view().focus, Focus::Thread { index: 0 });
     // Enter on the thread goes back to its row; Esc closes the file.
@@ -962,18 +1012,42 @@ fn visual_mode_extends_a_selection_and_comments_on_it() {
     }))
     .unwrap();
     core.handle(Input::User(Action::SetFocus {
-        focus: Focus::Diff { row: 4 },
+        focus: Focus::Diff {
+            row: 4,
+            side: Side::Head,
+        },
     }))
     .unwrap();
     // `V` enters Visual on the focused row; motions extend the selection
     // from the anchor.
     press(&mut core, "V").unwrap();
     assert_eq!(core.view().mode, Mode::Visual);
-    assert_eq!(core.view().visual, Some(VisualView { start: 4, end: 4 }));
+    assert_eq!(
+        core.view().visual,
+        Some(VisualView {
+            start: 4,
+            end: 4,
+            side: Side::Head
+        })
+    );
     press(&mut core, "j").unwrap();
-    assert_eq!(core.view().visual, Some(VisualView { start: 4, end: 5 }));
+    assert_eq!(
+        core.view().visual,
+        Some(VisualView {
+            start: 4,
+            end: 5,
+            side: Side::Head
+        })
+    );
     press(&mut core, "k k").unwrap();
-    assert_eq!(core.view().visual, Some(VisualView { start: 3, end: 4 }));
+    assert_eq!(
+        core.view().visual,
+        Some(VisualView {
+            start: 3,
+            end: 4,
+            side: Side::Head
+        })
+    );
     // `c` opens a draft anchored to the selected line range and clears the
     // selection; the composer takes the keys (Insert).
     press(&mut core, "c").unwrap();
@@ -1034,4 +1108,160 @@ fn search_step_moves_the_content_search_selection() {
         .unwrap();
     assert_eq!(core.view().content_search.as_ref().unwrap().selected, 1);
     assert_eq!(rendered(&effects), vec![ViewSection::Search]);
+}
+
+/// The row indices of `chunk()`'s hand-shaped rows.
+const MODIFIED_ROW: u32 = 4;
+const ADDED_ROW: u32 = 6;
+const REMOVED_ROW: u32 = 8;
+
+/// The core with `src/a.rs` open and the diff focused on `row`/`side`.
+fn on_row(row: u32, side: Side) -> ClientCore {
+    let mut core = ready();
+    core.handle(Input::User(Action::Viewport {
+        file: nits_client_core::FileRef {
+            repo_id: repo_id(),
+            path: path("src/a.rs"),
+        },
+        first_row: 0,
+        last_row: 59,
+    }))
+    .unwrap();
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::Diff { row, side },
+    }))
+    .unwrap();
+    core
+}
+
+fn draft_anchor(core: &ClientCore) -> Anchor {
+    core.view().draft.clone().expect("a draft is open").anchor
+}
+
+#[test]
+fn comment_on_a_modified_row_anchors_to_the_focused_side() {
+    // The green half is the default; `c` anchors to the head blob.
+    let mut core = on_row(MODIFIED_ROW, Side::Head);
+    press(&mut core, "c").unwrap();
+    let Anchor::Lines {
+        side,
+        blob_oid,
+        lines,
+        ..
+    } = draft_anchor(&core)
+    else {
+        panic!("expected a line anchor");
+    };
+    assert_eq!(side, Side::Head);
+    assert_eq!(blob_oid, blob(11));
+    assert_eq!(lines.start().get(), 5);
+
+    // `h` moves onto the red half of the same row: same row, base blob.
+    let mut core = on_row(MODIFIED_ROW, Side::Head);
+    press(&mut core, "h").unwrap();
+    assert_eq!(
+        core.view().focus,
+        Focus::Diff {
+            row: MODIFIED_ROW,
+            side: Side::Base
+        }
+    );
+    press(&mut core, "c").unwrap();
+    let Anchor::Lines {
+        side,
+        blob_oid,
+        lines,
+        ..
+    } = draft_anchor(&core)
+    else {
+        panic!("expected a line anchor");
+    };
+    assert_eq!(side, Side::Base);
+    assert_eq!(blob_oid, blob(10));
+    assert_eq!(lines.start().get(), 5);
+}
+
+#[test]
+fn a_row_with_one_cell_has_no_other_side_to_move_to() {
+    // An added row has no base cell, a removed row no head cell.
+    let mut core = on_row(ADDED_ROW, Side::Head);
+    assert!(press(&mut core, "h").is_err());
+    assert_eq!(
+        core.view().focus,
+        Focus::Diff {
+            row: ADDED_ROW,
+            side: Side::Head
+        }
+    );
+    let mut core = on_row(REMOVED_ROW, Side::Base);
+    assert!(press(&mut core, "l").is_err());
+    assert_eq!(
+        core.view().focus,
+        Focus::Diff {
+            row: REMOVED_ROW,
+            side: Side::Base
+        }
+    );
+}
+
+#[test]
+fn focus_settles_on_the_side_the_row_has() {
+    // Stepping onto an added row from the red half lands on its green
+    // cell — the focus never points at a cell that is not there.
+    let mut core = on_row(MODIFIED_ROW, Side::Base);
+    press(&mut core, "j").unwrap(); // row 5, context: both sides exist
+    assert_eq!(
+        core.view().focus,
+        Focus::Diff {
+            row: 5,
+            side: Side::Base
+        }
+    );
+    press(&mut core, "j").unwrap(); // row 6, added: head only
+    assert_eq!(
+        core.view().focus,
+        Focus::Diff {
+            row: ADDED_ROW,
+            side: Side::Head
+        }
+    );
+}
+
+#[test]
+fn a_visual_selection_keeps_the_side_it_started_on() {
+    // Started on the red half of a modified row: the range is base lines,
+    // and the removed row it crosses contributes its line.
+    let mut core = on_row(MODIFIED_ROW, Side::Base);
+    press(&mut core, "V").unwrap();
+    assert_eq!(
+        core.view().visual,
+        Some(nits_client_core::VisualView {
+            start: MODIFIED_ROW,
+            end: MODIFIED_ROW,
+            side: Side::Base
+        })
+    );
+    // Down to the removed row, crossing an added row that has no base cell.
+    for _ in 0..4 {
+        press(&mut core, "j").unwrap();
+    }
+    let effects = press(&mut core, "c").unwrap();
+    assert!(effects.iter().any(|e| matches!(e, Effect::Render(_))));
+    let Anchor::Lines { side, lines, .. } = draft_anchor(&core) else {
+        panic!("expected a line anchor");
+    };
+    assert_eq!(side, Side::Base);
+    assert_eq!((lines.start().get(), lines.end().get()), (5, 9));
+}
+
+#[test]
+fn the_side_cannot_be_flipped_mid_selection() {
+    let mut core = on_row(MODIFIED_ROW, Side::Head);
+    press(&mut core, "V").unwrap();
+    assert!(press(&mut core, "h").is_err());
+    assert_eq!(
+        core.view().visual.map(|v| v.side),
+        Some(Side::Head),
+        "the selection keeps the side it started on"
+    );
 }

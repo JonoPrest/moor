@@ -170,7 +170,7 @@ module TreeView = {
 /// both ends inclusive.
 module VisualView = {
   @schema
-  type t = {start: int, @as("end") end_: int}
+  type t = {start: int, @as("end") end_: int, side: Domain.Side.t}
 }
 
 module ContentSearchView = {
@@ -196,9 +196,15 @@ module Progress = {
   }
 }
 
+/// A thread placed on a row, and the half of the row it is anchored to.
+module RowThread = {
+  @schema
+  type t = {thread: threadId, side: Domain.Side.t}
+}
+
 module DiffRow = {
   @schema
-  type t = {index: int, row: Render.Row.t, threads: array<threadId>}
+  type t = {index: int, row: Render.Row.t, threads: array<RowThread.t>}
 }
 
 module DiffView = {
@@ -287,7 +293,7 @@ module Focus = {
   type t =
     | @as("ReviewList") ReviewList({index: int})
     | @as("Tree") Tree({index: int})
-    | @as("Diff") Diff({row: int})
+    | @as("Diff") Diff({row: int, side: Domain.Side.t})
     | @as("Thread") Thread({index: int})
     | @as("Composer") Composer({})
     | @as("CommitStepper") CommitStepper({index: int})
@@ -356,6 +362,8 @@ module Command = {
     | ExpandUp
     | ExpandDown
     | CommentOnFile
+    | SideBase
+    | SideHead
 }
 
 /// A key sequence in its text form (`"g g"`, `"ctrl+p"`).

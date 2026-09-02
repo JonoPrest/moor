@@ -70,27 +70,62 @@ let pieces = (cell: Cell.t): array<piece> => {
   out
 }
 
+/// The half of a row a cell is: base is the removed (left) column, head
+/// the added (right) one. A modified row renders both, and each is its
+/// own comment target.
+let sideClass = (side: Domain.Side.t): string =>
+  switch side {
+  | Base => "left"
+  | Head => "right"
+  }
+
 module CellView = {
   @react.component
-  let make = (~cell: Cell.t, ~side: string) => {
-    <div className={"cell-" ++ side}>
-      <span className="cell-line-no"> {React.string(Int.toString(cell.lineNo))} </span>
-      {pieces(cell)
-      ->Array.mapWithIndex((p, i) => {
-        let cls = switch (p.class, p.changed) {
-        | (Some(c), true) => spanClassName(c) ++ " cell-changed"
-        | (Some(c), false) => spanClassName(c)
-        | (None, true) => "cell-changed"
-        | (None, false) => ""
-        }
-        <span key={Int.toString(i)} className=cls> {React.string(p.text)} </span>
-      })
-      ->React.array}
-    </div>
+  let make = (
+    ~cell: Cell.t,
+    ~side: Domain.Side.t,
+    ~focused: bool=false,
+    ~selected: bool=false,
+    ~threads: int=0,
+    ~onClick: unit => unit=() => (),
+    ~onMouseDown: unit => unit=() => (),
+    ~onMouseEnter: unit => unit=() => (),
+  ) => {
+    let className =
+      "cell-" ++
+      sideClass(side) ++
+      (focused ? " cell-focused" : "") ++ (selected ? " cell-selected" : "")
+    Attrs.withData(
+      <div
+        className
+        onClick={_ => onClick()}
+        onMouseDown={_ => onMouseDown()}
+        onMouseEnter={_ => onMouseEnter()}
+      >
+        <span className="cell-line-no"> {React.string(Int.toString(cell.lineNo))} </span>
+        {pieces(cell)
+        ->Array.mapWithIndex((p, i) => {
+          let cls = switch (p.class, p.changed) {
+          | (Some(c), true) => spanClassName(c) ++ " cell-changed"
+          | (Some(c), false) => spanClassName(c)
+          | (None, true) => "cell-changed"
+          | (None, false) => ""
+          }
+          <span key={Int.toString(i)} className=cls> {React.string(p.text)} </span>
+        })
+        ->React.array}
+        {threads > 0
+          ? <span className="cell-threads" title={Int.toString(threads) ++ " thread(s)"}>
+              {React.string("💬")}
+            </span>
+          : React.null}
+      </div>,
+      [("data-side", Domain.Side.name(side))],
+    )
   }
 }
 
-let empty = (side: string) => <div className={"cell-" ++ side ++ " cell-empty"} />
+let empty = (side: Domain.Side.t) => <div className={"cell-" ++ sideClass(side) ++ " cell-empty"} />
 
 @react.component
 let make = (
@@ -98,8 +133,12 @@ let make = (
   ~layout: View.Layout.t,
   ~index: int,
   ~focused: bool,
-  ~threads: int,
-  ~onClick: unit => unit=() => (),
+  ~threads: array<View.RowThread.t>,
+  ~focusedSide: Domain.Side.t=Head,
+  ~selectedSide: option<Domain.Side.t>=?,
+  ~onClick: Domain.Side.t => unit=_ => (),
+  ~onMouseDown: Domain.Side.t => unit=_ => (),
+  ~onMouseEnter: Domain.Side.t => unit=_ => (),
   ~onExpand: unit => unit=() => (),
 ) => {
   let base = "row " ++ rowClassName(row)
@@ -107,13 +146,30 @@ let make = (
   | Unified => base ++ " row-unified"
   | Split => base ++ " row-split"
   }
-  let marker = if threads > 0 {
-    <span className="row-threads" title={Int.toString(threads) ++ " thread(s)"}>
-      {React.string("💬")}
-    </span>
-  } else {
-    React.null
+  let threadsOn = (side: Domain.Side.t) =>
+    threads->Array.filter((t: View.RowThread.t) => t.side == side)->Array.length
+  // A row with one cell shows the focus on it whichever side the focus
+  // names; only a two-cell row can point at one half.
+  let bothCells = switch (row, layout) {
+  | (Modified(_), Unified | Split) | (Context(_), Split) => true
+  | (Context(_), Unified)
+  | (Added(_), Unified | Split)
+  | (Removed(_), Unified | Split)
+  | (HunkHeader(_), _)
+  | (Expander(_), _)
+  | (WhitespaceOnly(_), _) => false
   }
+  let cell = (~cell: Cell.t, ~side: Domain.Side.t) =>
+    <CellView
+      cell
+      side
+      focused={focused && (!bothCells || focusedSide == side)}
+      selected={selectedSide == Some(side) || (selectedSide->Option.isSome && !bothCells)}
+      threads={threadsOn(side)}
+      onClick={() => onClick(side)}
+      onMouseDown={() => onMouseDown(side)}
+      onMouseEnter={() => onMouseEnter(side)}
+    />
   let body = switch (row, layout) {
   | (HunkHeader({text}), _) => <div className="cell-hunk"> {React.string(text)} </div>
   | (WhitespaceOnly(_), _) =>
@@ -128,37 +184,44 @@ let make = (
         {React.string(arrow ++ " " ++ Int.toString(hidden) ++ " more lines — expand")}
       </div>
     }
-  | (Context({right}), Unified) => <CellView cell=right side="right" />
+  | (Context({right}), Unified) => cell(~cell=right, ~side=Head)
   | (Context({left, right}), Split) =>
     <>
-      <CellView cell=left side="left" />
-      <CellView cell=right side="right" />
+      {cell(~cell=left, ~side=Base)}
+      {cell(~cell=right, ~side=Head)}
     </>
-  | (Removed({left}), Unified) => <CellView cell=left side="left" />
+  | (Removed({left}), Unified) => cell(~cell=left, ~side=Base)
   | (Removed({left}), Split) =>
     <>
-      <CellView cell=left side="left" />
-      {empty("right")}
+      {cell(~cell=left, ~side=Base)}
+      {empty(Head)}
     </>
-  | (Added({right}), Unified) => <CellView cell=right side="right" />
+  | (Added({right}), Unified) => cell(~cell=right, ~side=Head)
   | (Added({right}), Split) =>
     <>
-      {empty("left")}
-      <CellView cell=right side="right" />
+      {empty(Base)}
+      {cell(~cell=right, ~side=Head)}
     </>
   | (Modified({left, right}), Unified | Split) =>
     <>
-      <CellView cell=left side="left" />
-      <CellView cell=right side="right" />
+      {cell(~cell=left, ~side=Base)}
+      {cell(~cell=right, ~side=Head)}
     </>
   }
+  // A row with no cells (a hunk header) still takes a click, on the side
+  // the focus is already on.
+  let rowClick = switch row {
+  | HunkHeader(_) | Expander(_) | WhitespaceOnly(_) => _ => onClick(focusedSide)
+  | Context(_) | Added(_) | Removed(_) | Modified(_) => _ => ()
+  }
   Attrs.withData(
-    <div className role="row" onClick={_ => onClick()}>
-      body
-      marker
-    </div>,
+    <div className role="row" onClick=rowClick> body </div>,
     focused
-      ? [("data-focused", "true"), ("data-row-index", Int.toString(index))]
+      ? [
+          ("data-focused", "true"),
+          ("data-row-index", Int.toString(index)),
+          ("data-side", Domain.Side.name(focusedSide)),
+        ]
       : [("data-row-index", Int.toString(index))],
   )
 }

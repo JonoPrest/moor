@@ -245,9 +245,6 @@
   .load-more {
     @apply m-2;
   }
-  .row-drag-selected .row {
-    background: color-mix(in oklch, var(--color-accent) 18%, transparent);
-  }
   .diff-scroll {
     @apply min-h-0 flex-1 overflow-auto;
   }
@@ -428,7 +425,7 @@
   .cell-empty {
     background: var(--color-panel);
   }
-  .row-threads {
+  .cell-threads {
     @apply absolute right-2 text-xs;
   }
   .tree-list li,
@@ -720,7 +717,7 @@
 
   /* Rows — one class per `Row` kind */
   .row {
-    /* relative: .row-threads is absolute and must anchor to its row, not
+    /* relative: .cell-threads is absolute and must anchor to its row, not
        the body (an unanchored marker forced a page scrollbar). */
     @apply relative grid font-mono text-xs leading-5 whitespace-pre;
   }
@@ -756,10 +753,19 @@
     @apply italic text-muted;
   }
 
-  /* Cells — one class per side */
+  /* Cells — one class per side. A cell is its own comment target: the
+     focus ring and the selection highlight sit on the half being aimed
+     at, not on the whole row (§6.6). */
   .cell-left,
   .cell-right {
     @apply min-w-0 overflow-hidden px-2;
+  }
+  .cell-focused {
+    outline: 1px solid var(--color-focus);
+    outline-offset: -1px;
+  }
+  .cell-selected {
+    background: color-mix(in oklch, var(--color-accent) 18%, transparent);
   }
   .cell-left {
     border-right: 1px solid var(--color-border);

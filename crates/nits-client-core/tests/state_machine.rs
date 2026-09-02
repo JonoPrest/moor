@@ -767,7 +767,10 @@ fn action_strategy() -> impl Strategy<Value = Action> {
         prop_oneof![
             (0usize..3).prop_map(|index| nits_client_core::Focus::ReviewList { index }),
             (0usize..3).prop_map(|index| nits_client_core::Focus::Tree { index }),
-            (0u32..300).prop_map(|row| nits_client_core::Focus::Diff { row }),
+            (0u32..300).prop_map(|row| nits_client_core::Focus::Diff {
+                row,
+                side: nits_protocol::Side::Head,
+            }),
             (0usize..3).prop_map(|index| nits_client_core::Focus::Thread { index }),
             Just(nits_client_core::Focus::Composer),
             (0usize..3).prop_map(|index| nits_client_core::Focus::CommitStepper { index }),

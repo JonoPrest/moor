@@ -154,6 +154,10 @@ pub enum Command {
     ExpandDown,
     /// Comment on the open file (`z c`, file-level anchor).
     CommentOnFile,
+    /// Target the removed (left) half of the focused row (`h`).
+    SideBase,
+    /// Target the added (right) half of the focused row (`l`).
+    SideHead,
 }
 
 /// A named key that is not a character.
@@ -625,6 +629,9 @@ impl Keymap {
             b(X::Diff, keys!("z u"), C::ExpandUp, false),
             b(X::Diff, keys!("z d"), C::ExpandDown, false),
             b(X::Diff, keys!("z c"), C::CommentOnFile, false),
+            // A modified row is two commentable cells: h/l pick which.
+            b(X::Diff, keys!("h"), C::SideBase, false),
+            b(X::Diff, keys!("l"), C::SideHead, false),
             b(X::Diff, keys!("enter"), C::Open, false),
             // Thread
             b(X::Thread, keys!("j"), C::MoveDown, true),
@@ -1036,6 +1043,8 @@ pub fn label(command: Command) -> &'static str {
         Command::ExpandUp => "expand up",
         Command::ExpandDown => "expand down",
         Command::CommentOnFile => "comment on file",
+        Command::SideBase => "target removed side",
+        Command::SideHead => "target added side",
     }
 }
 
@@ -1100,6 +1109,8 @@ pub fn modes_of(command: Command) -> &'static [Mode] {
         | Command::ExpandUp
         | Command::ExpandDown
         | Command::CommentOnFile
+        | Command::SideBase
+        | Command::SideHead
         | Command::Refresh => &[M::Normal],
     }
 }

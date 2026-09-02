@@ -112,6 +112,13 @@ module CommitInfo = {
 module Side = {
   @schema
   type t = Base | Head
+
+  /// The wire spelling, also used as the `data-side` attribute.
+  let name = (side: t): string =>
+    switch side {
+    | Base => "Base"
+    | Head => "Head"
+    }
 }
 
 /// 16 hex chars.

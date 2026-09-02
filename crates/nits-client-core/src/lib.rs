@@ -50,8 +50,8 @@ pub use cache::{Bytes, CacheKey, CacheValue, ContentCache, Evicted, RenderKey};
 pub use connection::{Connection, ConnectionKind};
 pub use content::{CacheConfig, DiskTier, DiskTierKind, FileRef, PREFETCH_RADIUS};
 pub use diff::{
-    CommentView, CommitStepper, DiffRow, DiffView, PendingIds, StepperCommit, ThreadPlace,
-    ThreadPlaceKind, ThreadView, conversation, threads,
+    CommentView, CommitStepper, DiffRow, DiffView, PendingIds, RowThread, StepperCommit,
+    ThreadPlace, ThreadPlaceKind, ThreadView, conversation, threads,
 };
 pub use events::{
     EventMeta, MutationError, MutationErrorKind, apply_body, local_event, thread_id_of,
@@ -60,7 +60,9 @@ pub use explorer::{
     MAX_HITS, Progress, SearchHit, SearchView, TreeNode, TreeNodeKind, TreeView, ViewedState,
     viewed_state,
 };
-pub use focus::{Focus, FocusKind, NoTarget, PAGE_ROWS, clamp as clamp_focus, visible_nodes};
+pub use focus::{
+    Focus, FocusKind, NoTarget, PAGE_ROWS, VisualAnchor, clamp as clamp_focus, visible_nodes,
+};
 pub use ids::IdSeed;
 pub use keymap::{
     Binding, Command, Conflict, Context, HelpEntry, HelpGroup, HelpView, Hint, KeyChord, KeyCode,
@@ -538,9 +540,9 @@ pub struct ClientCore {
     file_collapse: std::collections::BTreeMap<(RepoId, RepoPath), bool>,
     /// The Browse tab's custom ref, when one is picked (UI-DESIGN §Browse).
     browse: Option<Browse>,
-    /// Visual mode (UI-DESIGN: modal keys): the diff row `V` was pressed
-    /// on; the other end of the selection is the focused row.
-    visual_anchor: Option<u32>,
+    /// Visual mode (UI-DESIGN: modal keys): the diff row and side `V` was
+    /// pressed on; the other end of the selection is the focused row.
+    visual_anchor: Option<VisualAnchor>,
 }
 
 /// Browsing one repo at an arbitrary ref.
@@ -618,9 +620,9 @@ impl ClientCore {
         &self.chords
     }
 
-    /// The Visual-mode anchor row (where `V` was pressed), while it is on.
+    /// Where `V` was pressed, while Visual mode is on.
     #[must_use]
-    pub fn visual_anchor(&self) -> Option<u32> {
+    pub fn visual_anchor(&self) -> Option<VisualAnchor> {
         self.visual_anchor
     }
 
@@ -894,9 +896,10 @@ impl ClientCore {
         }
         // The Visual selection spans the anchor and the focused row.
         let visual = match (self.visual_anchor, focus) {
-            (Some(anchor), Focus::Diff { row }) => Some(crate::view::VisualView {
-                start: anchor.min(row),
-                end: anchor.max(row),
+            (Some(anchor), Focus::Diff { row, .. }) => Some(crate::view::VisualView {
+                start: anchor.row.min(row),
+                end: anchor.row.max(row),
+                side: anchor.side,
             }),
             _ => None,
         };
@@ -1190,7 +1193,10 @@ impl ClientCore {
                 last_row: PAGE_ROWS - 1,
             });
         }
-        self.view.focus = Focus::Diff { row: 0 };
+        self.view.focus = Focus::Diff {
+            row: 0,
+            side: nits_protocol::Side::Head,
+        };
         let mut effects = Vec::new();
         self.want_open_render(review_id, &key, &mut effects);
         effects.push(render(&[ViewSection::Focus, ViewSection::Diff]));
@@ -1745,12 +1751,12 @@ impl ClientCore {
                 if self.view.review.is_none() {
                     return Err(CoreError::NoOpenReview);
                 }
-                let Focus::Diff { row } = self.view.focus else {
+                let Focus::Diff { row, side } = self.view.focus else {
                     return Err(CoreError::NoTarget(focus::NoTarget::Nothing(
                         Command::VisualMode,
                     )));
                 };
-                self.visual_anchor = Some(row);
+                self.visual_anchor = Some(VisualAnchor { row, side });
                 // The selection and mode are derived after this returns.
                 Ok(Vec::new())
             }
@@ -1856,7 +1862,7 @@ impl ClientCore {
                 self.view.focus = focus;
                 let mut effects = Vec::new();
                 // A focused row outside the viewport scrolls the viewport.
-                if let Focus::Diff { row } = focus
+                if let Focus::Diff { row, .. } = focus
                     && let Some(open) = &self.view.review
                     && let Some(f) = &open.open_file
                     && (row < f.first_row || row > f.last_row)

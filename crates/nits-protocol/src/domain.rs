@@ -226,6 +226,17 @@ pub enum Side {
     Head,
 }
 
+impl Side {
+    /// The other half of the same row: base ↔ head.
+    #[must_use]
+    pub const fn other(self) -> Self {
+        match self {
+            Side::Base => Side::Head,
+            Side::Head => Side::Base,
+        }
+    }
+}
+
 /// Hash of the ±3 lines surrounding an anchored range, used to detect that a
 /// mapped anchor still points at the same content. Serialised as 16 hex chars.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

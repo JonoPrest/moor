@@ -79,6 +79,16 @@ pub struct CommentView {
     pub pending: bool,
 }
 
+/// A thread placed on a row, and the half of the row it is anchored to —
+/// a modified row shows base threads against its removed cell and head
+/// threads against its added one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RowThread {
+    pub thread: ThreadId,
+    pub side: Side,
+}
+
 /// A row of the open file with the threads placed on it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -86,7 +96,7 @@ pub struct DiffRow {
     /// Index into the file's rows (across chunks).
     pub index: u32,
     pub row: Row,
-    pub threads: Vec<ThreadId>,
+    pub threads: Vec<RowThread>,
 }
 
 /// The open file, over the viewport window.
@@ -272,7 +282,7 @@ fn blob_on(target: &RenderTarget, side: Side) -> Option<BlobOid> {
 }
 
 /// Line number of `row` on `side`, if it has one.
-fn line_on(row: &Row, side: Side) -> Option<u32> {
+pub(crate) fn line_on(row: &Row, side: Side) -> Option<u32> {
     match (row, side) {
         (
             Row::Context { left, .. } | Row::Modified { left, .. } | Row::Removed { left },
@@ -548,9 +558,12 @@ fn place_rows(
                 continue;
             };
             // Anchor on the last line of the range; a row whose cell is
-            // that line carries the thread.
+            // that line carries the thread, on that cell's side.
             if line_on(row, side) == Some(end) {
-                threads.push(p.thread);
+                threads.push(RowThread {
+                    thread: p.thread,
+                    side,
+                });
             }
         }
         out.push(DiffRow {

@@ -1,6 +1,7 @@
 {
   "focus": {
     "row": 121,
+    "side": "Head",
     "type": "Diff"
   },
   "tab": "FilesChanged",

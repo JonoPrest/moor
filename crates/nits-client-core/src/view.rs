@@ -3,7 +3,7 @@
 
 use nits_protocol::{
     Anchor, ClientSeq, DiffScope, EventBody, RenderOpts, ResolvedTarget, Review, ReviewId,
-    ReviewSnapshot, RpcError, ThreadId, TreeOid, ViewSection, Workspace,
+    ReviewSnapshot, RpcError, Side, ThreadId, TreeOid, ViewSection, Workspace,
 };
 
 use crate::cache::RenderKey;
@@ -206,6 +206,9 @@ impl Default for ViewPrefs {
 pub struct VisualView {
     pub start: u32,
     pub end: u32,
+    /// The half of the rows the selection is on: hosts highlight that
+    /// cell, and `c` anchors the comment there.
+    pub side: Side,
 }
 
 /// The content-search palette (UI-DESIGN §Search): query, scope toggle

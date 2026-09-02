@@ -1864,8 +1864,13 @@ fn line_anchors_land_on_the_last_line_of_the_range_on_the_right_side() {
     let diff = core.view().diff.as_ref().unwrap();
     assert_eq!(diff.rows.len(), 200);
     assert!(diff.missing.is_empty());
-    let at =
-        |row: usize| -> Vec<u128> { diff.rows[row].threads.iter().map(|t| t.random()).collect() };
+    let at = |row: usize| -> Vec<u128> {
+        diff.rows[row]
+            .threads
+            .iter()
+            .map(|t| t.thread.random())
+            .collect()
+    };
     // Row index = line - 1 in this fixture.
     assert_eq!(at(6), vec![1], "5..=7 lands on line 7");
     assert_eq!(at(4), Vec::<u128>::new());
@@ -2142,7 +2147,7 @@ fn jump_to_original_diff_renders_the_recorded_change_read_only() {
     );
     assert!(matches!(
         core.view().focus,
-        nits_client_core::Focus::Diff { row: 0 }
+        nits_client_core::Focus::Diff { row: 0, .. }
     ));
     // The stream answers with the original render's header and rows.
     let original_header = FileRenderHeader {

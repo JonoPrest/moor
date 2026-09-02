@@ -236,6 +236,12 @@ Everything explicitly asked for, so no shell or rewrite loses them.
 - ✓ Mouse drag across lines = multiline comment (keyboard version =
   Visual mode, `V`); inline threads under their rows with in-card
   reply; comments record the diff they were made on.
+- ✓ A modified row is TWO comment targets, not one: the removed (red)
+  cell anchors to base, the added (green) cell to head. The focus
+  carries the side (`Focus::Diff { row, side }`); `h`/`l` move between
+  the halves, the mouse hit-tests the cell it is over, and a drag or
+  Visual selection keeps the side it started on. A thread's marker hangs
+  on the cell its anchor names.
 - ✓ `z` Expand group: `z u`/`z d` expand up/down from the focused row,
   `z c` comment-on-file from the diff (interim: both expands may share
   the more-context re-render until band splicing). Rule to uphold:

@@ -52,6 +52,10 @@ let make = (
   | Diff({row}) => Some(row)
   | _ => None
   }
+  let focusedSide = switch focus {
+  | Diff({side}) => side
+  | _ => Domain.Side.Head
+  }
   React.useEffect1(() => {
     switch focusedRow {
     | Some(row) => virtualizer->Virtual.scrollToIndex(row)
@@ -145,11 +149,13 @@ let make = (
                 layout
                 index=item.index
                 focused
-                threads={Array.length(r.threads)}
-                onClick={() => dispatch(SetFocus({focus: Focus.Diff({row: item.index})}))}
+                focusedSide
+                threads=r.threads
+                onClick={side => dispatch(SetFocus({focus: Focus.Diff({row: item.index, side})}))}
                 onExpand={() => dispatch(ExpandContext({file: diff.file, full: false}))}
               />
               {r.threads
+              ->Array.map((t: View.RowThread.t) => t.thread)
               ->Array.filterMap(threadOf)
               ->Array.map(ti => {
                 let thread = threads->Array.getUnsafe(ti)

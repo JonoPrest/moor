@@ -21,7 +21,13 @@ describe("Row", () => {
           () => {
             let row = Fixtures.parse(Render.Row.schema, "protocol", "Row", v)
             let {container} = render(
-              <Row row layout index=3 focused={v == "Added"} threads={v == "Modified" ? 2 : 0} />,
+              <Row
+                row
+                layout
+                index=3
+                focused={v == "Added"}
+                threads={v == "Modified" ? [{thread: "t1", side: Head}] : []}
+              />,
             )
             let el =
               Element.querySelector(container, "[role=\"row\"]")->Nullable.toOption->Option.getExn
@@ -30,7 +36,10 @@ describe("Row", () => {
             expect(Element.getAttribute(el, "data-row-index"))->toEqual(Nullable.make("3"))
             expect(Element.hasAttribute(el, "data-focused"))->toBe(v == "Added")
             if v == "Modified" {
-              expect(Element.querySelector(el, ".row-threads"))->not_->toBeNull
+              // The marker hangs on the cell the thread is anchored to,
+              // so a base thread never shows against the green half.
+              expect(Element.querySelector(el, ".cell-right .cell-threads"))->not_->toBeNull
+              expect(Element.querySelector(el, ".cell-left .cell-threads"))->toBeNull
               expect(Element.querySelector(el, ".span-keyword"))->not_->toBeNull
               expect(Element.querySelector(el, ".cell-changed"))->not_->toBeNull
             }
@@ -52,7 +61,7 @@ describe("DiffView", () => {
     let dispatch = fn()
     let base = Fixtures.parse(View.DiffView.schema, "client", "DiffView", "default")
     let {container, rerender} = render(
-      <DiffView diff=base layout=Unified focus={Diff({row: 121})} dispatch />,
+      <DiffView diff=base layout=Unified focus={Diff({row: 121, side: Head})} dispatch />,
     )
     // jsdom has no layout, so the virtualizer renders nothing until measured;
     // the grid and its scroll container must still be there.
@@ -63,7 +72,7 @@ describe("DiffView", () => {
       missing: [],
       rows: base.rows->Array.concat([{...base.rows->Array.getUnsafe(0), index: 122}]),
     }
-    rerender(<DiffView diff=filled layout=Split focus={Diff({row: 122})} dispatch />)
+    rerender(<DiffView diff=filled layout=Split focus={Diff({row: 122, side: Head})} dispatch />)
     expect(Element.querySelector(container, "[role=\"grid\"]"))->not_->toBeNull
     expect(Screen.getByText("1 file-level thread(s)"))->toBeTruthy
   })
@@ -292,14 +301,16 @@ describe("Context expanders", () => {
   test("an expander row click and the expand-file button dispatch ExpandContext", () => {
     let dispatch = fn()
     let base = Fixtures.parse(View.DiffView.schema, "client", "DiffView", "default")
-    let _ = render(<DiffView diff=base layout=Unified focus={Diff({row: 0})} dispatch />)
+    let _ = render(
+      <DiffView diff=base layout=Unified focus={Diff({row: 0, side: Head})} dispatch />,
+    )
     FireEvent.click(Screen.getByText("expand file"))
     expect(dispatch)->toHaveBeenLastCalledWith(Action.ExpandContext({file: base.file, full: true}))
     cleanup()
     let row = Fixtures.parse(Render.Row.schema, "protocol", "Row", "Expander")
     let expand = fn()
     let _ = render(
-      <Row row layout=Unified index=0 focused=false threads=0 onExpand={() => expand()} />,
+      <Row row layout=Unified index=0 focused=false threads=[] onExpand={() => expand()} />,
     )
     FireEvent.click(Screen.getByTextRe(/more lines/))
     expect(expand)->toHaveBeenCalled
@@ -339,11 +350,15 @@ describe("Jump to original diff", () => {
     let dispatch = fn()
     let base = Fixtures.parse(View.DiffView.schema, "client", "DiffView", "default")
     let {container} = render(
-      <DiffView diff={...base, original: true} layout=Unified focus={Diff({row: 0})} dispatch />,
+      <DiffView
+        diff={...base, original: true} layout=Unified focus={Diff({row: 0, side: Head})} dispatch
+      />,
     )
     expect(Element.querySelector(container, ".original-banner"))->not_->toBeNull
     cleanup()
-    let {container} = render(<DiffView diff=base layout=Unified focus={Diff({row: 0})} dispatch />)
+    let {container} = render(
+      <DiffView diff=base layout=Unified focus={Diff({row: 0, side: Head})} dispatch />,
+    )
     expect(Element.querySelector(container, ".original-banner"))->toBeNull
   })
 })
@@ -354,7 +369,7 @@ describe("DiffView (viewed)", () => {
     let base = Fixtures.parse(View.DiffView.schema, "client", "DiffView", "default")
     let viewed = {...base, viewed: Viewed}
     let {container} = render(
-      <DiffView diff=viewed layout=Unified focus={Diff({row: 121})} dispatch />,
+      <DiffView diff=viewed layout=Unified focus={Diff({row: 121, side: Head})} dispatch />,
     )
     expect(Element.querySelector(container, ".diff-collapsed"))->not_->toBeNull
     expect(Element.querySelector(container, ".diff-scroll.hidden"))->not_->toBeNull
@@ -634,5 +649,114 @@ describe("Tree (rows)", () => {
     | Action.Viewport({file}) => expect(file.path)->toBe("src/lib.rs")
     | _ => expect(false)->toBe(true)
     }
+  })
+})
+
+// jsdom has no layout, so the stacked view's scroll-into-view is a no-op
+// here; without the stub mounting an open file throws.
+%%raw(`
+if (!globalThis.Element.prototype.scrollIntoView) {
+  globalThis.Element.prototype.scrollIntoView = function () {}
+}
+`)
+
+describe("Row sides", () => {
+  // The fixture row is modified (two cells) and carries a base-anchored
+  // thread; a removed row below it gives the drag a second base line.
+  let atLine = (row: Render.Row.t, n: int): Render.Row.t =>
+    switch row {
+    | Modified({left, right}) =>
+      Modified({left: {...left, lineNo: n}, right: {...right, lineNo: n}})
+    | Context({left, right}) => Context({left: {...left, lineNo: n}, right: {...right, lineNo: n}})
+    | Removed({left}) => Removed({left: {...left, lineNo: n}})
+    | Added({right}) => Added({right: {...right, lineNo: n}})
+    | HunkHeader(_) | Expander(_) | WhitespaceOnly(_) => row
+    }
+
+  let diff = (): View.DiffView.t => {
+    let base = Fixtures.parse(View.DiffView.schema, "client", "DiffView", "default")
+    let modified = Fixtures.parse(View.DiffRow.schema, "client", "DiffRow", "default")
+    let removed = Fixtures.parse(Render.Row.schema, "protocol", "Row", "Removed")
+    {
+      ...base,
+      firstRow: 121,
+      lastRow: 122,
+      missing: [],
+      collapsed: false,
+      rows: [
+        {...modified, index: 121, row: atLine(modified.row, 9)},
+        {index: 122, row: atLine(removed, 10), threads: []},
+      ],
+    }
+  }
+
+  let mount = (~diff as d, ~dispatch) =>
+    render(
+      <FileDiff
+        diff=d
+        layout=Split
+        focus={Diff({row: 121, side: Head})}
+        threads=[]
+        draft=None
+        pendingRefresh=false
+        isOpen=true
+        dispatch
+      />,
+    )
+
+  test("a base-anchored thread hangs on the removed cell, not the added one", () => {
+    let {container} = mount(~diff=diff(), ~dispatch=fn())
+    let row =
+      Element.querySelector(container, "[data-row-index=\"121\"]")
+      ->Nullable.toOption
+      ->Option.getExn
+    expect(Element.querySelector(row, ".cell-left .cell-threads"))->not_->toBeNull
+    expect(Element.querySelector(row, ".cell-right .cell-threads"))->toBeNull
+  })
+
+  test("clicking a cell focuses that half of the row", () => {
+    let dispatch = fn()
+    let {container} = mount(~diff=diff(), ~dispatch)
+    let row =
+      Element.querySelector(container, "[data-row-index=\"121\"]")
+      ->Nullable.toOption
+      ->Option.getExn
+    let left = Element.querySelector(row, ".cell-left")->Nullable.toOption->Option.getExn
+    FireEvent.click(left)
+    expect(dispatch)->toHaveBeenLastCalledWith(
+      Action.SetFocus({focus: Diff({row: 121, side: Base})}),
+    )
+    let right = Element.querySelector(row, ".cell-right")->Nullable.toOption->Option.getExn
+    FireEvent.click(right)
+    expect(dispatch)->toHaveBeenLastCalledWith(
+      Action.SetFocus({focus: Diff({row: 121, side: Head})}),
+    )
+  })
+
+  test("dragging down the removed side comments on base lines", () => {
+    let dispatch = fn()
+    let {container} = mount(~diff=diff(), ~dispatch)
+    let leftOf = (index: int) =>
+      Element.querySelector(container, "[data-row-index=\"" ++ Int.toString(index) ++ "\"]")
+      ->Nullable.toOption
+      ->Option.getExn
+      ->Element.querySelector(".cell-left")
+      ->Nullable.toOption
+      ->Option.getExn
+    // Starting on the red half of a modified row and crossing into a
+    // removed row: the drag keeps growing (it used to stop dead).
+    FireEvent.mouseDown(leftOf(121))
+    FireEvent.mouseEnter(leftOf(122))
+    FireEvent.mouseUp(leftOf(122))
+    let calls = mock(dispatch).calls
+    let commented = calls->Array.some(
+      args =>
+        switch args->Array.getUnsafe(0) {
+        | Action.CommentLines({side, startLine, endLine}) =>
+          side == Base && startLine == 9 && endLine == 10
+        | _ => false
+        },
+    )
+    expect(commented)->toBe(true)
   })
 })
