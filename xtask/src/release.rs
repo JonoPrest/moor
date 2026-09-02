@@ -32,6 +32,21 @@ impl Releasable {
         }
     }
 
+    /// Every binary this release must ship, not just the headline one.
+    ///
+    /// `nits` and `nits-mcp` are clients of a daemon they start themselves:
+    /// `nitsd::launch::sibling_binary` looks for `nitsd` next to the running
+    /// executable and falls back to `PATH`, so a package containing only the
+    /// client installs something that fails on its first real command. Every
+    /// channel ships this whole set.
+    pub fn binaries(self) -> &'static [&'static str] {
+        match self {
+            Self::Cli => &["nits", "nitsd"],
+            Self::Daemon => &["nitsd"],
+            Self::Mcp => &["nits-mcp", "nitsd"],
+        }
+    }
+
     /// Parse the `--package` argument. Untrusted input becomes a variant once,
     /// here, so every later match is exhaustive.
     pub fn parse(s: &str) -> anyhow::Result<Self> {
@@ -256,8 +271,13 @@ pub fn plan(package: Releasable) -> anyhow::Result<()> {
         }));
     }
 
-    // The release crate itself already being on crates.io, or the tag already
-    // existing, means this version was released: bump before re-running.
+    // What makes a version un-releasable is the *tag*, which is what a binary
+    // release claims. Being on crates.io does not: a crate is published
+    // whenever it appears in some other package's dependency closure — a
+    // `nits` release publishes `nitsd@x` — and that must not then block
+    // `nitsd`'s own release of the same version, which has produced no tag,
+    // tarball, formula, AUR package, deb or rpm. Re-publishing is separately
+    // harmless because `publish()` skips versions crates.io already has.
     let root_published = crates
         .iter()
         .find(|c| c["name"] == root)
@@ -270,13 +290,14 @@ pub fn plan(package: Releasable) -> anyhow::Result<()> {
         "version": version,
         "dir": dir,
         "tag": tag,
+        "binaries": package.binaries(),
         "crates": crates,
-        "collision": root_published || tag_taken,
-        "collision_reason": match (root_published, tag_taken) {
-            (true, true) => format!("{root}@{version} is on crates.io and tag {tag} exists"),
-            (true, false) => format!("{root}@{version} is already on crates.io"),
-            (false, true) => format!("tag {tag} already exists"),
-            (false, false) => String::new(),
+        "crate_already_published": root_published,
+        "collision": tag_taken,
+        "collision_reason": if tag_taken {
+            format!("tag {tag} already exists")
+        } else {
+            String::new()
         },
     });
     println!("{}", serde_json::to_string_pretty(&plan)?);
@@ -368,6 +389,30 @@ mod tests {
     fn every_releasable_name_round_trips() {
         for r in [Releasable::Cli, Releasable::Daemon, Releasable::Mcp] {
             assert_eq!(Releasable::parse(r.crate_name()).expect("parses"), r);
+        }
+    }
+
+    #[test]
+    fn every_client_ships_the_daemon_it_starts() {
+        // A client package without nitsd installs a CLI that fails on its
+        // first real command, which `--version` smoke tests do not catch.
+        for r in [Releasable::Cli, Releasable::Mcp] {
+            assert!(r.binaries().contains(&"nitsd"), "{r:?} must ship nitsd");
+            assert!(r.binaries().contains(&r.crate_name()));
+        }
+        assert_eq!(Releasable::Daemon.binaries(), ["nitsd"]);
+    }
+
+    #[test]
+    fn every_shipped_binary_is_built_by_a_known_package() {
+        let packages: BTreeSet<&str> = [Releasable::Cli, Releasable::Daemon, Releasable::Mcp]
+            .iter()
+            .map(|r| r.crate_name())
+            .collect();
+        for r in [Releasable::Cli, Releasable::Daemon, Releasable::Mcp] {
+            for bin in r.binaries() {
+                assert!(packages.contains(bin), "no package builds {bin}");
+            }
         }
     }
 

@@ -12,6 +12,12 @@ package=${1:?package}
 version=${2:?version}
 tag=${3:?tag}
 artifacts=${4:?artifact directory}
+shift 4
+# Every binary the tarball carries. The clients spawn nitsd, so installing only
+# the headline binary yields a formula whose `--version` passes and whose first
+# real command fails.
+binaries=("$@")
+[ ${#binaries[@]} -gt 0 ] || binaries=("$package" nitsd)
 
 repo=https://github.com/JonoPrest/nits
 
@@ -66,11 +72,21 @@ class $class < Formula
   end
 
   def install
-    bin.install "$package"
+$(for b in "${binaries[@]}"; do echo "    bin.install \"$b\""; done)
   end
 
   test do
     assert_match "$version", shell_output("#{bin}/$package --version")
+$(if [ "$package" != nitsd ]; then cat <<'TEST'
+    # A command that actually starts and connects to the daemon. `--version`
+    # and `daemon status` both pass without nitsd installed — only something
+    # that reaches ensure_daemon catches a client shipped without it.
+    ENV["NITS_DATA_DIR"] = testpath/"data"
+    ENV["NITS_CONFIG"]   = testpath/"config.toml"
+    system bin/"PACKAGE", "workspace", "list"
+    system bin/"PACKAGE", "daemon", "stop"
+TEST
+fi | sed "s/PACKAGE/$package/")
   end
 end
 EOF

@@ -44,9 +44,17 @@ if [ "$found" -eq 0 ]; then
 fi
 
 # --- APT -------------------------------------------------------------------
-( cd "$pages"
-  dpkg-scanpackages --multiversion deb > deb/Packages
-  gzip -9 -k -f deb/Packages
+# Everything here runs *inside* $deb_dir. In a flat repository apt resolves each
+# `Filename:` against the base URL, which already ends in /deb — so scanning
+# from $pages would emit `deb/<pkg>.deb` and apt would fetch /deb/deb/<pkg>.deb
+# and get a 404. Scanning `.` emits `./<pkg>.deb`, which resolves correctly.
+( cd "$deb_dir"
+  # Stale index files must not end up hashed into the Release they belong to.
+  rm -f Packages Packages.gz Release Release.gpg InRelease
+
+  dpkg-scanpackages --multiversion . > Packages
+  gzip -9 -k -f Packages
+
   apt-ftparchive \
     -o APT::FTPArchive::Release::Origin=nits \
     -o APT::FTPArchive::Release::Label=nits \
@@ -54,10 +62,12 @@ fi
     -o APT::FTPArchive::Release::Codename=stable \
     -o APT::FTPArchive::Release::Architectures="amd64 arm64" \
     -o APT::FTPArchive::Release::Components=main \
-    release deb > deb/Release
+    release . > Release.tmp
+  mv Release.tmp Release
+
   # Both signatures: detached for older apt, inline for `signed-by` clients.
-  gpg_sign --armor --detach-sign --output deb/Release.gpg deb/Release
-  gpg_sign --clearsign --output deb/InRelease deb/Release
+  gpg_sign --armor --detach-sign --output Release.gpg Release
+  gpg_sign --clearsign --output InRelease Release
 )
 
 # --- YUM -------------------------------------------------------------------

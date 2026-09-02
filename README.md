@@ -16,9 +16,10 @@ $ cargo install nits                        # any platform with a Rust toolchain
 $ yay -S nits-bin                           # Arch
 ```
 
-Debian/Ubuntu and Fedora/RHEL repositories, and signed tarballs for
+Debian/Ubuntu and Fedora/RHEL repositories, and tarballs for
 `{x86_64,aarch64}-{apple-darwin,unknown-linux-gnu,unknown-linux-musl}`, are at
 <https://jonoprest.github.io/nits/> and on the [releases page][releases].
+Every package ships `nitsd` alongside the client, which starts it on demand.
 There is no Windows build yet — the daemon's transport is unix-socket only.
 
 Cutting a release: [`docs/RELEASING.md`](docs/RELEASING.md).

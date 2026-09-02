@@ -35,9 +35,12 @@ on:
         type: boolean
         default: false
 
-# One release at a time: two concurrent runs would race on the tag and the tap.
+# One release at a time, globally — not per package. Two packages share most of
+# their dependency closure (both publish nits-protocol, nitsd, …), the Homebrew
+# tap, and the APT/YUM repo, so per-package groups would let two runs both see a
+# shared crate as absent and race to publish it, or push the tap concurrently.
 concurrency:
-  group: release-${{ inputs.package }}
+  group: release
   cancel-in-progress: false
 
 permissions:
@@ -54,6 +57,7 @@ jobs:
       version: ${{ steps.plan.outputs.version }}
       tag: ${{ steps.plan.outputs.tag }}
       dir: ${{ steps.plan.outputs.dir }}
+      binaries: ${{ steps.plan.outputs.binaries }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -70,6 +74,8 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "dir=$(jq -r .dir plan.json)" >> "$GITHUB_OUTPUT"
+          # Space-separated, so the build job can loop over it in shell.
+          echo "binaries=$(jq -r '.binaries | join(" ")' plan.json)" >> "$GITHUB_OUTPUT"
           if [ "$(jq -r .collision plan.json)" = "true" ]; then
             reason=$(jq -r .collision_reason plan.json)
             echo "::error::$reason — bump the version in Cargo.toml before releasing."
@@ -79,6 +85,8 @@ jobs:
             echo "## Release plan"
             echo
             echo "\`${{ inputs.package }}\` **$version** → tag \`$tag\`"
+            echo
+            echo "Ships: $(jq -r '.binaries | join(", ")' plan.json)"
             echo
             echo "| crate | version | on crates.io |"
             echo "| --- | --- | --- |"
@@ -96,20 +104,24 @@ jobs:
           # Native runners for every target: no cross toolchains to keep working.
           # Windows is absent on purpose — nitsd and nits-client-host use
           # std::os::unix unconditionally, so there is nothing to build yet.
+          # ubuntu-22.04/-arm begin brownouts on 2026-09-17, and macos-13 was
+          # retired on 2025-12-04. macos-15-intel is the last x86_64 macOS
+          # image (through Aug 2027). The glibc floor is therefore 24.04's
+          # 2.39; the musl targets are the static option for older systems.
           - target: x86_64-unknown-linux-gnu
-            runner: ubuntu-22.04 # oldest glibc we support
+            runner: ubuntu-24.04
           - target: x86_64-unknown-linux-musl
-            runner: ubuntu-22.04
+            runner: ubuntu-24.04
             musl: true
           - target: aarch64-unknown-linux-gnu
-            runner: ubuntu-22.04-arm
+            runner: ubuntu-24.04-arm
           - target: aarch64-unknown-linux-musl
-            runner: ubuntu-22.04-arm
+            runner: ubuntu-24.04-arm
             musl: true
           - target: x86_64-apple-darwin
-            runner: macos-13
+            runner: macos-15-intel
           - target: aarch64-apple-darwin
-            runner: macos-14
+            runner: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -121,7 +133,13 @@ jobs:
       - if: matrix.musl
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - name: build
-        run: cargo build --release --locked --target '${{ matrix.target }}' --package '${{ inputs.package }}' --bin '${{ inputs.package }}'
+        # Every binary in the set, not just the headline one: the clients spawn
+        # nitsd and are unusable without it.
+        run: |
+          set -euo pipefail
+          args=()
+          for bin in ${{ needs.plan.outputs.binaries }}; do args+=(--package "$bin"); done
+          cargo build --release --locked --target '${{ matrix.target }}' "${args[@]}"
       - name: tarball
         id: tarball
         shell: bash
@@ -130,8 +148,10 @@ jobs:
           name='${{ inputs.package }}-${{ needs.plan.outputs.version }}-${{ matrix.target }}'
           staging="dist/$name"
           mkdir -p "$staging"
-          cp 'target/${{ matrix.target }}/release/${{ inputs.package }}' "$staging/"
-          strip "$staging/${{ inputs.package }}" || true
+          for bin in ${{ needs.plan.outputs.binaries }}; do
+            cp "target/${{ matrix.target }}/release/$bin" "$staging/"
+            strip "$staging/$bin" || true
+          done
           cp README.md LICENSE "$staging/"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
           # shasum is the one checksum tool present on both runners.
@@ -170,21 +190,48 @@ jobs:
         with:
           name: ${{ inputs.package }}-${{ needs.plan.outputs.version }}-${{ matrix.target }}
           path: incoming
-      - name: restage the binary cargo-deb/cargo-generate-rpm expect
+      - name: restage the binaries cargo-deb/cargo-generate-rpm expect
         run: |
           set -euo pipefail
           tar -C incoming -xzf incoming/*.tar.gz
           mkdir -p 'target/${{ matrix.target }}/release'
-          install -m 0755 \
-            'incoming/${{ inputs.package }}-${{ needs.plan.outputs.version }}-${{ matrix.target }}/${{ inputs.package }}' \
-            'target/${{ matrix.target }}/release/${{ inputs.package }}'
+          src='incoming/${{ inputs.package }}-${{ needs.plan.outputs.version }}-${{ matrix.target }}'
+          for bin in ${{ needs.plan.outputs.binaries }}; do
+            install -m 0755 "$src/$bin" 'target/${{ matrix.target }}/release/'"$bin"
+          done
+      - name: import the signing key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update && sudo apt-get install -y rpm
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          echo "GPG_KEY_ID=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec:/ {print $5; exit}')" >> "$GITHUB_ENV"
       - name: build packages
         run: |
           set -euo pipefail
           mkdir -p dist
-          # --no-build/--no-strip: reuse the exact binary that was released.
+          # --no-build/--no-strip: reuse the exact binaries that were released.
           cargo deb --no-build --no-strip --target '${{ matrix.target }}' --package '${{ inputs.package }}' --output dist/
           cargo generate-rpm --target '${{ matrix.target }}' --package '${{ needs.plan.outputs.dir }}' --output dist/
+      - name: sign the RPMs
+        # The published repo sets gpgcheck=1, which checks *package* signatures
+        # and is a separate check from repo_gpgcheck. cargo-generate-rpm's
+        # --signing-key takes a key file but has no passphrase option, so
+        # rpmsign with a loopback pinentry is what can use our key. Signing
+        # here, before upload, keeps the release artifact and the repo copy
+        # byte-identical.
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          cat > "$HOME/.rpmmacros" <<EOF
+          %_gpg_name $GPG_KEY_ID
+          %__gpg_sign_cmd %{__gpg} gpg --batch --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --no-armor --no-secmem-warning -u "%{_gpg_name}" -sbo %{__signature_filename} %{__plaintext_filename}
+          EOF
+          for f in dist/*.rpm; do rpmsign --addsign "$f"; done
+          rpm --import <(gpg --export --armor "$GPG_KEY_ID")
+          for f in dist/*.rpm; do rpm --checksig "$f" | grep -q 'pgp.*OK\|signatures OK'; done
           ( cd dist && for f in *.deb *.rpm; do shasum -a 256 "$f" > "$f.sha256"; done )
           ls -l dist
       - uses: actions/upload-artifact@v4
@@ -245,7 +292,7 @@ jobs:
   homebrew:
     name: Homebrew tap
     needs: [plan, release]
-    if: inputs.homebrew && !inputs.dry_run && !failure() && !cancelled()
+    if: inputs.homebrew && !failure() && !cancelled()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -260,9 +307,22 @@ jobs:
             '${{ inputs.package }}' \
             '${{ needs.plan.outputs.version }}' \
             '${{ needs.plan.outputs.tag }}' \
-            incoming > formula.rb
+            incoming ${{ needs.plan.outputs.binaries }} > formula.rb
           cat formula.rb
+      - name: validate the formula
+        run: |
+          set -euo pipefail
+          # ruby -c catches syntax errors without needing Homebrew installed.
+          ruby -c formula.rb
+          for t in aarch64-apple-darwin x86_64-apple-darwin \
+                   aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu; do
+            grep -q "$t.tar.gz" formula.rb || { echo "::error::formula is missing $t"; exit 1; }
+          done
+          # Every sha256 must be a real 64-hex digest, not an empty string.
+          grep -oE 'sha256 "[^"]*"' formula.rb | grep -vqE 'sha256 "[0-9a-f]{64}"' \
+            && { echo '::error::formula has a malformed sha256'; exit 1; } || true
       - name: commit to the tap
+        if: '!inputs.dry_run'
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
@@ -280,7 +340,7 @@ jobs:
   aur:
     name: AUR
     needs: [plan, release]
-    if: inputs.aur && !inputs.dry_run && !failure() && !cancelled()
+    if: inputs.aur && !failure() && !cancelled()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -296,9 +356,24 @@ jobs:
             '${{ inputs.package }}' \
             '${{ needs.plan.outputs.version }}' \
             '${{ needs.plan.outputs.tag }}' \
-            incoming out
+            incoming out ${{ needs.plan.outputs.binaries }}
           cat out/PKGBUILD out/.SRCINFO
+      - name: validate PKGBUILD and .SRCINFO
+        run: |
+          set -euo pipefail
+          bash -n out/PKGBUILD
+          # The two files are written separately; a mismatch ships a package
+          # whose metadata disagrees with its own build recipe.
+          for arch in x86_64 aarch64; do
+            pk=$(grep -oE "sha256sums_$arch=\('[0-9a-f]{64}'\)" out/PKGBUILD | grep -oE '[0-9a-f]{64}')
+            si=$(grep -oE "sha256sums_$arch = [0-9a-f]{64}" out/.SRCINFO | grep -oE '[0-9a-f]{64}')
+            [ -n "$pk" ] && [ "$pk" = "$si" ] || {
+              echo "::error::PKGBUILD/.SRCINFO sha256 mismatch for $arch"; exit 1; }
+          done
+          grep -q "pkgver=${{ needs.plan.outputs.version }}" out/PKGBUILD
+          grep -q "pkgver = ${{ needs.plan.outputs.version }}" out/.SRCINFO
       - name: push to the AUR
+        if: '!inputs.dry_run'
         env:
           AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
         run: |
@@ -322,7 +397,7 @@ jobs:
   linux-repo:
     name: APT/YUM repo
     needs: [plan, release, linux-packages]
-    if: inputs.linux_packages && !inputs.dry_run && !failure() && !cancelled()
+    if: inputs.linux_packages && !failure() && !cancelled()
     runs-on: ubuntu-latest
     concurrency:
       # The repo is one gh-pages branch shared by every package.
@@ -354,6 +429,23 @@ jobs:
             || { git clone "https://x-access-token:$GH_TOKEN@github.com/${{ github.repository }}.git" pages \
                  && git -C pages checkout --orphan gh-pages && git -C pages rm -rf . ; }
           scripts/build-linux-repo.sh pages incoming "$GPG_KEY_ID"
+      - name: verify the repository indexes
+        run: |
+          set -euo pipefail
+          # apt resolves Filename against the base URL, which already ends in
+          # /deb — so an entry of "deb/x.deb" would 404. Catch that here.
+          grep -q '^Filename: \./' pages/deb/Packages \
+            || { echo '::error::deb Packages has non-relative Filename entries'; sed -n "/^Filename/p" pages/deb/Packages; exit 1; }
+          gpg --verify pages/deb/InRelease
+          gpg --verify pages/deb/Release.gpg pages/deb/Release
+          gpg --verify pages/rpm/repodata/repomd.xml.asc pages/rpm/repodata/repomd.xml
+          test -s pages/nits-archive-keyring.gpg && test -s pages/nits.asc
+      - name: publish to gh-pages
+        if: '!inputs.dry_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
           cd pages
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
