@@ -109,6 +109,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: ui/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      - run: pnpm rescript format --check
       - run: pnpm rescript
       - run: pnpm test
       - run: pnpm vite build
