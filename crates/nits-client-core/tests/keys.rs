@@ -1370,3 +1370,50 @@ fn the_scroll_family_means_nothing_off_the_diff() {
     );
     assert_eq!(core.view().scroll, None);
 }
+
+#[test]
+fn stepping_over_a_file_boundary_follows_but_a_jump_pins() {
+    // `j` off the end of a file is a continuous motion: the next file
+    // opens with no reposition, so the view scrolls by one row.
+    let mut core = on_row(4, Side::Head);
+    core.handle(Input::User(Action::RunCommand {
+        command: nits_client_core::Command::GoBottom,
+    }))
+    .unwrap();
+    let before = core.view().scroll;
+    press(&mut core, "j").unwrap();
+    assert_eq!(
+        core.view().diff.as_ref().map(|d| d.file.path.clone()),
+        Some(path("b.rs")),
+        "the motion carried into the next file"
+    );
+    assert_eq!(
+        core.view().scroll,
+        before,
+        "a motion over the boundary records no reposition"
+    );
+
+    // `] f` is a deliberate jump to a distant file: its header goes to
+    // the top of the viewport.
+    let mut core = on_row(4, Side::Head);
+    press(&mut core, "] f").unwrap();
+    let pinned = core.view().scroll.expect("a jump pins the file");
+    assert_eq!(
+        (pinned.row, pinned.align),
+        (0, nits_client_core::ScrollAlign::Top)
+    );
+
+    // So is opening a file from the tree.
+    let mut core = ready();
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::Tree { index: 0 },
+    }))
+    .unwrap();
+    press(&mut core, "j j").unwrap(); // into src/a.rs
+    press(&mut core, "enter").unwrap();
+    assert_eq!(
+        core.view().scroll.map(|s| s.align),
+        Some(nits_client_core::ScrollAlign::Top),
+        "a file picked out of the tree is pinned"
+    );
+}

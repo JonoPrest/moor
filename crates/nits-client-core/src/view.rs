@@ -212,6 +212,19 @@ pub enum ScrollAlign {
     Bottom,
 }
 
+/// How the view should land on a file being opened.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::EnumIter)]
+pub enum Landing {
+    /// A continuous motion walked over the file boundary (`j` at the last
+    /// row): the view scrolls by as little as it can, like any other
+    /// motion. Re-anchoring here would throw away the lines the reader
+    /// was looking at.
+    Follow,
+    /// A deliberate jump to a distant file (the tree, `] f`, file find):
+    /// the file's header goes to the top of the viewport.
+    Pin,
+}
+
 /// A reposition the host has not performed yet. `seq` counts the
 /// instructions, so pressing `z z` again after scrolling away by mouse is
 /// a new one even though the row and alignment repeat.

@@ -186,10 +186,12 @@ describe("Tree", () => {
     expect(Element.hasAttribute(items->Array.getUnsafe(2), "data-focused"))->toBe(true)
     FireEvent.click(items->Array.getUnsafe(2))
     let calls = mock(dispatch).calls
+    // A tree click is the mouse alias of `enter` on a tree file: the same
+    // deliberate open, pinned to the top of the viewport.
     let opened = calls->Array.some(
       args =>
         switch args->Array.getUnsafe(0) {
-        | Action.Viewport(_) => true
+        | Action.OpenFileAt({landing: Pin}) => true
         | _ => false
         },
     )
@@ -646,7 +648,10 @@ describe("Tree (rows)", () => {
     FireEvent.click(Screen.getByText("lib.rs"))
     let calls = mock(dispatch).calls
     switch calls->Array.getUnsafe(Array.length(calls) - 1)->Array.getUnsafe(0) {
-    | Action.Viewport({file}) => expect(file.path)->toBe("src/lib.rs")
+    | Action.OpenFileAt({file, landing}) => {
+        expect(file.path)->toBe("src/lib.rs")
+        expect(landing)->toBe(Pin)
+      }
     | _ => expect(false)->toBe(true)
     }
   })

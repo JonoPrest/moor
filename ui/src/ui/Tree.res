@@ -78,7 +78,7 @@ let make = (
             style
             onClick={ev => {
               onSelect(ev)
-              dispatch(Viewport({file: {repoId, path}, firstRow: 0, lastRow: 59}))
+              dispatch(OpenFileAt({file: {repoId, path}, row: 0, side: Head, landing: Pin}))
             }}
           >
             <span className="tree-glyph" />
