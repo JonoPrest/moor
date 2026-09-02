@@ -3,9 +3,9 @@
   "name": "hacks",
   "repos": [
     {
-      "display_name": "moor",
+      "display_name": "nits",
       "id": "01HF7YAT000000000000000002",
-      "path": "/home/ada/src/moor"
+      "path": "/home/ada/src/nits"
     },
     {
       "display_name": "envio",

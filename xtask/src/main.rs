@@ -5,13 +5,32 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
 
+mod release;
+
+use release::Releasable;
+
 fn main() -> anyhow::Result<()> {
-    let task = std::env::args().nth(1);
-    match task.as_deref() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(String::as_str) {
         Some("fixtures") => fixtures(),
-        Some(other) => bail!("unknown task {other:?}; available: fixtures"),
-        None => bail!("usage: cargo xtask <fixtures>"),
+        Some("release-plan") => release::plan(package_arg(&args[1..])?),
+        Some("publish") => release::publish(
+            package_arg(&args[1..])?,
+            args[1..].iter().any(|a| a == "--dry-run"),
+        ),
+        Some(other) => bail!("unknown task {other:?}; available: fixtures, release-plan, publish"),
+        None => bail!("usage: cargo xtask <fixtures|release-plan|publish>"),
     }
+}
+
+/// Read the required `--package <name>` flag shared by the release tasks.
+fn package_arg(args: &[String]) -> anyhow::Result<Releasable> {
+    let name = args
+        .iter()
+        .position(|a| a == "--package" || a == "-p")
+        .and_then(|i| args.get(i + 1))
+        .context("missing `--package <nits|nitsd|nits-mcp>`")?;
+    Releasable::parse(name)
 }
 
 fn repo_root() -> anyhow::Result<PathBuf> {
@@ -24,12 +43,12 @@ fn repo_root() -> anyhow::Result<PathBuf> {
 /// Write `fixtures/protocol/` and `fixtures/client/` and delete files no
 /// fixture produces any more.
 fn fixtures() -> anyhow::Result<()> {
-    write_fixtures("protocol", moor_protocol_fixtures::all()?)?;
-    write_fixtures("client", moor_client_core_fixtures::all()?)
+    write_fixtures("protocol", nits_protocol_fixtures::all()?)?;
+    write_fixtures("client", nits_client_core_fixtures::all()?)
 }
 
 /// Write `fixtures/<set>/<Type>/<variant>.json` for every fixture in `all`.
-fn write_fixtures(set: &str, all: Vec<moor_protocol_fixtures::Fixture>) -> anyhow::Result<()> {
+fn write_fixtures(set: &str, all: Vec<nits_protocol_fixtures::Fixture>) -> anyhow::Result<()> {
     let dir = repo_root()?.join("fixtures").join(set);
     std::fs::create_dir_all(&dir)?;
 

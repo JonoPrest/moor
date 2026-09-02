@@ -13,30 +13,30 @@ Invalid state should not be expressible. Concretely:
 - **Enums over flags.** `Anchor` is `Review | File | Lines`, never `Option<path> + Option<lines>`. `CommentState` is `Live | Outdated { last_good } | Deleted`, never `deleted: bool`.
 - **Parse, don't validate.** Wire input is parsed into a validated domain type once at the boundary (`TryFrom<protocol::X> for core::X`); the core never re-checks.
 - **Resolved vs unresolved are different types.** `RefSpec` (what the user asked for) vs `ResolvedTarget { base: CommitOid | WorkTreeSnapshot, head: ... }`. A `Review` holds both; diffing only accepts the resolved one.
-- **Pending vs committed events are different types.** `moor-client-core` has `PendingEvent { client_seq, .. }` and `CommittedEvent { seq, .. }`; you cannot render a `Seq` that doesn't exist.
+- **Pending vs committed events are different types.** `nits-client-core` has `PendingEvent { client_seq, .. }` and `CommittedEvent { seq, .. }`; you cannot render a `Seq` that doesn't exist.
 - **Typestate for connections/subscriptions** where cheap (`Disconnected → Connecting → Subscribed { since: Seq }`).
 - **Non-empty where required**: `Review.targets: NonEmpty<ReviewTarget>`; `Lines.range: LineRange` with `start <= end` enforced by constructor.
 - **Exhaustive matching, no `_ =>` on domain enums** (clippy `wildcard_enum_match_arm` in core crates).
-- **Sans-I/O boundaries** make this checkable: `moor-client-core` returns `Vec<Effect>`; a test asserts exactly which effects, no more.
+- **Sans-I/O boundaries** make this checkable: `nits-client-core` returns `Vec<Effect>`; a test asserts exactly which effects, no more.
 
 ### Testing
 
-Each crate has its own test strategy, listed per milestone. Common tools: `insta` for snapshots, `proptest` for invariants, `tempfile` + real `git` for repo fixtures, `cargo nextest`. A shared `moor-test-support` crate provides repo builders (`RepoBuilder::new().commit("a", files![...]).branch("x")...`).
+Each crate has its own test strategy, listed per milestone. Common tools: `insta` for snapshots, `proptest` for invariants, `tempfile` + real `git` for repo fixtures, `cargo nextest`. A shared `nits-test-support` crate provides repo builders (`RepoBuilder::new().commit("a", files![...]).branch("x")...`).
 
-CI: `cargo nextest run`, `cargo clippy -D warnings`, `cargo check -p moor-protocol -p moor-client-core --target wasm32-unknown-unknown`, `cargo fmt --check`, ReScript build + tests.
+CI: `cargo nextest run`, `cargo clippy -D warnings`, `cargo check -p nits-protocol -p nits-client-core --target wasm32-unknown-unknown`, `cargo fmt --check`, ReScript build + tests.
 
 ---
 
-## Milestone 1 — `moor-protocol` + `moor-review-core`
+## Milestone 1 — `nits-protocol` + `nits-review-core`
 
 Goal: headless engine. Given repos on disk, create workspaces/reviews, produce render models, store and re-anchor comments across restarts.
 
 ### 1.1 Workspace scaffold
-- Cargo workspace; crates `moor-protocol`, `moor-protocol-fixtures` (dev-only example values), `moor-review-core`, `moor-test-support`, `xtask`.
-- Lints: `#![deny(missing_debug_implementations)]`, clippy pedantic subset, `wildcard_enum_match_arm` in `moor-review-core`/`moor-client-core`.
+- Cargo workspace; crates `nits-protocol`, `nits-protocol-fixtures` (dev-only example values), `nits-review-core`, `nits-test-support`, `xtask`.
+- Lints: `#![deny(missing_debug_implementations)]`, clippy pedantic subset, `wildcard_enum_match_arm` in `nits-review-core`/`nits-client-core`.
 - CI as above.
 
-### 1.2 `moor-protocol` types
+### 1.2 `nits-protocol` types
 - IDs (ULID-backed newtypes, `Display`/`FromStr`), OIDs, `Seq`.
 - Domain: `Workspace`, `Repo`, `Review`, `ReviewTarget`, `RefSpec`, `Comment`, `Author`, `Anchor`, `CommentKind`, `CommentState`, `Thread`, `CommitInfo`, `ViewedMark`, `RenderOpts`.
 - Events: `Event { seq, ts, author, client_id, client_seq, body: EventBody }` and each `EventBody` variant.
@@ -47,7 +47,7 @@ Goal: headless engine. Given repos on disk, create workspaces/reviews, produce r
 - **Fixtures**: `cargo xtask fixtures` writes `fixtures/protocol/<Type>/<variant>.json` for every variant (a `Fixtures` trait implemented per type; a test asserts every enum variant has a fixture via exhaustive match).
 - Tests: serde round-trip per fixture; `insta` snapshot of every fixture so wire changes are visible in review; `proptest` round-trip for IDs/ranges.
 
-### 1.3 Event store (`moor_review_core::store`)
+### 1.3 Event store (`nits_review_core::store`)
 - redb tables: `events`, `reviews`, `comments`, `threads`, `anchors_by_blob`, `workspaces`, `meta`.
 - `Store::append(NewEvent) -> CommittedEvent` assigns `Seq` atomically and updates views in the same txn.
 - `Store::replay_from(Seq) -> impl Iterator<CommittedEvent>`.
@@ -55,42 +55,42 @@ Goal: headless engine. Given repos on disk, create workspaces/reviews, produce r
 - `meta.schema_version` stamped on create; `Store::open` runs `migrations: [fn(&WriteTxn)]` forward from the stored version, refuses newer with `StoreError::SchemaTooNew { found, supported }`. Each stored event carries its `SchemaVersion`.
 - Tests: open a store stamped `CURRENT + 1` → `SchemaTooNew`; a store stamped `0` with a fixture log migrates to `CURRENT` and replays identically; append/read; views match a fold over the log (`proptest`: random event sequences, compare `rebuild_views` vs incremental); reopen after drop preserves everything; tombstoned review excluded from listings; concurrent appenders get strictly increasing `Seq`.
 
-### 1.4 Git engine (`moor_review_core::git`)
+### 1.4 Git engine (`nits_review_core::git`)
 - `Repo::open(path)`, `resolve(RefSpec) -> ResolvedRef`, `tree(CommitOid)`, `blob(BlobOid)`, `commits_between(base, head) -> [CommitInfo]` (full message body, author/committer signatures with times).
 - `WorkingTree` snapshot: hash working files into a virtual tree (`WorkTreeSnapshot { tree_oid, dirty: [path] }`); unchanged files reuse index OIDs.
 - `tree_snapshot(root: TreeOid) -> TreeSnapshot` (full recursive walk, flat sorted entries) and `tree_delta(from, to)`; working-tree snapshot yields a synthetic root OID.
 - `changed_files(base, head) -> [FileChange { path, kind: Added|Deleted|Modified|Renamed{from}, old: Option<BlobOid>, new: Option<BlobOid> }]`.
-- Tests with `moor-test-support` repos: each `RefSpec` variant resolves; renames detected; working-tree snapshot reflects unstaged edits and untracked files; binary files flagged.
+- Tests with `nits-test-support` repos: each `RefSpec` variant resolves; renames detected; working-tree snapshot reflects unstaged edits and untracked files; binary files flagged.
 
-### 1.5 Diff + render model (`moor_review_core::render`)
+### 1.5 Diff + render model (`nits_review_core::render`)
 - `render_file(old: Option<&[u8]>, new: Option<&[u8]>, lang, opts) -> (FileRenderHeader, impl Iterator<RenderChunk>)`.
 - Pipeline: (optional whitespace-normalised line view for `ignore_whitespace`) → `imara-diff` hunks → pair `-`/`+` into `Modified` → intra-line ranges → context collapsing with `Expander` → syntect spans (whole-file pass, size-capped) → split into ~500-row chunks. Whitespace-only files collapse to a single marker row.
 - `render_blob(bytes, lang)` for explorer views (all `Context` rows), same chunked shape.
 - Content-keyed disk cache `(old_oid, new_oid, opts_hash, chunk_index)`; header cached separately.
 - Tests: `insta` snapshots for a corpus (add/delete/modify/rename/whitespace-only/binary/huge/no-trailing-newline/CRLF), each rendered with and without `ignore_whitespace`; with it on, re-indenting a block yields zero `Modified` rows while the text in rows is unchanged; invariants via `proptest`: every source line appears exactly once on its side, line numbers monotonic, spans within cell bounds, `Expander.hidden` sums to the omitted count, chunks concatenate to `total_rows` with no gaps; unified and split derive from the same rows. Benchmark: 10k-line and 100k-line files, header returned < 50 ms, first chunk < 200 ms; above the cap `highlighted == false`.
 
-### 1.6 Reviews (`moor_review_core::review`)
+### 1.6 Reviews (`nits_review_core::review`)
 - `create_review(workspace, NonEmpty<ReviewTarget>)`, `resolve_targets(review) -> ResolvedTargets` (emits `ReviewTargetsResolved` only when OIDs change), `files(review) -> merged tree`, `commits(review)` for commit stepping, `file_render(review, repo, path)`.
 - Merged tree: repo roots at top level; deterministic ordering.
 - `mark_viewed(review, repo, path)` / `unmark_viewed` emit `FileViewed{blob_oid}`/`FileUnviewed`; rejected for `Author::Agent`.
 - Tests: multi-repo review yields one tree with both roots; commit stepping produces `base=parent` sub-reviews and `CommitInfo` carries full body/author/times incl. merge commits; re-resolve is idempotent (no duplicate events); viewed mark survives a head move that doesn't touch the file and is reported `ChangedSinceViewed` when it does; agent `mark_viewed` is a typed error.
 
-### 1.7 Comments + anchoring (`moor_review_core::comments`)
+### 1.7 Comments + anchoring (`nits_review_core::comments`)
 - `add_comment`, `reply`, `edit`, `delete`, `resolve_thread`, `unresolve_thread`; all emit events, all validate against current review state (e.g. `Lines` range within blob length).
 - `reanchor(review, old: ResolvedTargets, new: ResolvedTargets)` per §4.5, emitting `CommentReanchored { comment, anchor, state }`; pure function of blobs so milestone 2 can run it off the actor.
 - Tests: table-driven anchoring cases (unchanged blob; lines shifted above; lines shifted within; lines modified → `Outdated`; file deleted; file renamed; base-side anchor when base moves). `proptest`: random edits *outside* the anchored range never produce `Outdated`. Persistence: comments survive store reopen with anchors intact.
 
 ### 1.8 `Core` façade
-- One `Core` struct composing the above; every public method takes/returns `moor-protocol` types; this is the surface every transport adapts.
+- One `Core` struct composing the above; every public method takes/returns `nits-protocol` types; this is the surface every transport adapts.
 - Tests: end-to-end scenario tests written as scripts (`open workspace → attach 2 repos → review → comment → commit on head → re-resolve → assert comment state`).
 
 Exit criteria: all above green; `cargo check --target wasm32-unknown-unknown -p protocol` passes.
 
 ---
 
-## Milestone 2 — `moord`
+## Milestone 2 — `nitsd`
 
-Goal: `moord` running, multiple clients connected, events streaming, MCP working.
+Goal: `nitsd` running, multiple clients connected, events streaming, MCP working.
 
 ### 2.1 Transport framing
 - `codec` module: length-prefixed JSON frames over `AsyncRead/Write`, each an `Envelope`; `ClientMsg`/`ServerMsg` mux with request ids.
@@ -115,26 +115,26 @@ Goal: `moord` running, multiple clients connected, events streaming, MCP working
 - Tests: shared transport test-suite run against both unix and ws (`#[test_case]` / generic harness).
 
 ### 2.5 MCP
-- `moor-mcp` stdio binary proxying to daemon socket; tool per `Core` method; `Author::Agent` from MCP client info + session.
+- `nits-mcp` stdio binary proxying to daemon socket; tool per `Core` method; `Author::Agent` from MCP client info + session.
 - `subscribe_events` tool for long-poll/streaming.
 - Tests: JSON-RPC conformance for tool list; each tool maps to core and round-trips; agent-authored comment carries provenance.
 
-### 2.6 `moor` CLI
-- `moor workspace add/list`, `moor review create --base --head [--repo ...]`, `moor comment ...`, `moor events --follow`. Same client lib as MCP.
+### 2.6 `nits` CLI
+- `nits workspace add/list`, `nits review create --base --head [--repo ...]`, `nits comment ...`, `nits events --follow`. Same client lib as MCP.
 - Tests: `assert_cmd` against a spawned daemon in a temp dir.
 
 ### 2.7 Lifecycle
-- Data dir, socket path, `moord --stdio` mode for `ssh host moord --stdio`, graceful shutdown, crash-safe reopen.
+- Data dir, socket path, `nitsd --stdio` mode for `ssh host nitsd --stdio`, graceful shutdown, crash-safe reopen.
 - Tests: kill -9 mid-append → reopen consistent (redb guarantees; assert view rebuild path works).
 
 ---
 
-## Milestone 3 — `moor-client-core`
+## Milestone 3 — `nits-client-core`
 
 Goal: sans-I/O client that models everything the UI needs; proven under races.
 
 ### 3.0 Benchmarks gate (§10 of ARCHITECTURE)
-- Add `benches/` in `moor-review-core` and `moord` for each "measure before optimising" trigger: worktree snapshot after single edit (50k files), `changed_files` on directory move, 200-comment agent burst, `tree_snapshot` size/time. Run in CI on a synthetic repo; record numbers in `docs/BENCHMARKS.md`. Optimisations from that table are only implemented when a benchmark trips its trigger.
+- Add `benches/` in `nits-review-core` and `nitsd` for each "measure before optimising" trigger: worktree snapshot after single edit (50k files), `changed_files` on directory move, 200-comment agent burst, `tree_snapshot` size/time. Run in CI on a synthetic repo; record numbers in `docs/BENCHMARKS.md`. Optimisations from that table are only implemented when a benchmark trips its trigger.
 
 ### 3.1 State machine skeleton
 - `ClientCore::handle(Input) -> Vec<Effect>`, `view() -> &ViewModel`; `Effect::Render(ViewDelta)` carries only changed sections.
@@ -154,7 +154,7 @@ Goal: sans-I/O client that models everything the UI needs; proven under races.
 ### 3.3 Optimistic mutations
 - `PendingEvent` list; local apply; on own `CommittedEvent` → drop pending; on foreign → rebase.
 - LWW by `Seq` for edits/resolve.
-- Tests: **two-client simulator** (`moor_test_support::Sim`) that drives two `ClientCore`s and an in-memory daemon model with controllable delivery order. Cases: concurrent replies to one thread; concurrent edit of same comment (LWW); resolve/unresolve race; disconnect mid-pending then reconnect (pending re-sent exactly once, idempotent by `CommentId`). `proptest`: any interleaving converges both clients to the daemon state.
+- Tests: **two-client simulator** (`nits_test_support::Sim`) that drives two `ClientCore`s and an in-memory daemon model with controllable delivery order. Cases: concurrent replies to one thread; concurrent edit of same comment (LWW); resolve/unresolve race; disconnect mid-pending then reconnect (pending re-sent exactly once, idempotent by `CommentId`). `proptest`: any interleaving converges both clients to the daemon state.
 
 ### 3.4 Deferred refresh (§5.4)
 - `Draft` state in `ViewModel`; `ReviewTargetsResolved` queued while a draft is open; drained on submit/discard; new comment anchored to the head at draft-open time and re-anchored by the daemon.
@@ -171,7 +171,7 @@ Goal: sans-I/O client that models everything the UI needs; proven under races.
 - Comment→row placement from anchors.
 - Tests: `insta` snapshots of `ViewModel` for scenario scripts; placement tests for each `Anchor` variant incl. `Outdated`; expanding any folder or fuzzy-searching produces zero `Send` effects; opening a file produces exactly the header + viewport chunk requests.
 
-Exit criteria: wasm target check passes for `moor-client-core`; simulator suite green.
+Exit criteria: wasm target check passes for `nits-client-core`; simulator suite green.
 
 ---
 
@@ -191,7 +191,7 @@ Goal: usable desktop app.
 - `Core.res` interface; `CoreTauri.res` (`invoke("dispatch")`, `listen("view")`); `CoreWasm.res` stub.
 - Tests: adapter unit tests with a mocked Tauri API; assert no IPC message exceeds 64 KB during a scripted session (typing a comment, scrolling a 100k-line file).
 
-### 4.3 Tauri host (`moor-client-tauri`)
+### 4.3 Tauri host (`nits-client-tauri`)
 - Owns `ClientCore`, unix-socket transport (and ssh-forwarded path), KV via file, clock; pushes `ViewModel` diffs to webview.
 - Tests: host integration test against a real daemon in a temp dir.
 
@@ -217,4 +217,4 @@ Goal: usable desktop app.
 ---
 
 ## Later
-- Browser build (`moor-client-wasm`, daemon serves `ui/`), TUI, cross-machine sync, GitHub export.
+- Browser build (`nits-client-wasm`, daemon serves `ui/`), TUI, cross-machine sync, GitHub export.

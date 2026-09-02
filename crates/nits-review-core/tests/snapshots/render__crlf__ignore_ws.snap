@@ -1,0 +1,76 @@
+---
+source: crates/nits-review-core/tests/render.rs
+expression: r
+---
+{
+  "content": {
+    "type": "Text",
+    "total_rows": 4,
+    "chunk_rows": 500,
+    "chunk_count": 1,
+    "highlighted": false,
+    "additions": 1,
+    "deletions": 1
+  },
+  "rows": [
+    {
+      "type": "HunkHeader",
+      "text": "@@ -1,3 +1,3 @@"
+    },
+    {
+      "type": "Context",
+      "left": {
+        "line_no": 1,
+        "text": "a",
+        "spans": [],
+        "changed": []
+      },
+      "right": {
+        "line_no": 1,
+        "text": "a",
+        "spans": [],
+        "changed": []
+      }
+    },
+    {
+      "type": "Modified",
+      "left": {
+        "line_no": 2,
+        "text": "b",
+        "spans": [],
+        "changed": [
+          {
+            "start": 0,
+            "end": 1
+          }
+        ]
+      },
+      "right": {
+        "line_no": 2,
+        "text": "B",
+        "spans": [],
+        "changed": [
+          {
+            "start": 0,
+            "end": 1
+          }
+        ]
+      }
+    },
+    {
+      "type": "Context",
+      "left": {
+        "line_no": 3,
+        "text": "c",
+        "spans": [],
+        "changed": []
+      },
+      "right": {
+        "line_no": 3,
+        "text": "c",
+        "spans": [],
+        "changed": []
+      }
+    }
+  ]
+}

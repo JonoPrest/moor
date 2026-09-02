@@ -1,0 +1,67 @@
+[package]
+name = "nits"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+authors.workspace = true
+homepage.workspace = true
+readme = "README.md"
+description = "Command-line client for the nitsd code-review daemon"
+
+[[bin]]
+name = "nits"
+path = "src/main.rs"
+
+[dependencies]
+nits-client-web = { path = "../nits-client-web", version = "0.1.0" }
+nits-client-host = { workspace = true }
+nits-client-core = { workspace = true }
+nits-protocol = { workspace = true }
+nitsd = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+clap = { workspace = true }
+gethostname = { workspace = true }
+nits-config = { workspace = true }
+
+[dev-dependencies]
+assert_cmd = "2"
+nits-review-core.workspace = true
+nits-test-support.workspace = true
+predicates = "3"
+serde_json.workspace = true
+tempfile = { workspace = true }
+tokio-util.workspace = true
+
+[lints]
+workspace = true
+
+# Linux packaging. `assets` uses the target-specific path because the release
+# workflow packages an already-built binary with `cargo deb --no-build`.
+[package.metadata.deb]
+name = "nits"
+maintainer = "Jono Prest <jjprest@gmail.com>"
+copyright = "Copyright (c) Jono Prest. MIT licensed."
+extended-description = "Command-line client for the nitsd code-review daemon"
+section = "devel"
+priority = "optional"
+assets = [
+    ["target/release/nits", "usr/bin/", "755"],
+    ["../../README.md", "usr/share/doc/nits/README.md", "644"],
+    ["../../LICENSE", "usr/share/doc/nits/LICENSE", "644"],
+]
+
+[package.metadata.generate-rpm]
+name = "nits"
+summary = "Command-line client for the nitsd code-review daemon"
+assets = [
+    { source = "target/release/nits", dest = "/usr/bin/nits", mode = "755" },
+    { source = "../../README.md", dest = "/usr/share/doc/nits/README.md", mode = "644", doc = true },
+    { source = "../../LICENSE", dest = "/usr/share/doc/nits/LICENSE", mode = "644", doc = true },
+]

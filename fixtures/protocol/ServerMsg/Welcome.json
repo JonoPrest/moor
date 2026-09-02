@@ -1,6 +1,6 @@
 {
   "daemon": {
-    "name": "moord",
+    "name": "nitsd",
     "version": "0.1.0"
   },
   "protocol": "0.2.0",
@@ -8,6 +8,6 @@
   "type": "Welcome",
   "upgrade": {
     "latest": "0.2.0",
-    "message": "moord 0.2 speaks protocol 0.2.0; upgrade your client."
+    "message": "nitsd 0.2 speaks protocol 0.2.0; upgrade your client."
   }
 }

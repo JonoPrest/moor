@@ -1,0 +1,69 @@
+[package]
+name = "nits-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+authors.workspace = true
+homepage.workspace = true
+description = "MCP (Model Context Protocol) stdio server that proxies to a nitsd daemon"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "nits-mcp"
+path = "src/main.rs"
+
+[dependencies]
+nits-protocol = { workspace = true, features = ["schema"] }
+schemars = { workspace = true }
+nitsd = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+strum = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+clap = { workspace = true }
+gethostname = { workspace = true }
+nits-config = { workspace = true }
+
+[dev-dependencies]
+nits-config = { path = "../nits-config" }
+nits-review-core = { workspace = true }
+nits-test-support = { workspace = true }
+tempfile = { workspace = true }
+tokio-util.workspace = true
+
+[lints]
+workspace = true
+
+# Linux packaging. `assets` uses the target-specific path because the release
+# workflow packages an already-built binary with `cargo deb --no-build`.
+[package.metadata.deb]
+name = "nits-mcp"
+maintainer = "Jono Prest <jjprest@gmail.com>"
+copyright = "Copyright (c) Jono Prest. MIT licensed."
+extended-description = "MCP stdio server that proxies to a nitsd daemon"
+section = "devel"
+priority = "optional"
+assets = [
+    ["target/release/nits-mcp", "usr/bin/", "755"],
+    ["../../README.md", "usr/share/doc/nits-mcp/README.md", "644"],
+    ["../../LICENSE", "usr/share/doc/nits-mcp/LICENSE", "644"],
+]
+
+[package.metadata.generate-rpm]
+name = "nits-mcp"
+summary = "MCP stdio server that proxies to a nitsd daemon"
+assets = [
+    { source = "target/release/nits-mcp", dest = "/usr/bin/nits-mcp", mode = "755" },
+    { source = "../../README.md", dest = "/usr/share/doc/nits-mcp/README.md", mode = "644", doc = true },
+    { source = "../../LICENSE", dest = "/usr/share/doc/nits-mcp/LICENSE", mode = "644", doc = true },
+]

@@ -1,0 +1,1494 @@
+---
+source: crates/nits-client-core/tests/snapshots.rs
+expression: core.view()
+---
+{
+  "prefs": {
+    "layout": "Unified",
+    "ignore_whitespace": false,
+    "context_lines": 3,
+    "sidebar_hidden": false
+  },
+  "tree": {
+    "roots": [
+      {
+        "type": "Dir",
+        "name": "00000000020000000000000002",
+        "repo_id": "00000000020000000000000002",
+        "path": null,
+        "expanded": true,
+        "changed_below": 2,
+        "children": [
+          {
+            "type": "Dir",
+            "name": "src",
+            "repo_id": "00000000020000000000000002",
+            "path": "src",
+            "expanded": true,
+            "changed_below": 2,
+            "children": [
+              {
+                "type": "File",
+                "name": "lib.rs",
+                "repo_id": "00000000020000000000000002",
+                "path": "src/lib.rs",
+                "change": "Modified",
+                "viewed": "Unviewed",
+                "open": true,
+                "additions": 2,
+                "deletions": 1,
+                "threads": 1
+              },
+              {
+                "type": "File",
+                "name": "parser.rs",
+                "repo_id": "00000000020000000000000002",
+                "path": "src/parser.rs",
+                "change": "Added",
+                "viewed": "Unviewed",
+                "open": false,
+                "additions": 2,
+                "deletions": 1,
+                "threads": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "breadcrumbs": [
+      "00000000020000000000000002",
+      "src",
+      "lib.rs"
+    ],
+    "search": null
+  },
+  "progress": {
+    "viewed": 0,
+    "changed_since_viewed": 0,
+    "total": 2,
+    "additions": 4,
+    "deletions": 2
+  },
+  "diff": {
+    "file": {
+      "repo_id": "00000000020000000000000002",
+      "path": "src/lib.rs"
+    },
+    "lang": "rust",
+    "content": {
+      "type": "Text",
+      "total_rows": 16,
+      "chunk_rows": 8,
+      "chunk_count": 2,
+      "highlighted": true,
+      "additions": 2,
+      "deletions": 1
+    },
+    "viewed": "Unviewed",
+    "first_row": 0,
+    "last_row": 15,
+    "rows": [
+      {
+        "index": 0,
+        "row": {
+          "type": "HunkHeader",
+          "text": "@@ -1,7 +1,8 @@"
+        },
+        "threads": []
+      },
+      {
+        "index": 1,
+        "row": {
+          "type": "Context",
+          "left": {
+            "line_no": 1,
+            "text": "fn parse() {",
+            "spans": [],
+            "changed": []
+          },
+          "right": {
+            "line_no": 1,
+            "text": "fn parse() {",
+            "spans": [],
+            "changed": []
+          }
+        },
+        "threads": []
+      },
+      {
+        "index": 2,
+        "row": {
+          "type": "Removed",
+          "left": {
+            "line_no": 2,
+            "text": "    old()",
+            "spans": [],
+            "changed": []
+          }
+        },
+        "threads": []
+      },
+      {
+        "index": 3,
+        "row": {
+          "type": "Added",
+          "right": {
+            "line_no": 2,
+            "text": "    new()",
+            "spans": [],
+            "changed": []
+          }
+        },
+        "threads": [
+          "00000001YH0000000000000001"
+        ]
+      },
+      {
+        "index": 4,
+        "row": {
+          "type": "Added",
+          "right": {
+            "line_no": 3,
+            "text": "    newer()",
+            "spans": [],
+            "changed": []
+          }
+        },
+        "threads": []
+      },
+      {
+        "index": 5,
+        "row": {
+          "type": "Context",
+          "left": {
+            "line_no": 3,
+            "text": "}",
+            "spans": [],
+            "changed": []
+          },
+          "right": {
+            "line_no": 4,
+            "text": "}",
+            "spans": [],
+            "changed": []
+          }
+        },
+        "threads": []
+      },
+      {
+        "index": 6,
+        "row": {
+          "type": "Context",
+          "left": {
+            "line_no": 4,
+            "text": "",
+            "spans": [],
+            "changed": []
+          },
+          "right": {
+            "line_no": 5,
+            "text": "",
+            "spans": [],
+            "changed": []
+          }
+        },
+        "threads": []
+      },
+      {
+        "index": 7,
+        "row": {
+          "type": "Context",
+          "left": {
+            "line_no": 5,
+            "text": "// end",
+            "spans": [],
+            "changed": []
+          },
+          "right": {
+            "line_no": 6,
+            "text": "// end",
+            "spans": [],
+            "changed": []
+          }
+        },
+        "threads": []
+      }
+    ],
+    "missing": [
+      1
+    ],
+    "file_threads": [],
+    "collapsed": false,
+    "original": false
+  },
+  "diffs": [
+    {
+      "file": {
+        "repo_id": "00000000020000000000000002",
+        "path": "src/lib.rs"
+      },
+      "lang": "rust",
+      "content": {
+        "type": "Text",
+        "total_rows": 16,
+        "chunk_rows": 8,
+        "chunk_count": 2,
+        "highlighted": true,
+        "additions": 2,
+        "deletions": 1
+      },
+      "viewed": "Unviewed",
+      "first_row": 0,
+      "last_row": 15,
+      "rows": [
+        {
+          "index": 0,
+          "row": {
+            "type": "HunkHeader",
+            "text": "@@ -1,7 +1,8 @@"
+          },
+          "threads": []
+        },
+        {
+          "index": 1,
+          "row": {
+            "type": "Context",
+            "left": {
+              "line_no": 1,
+              "text": "fn parse() {",
+              "spans": [],
+              "changed": []
+            },
+            "right": {
+              "line_no": 1,
+              "text": "fn parse() {",
+              "spans": [],
+              "changed": []
+            }
+          },
+          "threads": []
+        },
+        {
+          "index": 2,
+          "row": {
+            "type": "Removed",
+            "left": {
+              "line_no": 2,
+              "text": "    old()",
+              "spans": [],
+              "changed": []
+            }
+          },
+          "threads": []
+        },
+        {
+          "index": 3,
+          "row": {
+            "type": "Added",
+            "right": {
+              "line_no": 2,
+              "text": "    new()",
+              "spans": [],
+              "changed": []
+            }
+          },
+          "threads": [
+            "00000001YH0000000000000001"
+          ]
+        },
+        {
+          "index": 4,
+          "row": {
+            "type": "Added",
+            "right": {
+              "line_no": 3,
+              "text": "    newer()",
+              "spans": [],
+              "changed": []
+            }
+          },
+          "threads": []
+        },
+        {
+          "index": 5,
+          "row": {
+            "type": "Context",
+            "left": {
+              "line_no": 3,
+              "text": "}",
+              "spans": [],
+              "changed": []
+            },
+            "right": {
+              "line_no": 4,
+              "text": "}",
+              "spans": [],
+              "changed": []
+            }
+          },
+          "threads": []
+        },
+        {
+          "index": 6,
+          "row": {
+            "type": "Context",
+            "left": {
+              "line_no": 4,
+              "text": "",
+              "spans": [],
+              "changed": []
+            },
+            "right": {
+              "line_no": 5,
+              "text": "",
+              "spans": [],
+              "changed": []
+            }
+          },
+          "threads": []
+        },
+        {
+          "index": 7,
+          "row": {
+            "type": "Context",
+            "left": {
+              "line_no": 5,
+              "text": "// end",
+              "spans": [],
+              "changed": []
+            },
+            "right": {
+              "line_no": 6,
+              "text": "// end",
+              "spans": [],
+              "changed": []
+            }
+          },
+          "threads": []
+        }
+      ],
+      "missing": [
+        1
+      ],
+      "file_threads": [],
+      "collapsed": false,
+      "original": false
+    },
+    {
+      "file": {
+        "repo_id": "00000000020000000000000002",
+        "path": "src/parser.rs"
+      },
+      "lang": "rust",
+      "content": {
+        "type": "Text",
+        "total_rows": 8,
+        "chunk_rows": 8,
+        "chunk_count": 1,
+        "highlighted": true,
+        "additions": 2,
+        "deletions": 1
+      },
+      "viewed": "Unviewed",
+      "first_row": 0,
+      "last_row": 7,
+      "rows": [
+        {
+          "index": 0,
+          "row": {
+            "type": "HunkHeader",
+            "text": "@@ -1,7 +1,8 @@"
+          },
+          "threads": []
+        },
+        {
+          "index": 1,
+          "row": {
+            "type": "Context",
+            "left": {
+              "line_no": 1,
+              "text": "fn parse() {",
+              "spans": [],
+              "changed": []
+            },
+            "right": {
+              "line_no": 1,
+              "text": "fn parse() {",
+              "spans": [],
+              "changed": []
+            }
+          },
+          "threads": []
+        },
+        {
+          "index": 2,
+          "row": {
+            "type": "Removed",
+            "left": {
+              "line_no": 2,
+              "text": "    old()",
+              "spans": [],
+              "changed": []
+            }
+          },
+          "threads": []
+        },
+        {
+          "index": 3,
+          "row": {
+            "type": "Added",
+            "right": {
+              "line_no": 2,
+              "text": "    new()",
+              "spans": [],
+              "changed": []
+            }
+          },
+          "threads": []
+        },
+        {
+          "index": 4,
+          "row": {
+            "type": "Added",
+            "right": {
+              "line_no": 3,
+              "text": "    newer()",
+              "spans": [],
+              "changed": []
+            }
+          },
+          "threads": []
+        },
+        {
+          "index": 5,
+          "row": {
+            "type": "Context",
+            "left": {
+              "line_no": 3,
+              "text": "}",
+              "spans": [],
+              "changed": []
+            },
+            "right": {
+              "line_no": 4,
+              "text": "}",
+              "spans": [],
+              "changed": []
+            }
+          },
+          "threads": []
+        },
+        {
+          "index": 6,
+          "row": {
+            "type": "Context",
+            "left": {
+              "line_no": 4,
+              "text": "",
+              "spans": [],
+              "changed": []
+            },
+            "right": {
+              "line_no": 5,
+              "text": "",
+              "spans": [],
+              "changed": []
+            }
+          },
+          "threads": []
+        },
+        {
+          "index": 7,
+          "row": {
+            "type": "Context",
+            "left": {
+              "line_no": 5,
+              "text": "// end",
+              "spans": [],
+              "changed": []
+            },
+            "right": {
+              "line_no": 6,
+              "text": "// end",
+              "spans": [],
+              "changed": []
+            }
+          },
+          "threads": []
+        }
+      ],
+      "missing": [],
+      "file_threads": [],
+      "collapsed": false,
+      "original": false
+    }
+  ],
+  "threads": [
+    {
+      "id": "00000001YH0000000000000001",
+      "root": "00000001YH0000000000000001",
+      "author": {
+        "type": "Human",
+        "name": "ada",
+        "machine": "workstation"
+      },
+      "created": 2001,
+      "summary": "Is `new` the right name?",
+      "replies": 1,
+      "resolved": false,
+      "place": {
+        "type": "Lines",
+        "file": {
+          "repo_id": "00000000020000000000000002",
+          "path": "src/lib.rs"
+        },
+        "side": "Head",
+        "start": 2,
+        "end": 2
+      },
+      "outdated": false,
+      "pending": true,
+      "suggestion": false,
+      "comments": [
+        {
+          "id": "00000001YH0000000000000001",
+          "author": {
+            "type": "Human",
+            "name": "ada",
+            "machine": "workstation"
+          },
+          "created": 2001,
+          "body": "Is `new` the right name?",
+          "pending": false
+        },
+        {
+          "id": "00000004W804WBTS55V6PYZR00",
+          "author": {
+            "type": "Human",
+            "name": "someone",
+            "machine": "laptop"
+          },
+          "created": 5000,
+          "body": "Renamed in the next commit.",
+          "pending": true
+        }
+      ],
+      "context": null
+    },
+    {
+      "id": "00000001YJ0000000000000002",
+      "root": "00000001YJ0000000000000002",
+      "author": {
+        "type": "Human",
+        "name": "ada",
+        "machine": "workstation"
+      },
+      "created": 2002,
+      "summary": "Looks good overall.",
+      "replies": 0,
+      "resolved": false,
+      "place": {
+        "type": "Review"
+      },
+      "outdated": false,
+      "pending": false,
+      "suggestion": false,
+      "comments": [
+        {
+          "id": "00000001YJ0000000000000002",
+          "author": {
+            "type": "Human",
+            "name": "ada",
+            "machine": "workstation"
+          },
+          "created": 2002,
+          "body": "Looks good overall.",
+          "pending": false
+        }
+      ],
+      "context": null
+    }
+  ],
+  "conversation": [
+    {
+      "id": "00000001YJ0000000000000002",
+      "root": "00000001YJ0000000000000002",
+      "author": {
+        "type": "Human",
+        "name": "ada",
+        "machine": "workstation"
+      },
+      "created": 2002,
+      "summary": "Looks good overall.",
+      "replies": 0,
+      "resolved": false,
+      "place": {
+        "type": "Review"
+      },
+      "outdated": false,
+      "pending": false,
+      "suggestion": false,
+      "comments": [
+        {
+          "id": "00000001YJ0000000000000002",
+          "author": {
+            "type": "Human",
+            "name": "ada",
+            "machine": "workstation"
+          },
+          "created": 2002,
+          "body": "Looks good overall.",
+          "pending": false
+        }
+      ],
+      "context": null
+    }
+  ],
+  "stepper": null,
+  "focus": {
+    "type": "Help"
+  },
+  "tab": "FilesChanged",
+  "mode": "Normal",
+  "pending_label": null,
+  "hints": [
+    {
+      "keys": "esc",
+      "command": "Back",
+      "label": "back"
+    },
+    {
+      "keys": "t",
+      "command": "FileSearch",
+      "label": "find file"
+    },
+    {
+      "keys": "?",
+      "command": "ToggleHelp",
+      "label": "help"
+    }
+  ],
+  "pending_keys": "",
+  "leader": "space",
+  "chrome": [
+    {
+      "keys": "?",
+      "command": "ToggleHelp",
+      "label": "help"
+    },
+    {
+      "keys": "tab",
+      "command": "NextPanel",
+      "label": "next panel"
+    },
+    {
+      "keys": "t",
+      "command": "FileSearch",
+      "label": "find file"
+    },
+    {
+      "keys": "F",
+      "command": "ContentSearch",
+      "label": "find in files"
+    },
+    {
+      "keys": ":",
+      "command": "ActionPalette",
+      "label": "actions"
+    },
+    {
+      "keys": "1",
+      "command": "TabFiles",
+      "label": "files changed"
+    },
+    {
+      "keys": "2",
+      "command": "TabConversation",
+      "label": "conversation"
+    },
+    {
+      "keys": "3",
+      "command": "TabBrowse",
+      "label": "browse"
+    },
+    {
+      "keys": "s",
+      "command": "ToggleLayout",
+      "label": "split/unified"
+    },
+    {
+      "keys": "w",
+      "command": "ToggleWhitespace",
+      "label": "whitespace"
+    },
+    {
+      "keys": "g f",
+      "command": "NextFile",
+      "label": "next file"
+    },
+    {
+      "keys": "g F",
+      "command": "PrevFile",
+      "label": "previous file"
+    },
+    {
+      "keys": "g e",
+      "command": "FocusTree",
+      "label": "focus tree"
+    },
+    {
+      "keys": "g d",
+      "command": "FocusDiff",
+      "label": "focus diff"
+    },
+    {
+      "keys": "g t",
+      "command": "FocusThreads",
+      "label": "focus threads"
+    },
+    {
+      "keys": "g m",
+      "command": "FocusCommits",
+      "label": "focus commits"
+    },
+    {
+      "keys": "space a",
+      "command": "ScopeAll",
+      "label": "all changes"
+    },
+    {
+      "keys": "space c",
+      "command": "ScopeByCommit",
+      "label": "by commit"
+    },
+    {
+      "keys": "space w",
+      "command": "ScopeWorktree",
+      "label": "worktree"
+    },
+    {
+      "keys": "space b",
+      "command": "ToggleSidebar",
+      "label": "toggle sidebar"
+    },
+    {
+      "keys": "space C",
+      "command": "Commits",
+      "label": "commits"
+    },
+    {
+      "keys": "esc",
+      "command": "Back",
+      "label": "back"
+    },
+    {
+      "keys": "ctrl+shift+c",
+      "command": "Connect",
+      "label": "connect"
+    },
+    {
+      "keys": "ctrl+shift+d",
+      "command": "Disconnect",
+      "label": "disconnect"
+    },
+    {
+      "keys": "j",
+      "command": "MoveDown",
+      "label": "down"
+    },
+    {
+      "keys": "k",
+      "command": "MoveUp",
+      "label": "up"
+    },
+    {
+      "keys": "g g",
+      "command": "GoTop",
+      "label": "top"
+    },
+    {
+      "keys": "G",
+      "command": "GoBottom",
+      "label": "bottom"
+    },
+    {
+      "keys": "enter",
+      "command": "Open",
+      "label": "open"
+    },
+    {
+      "keys": "R",
+      "command": "Refresh",
+      "label": "refresh"
+    },
+    {
+      "keys": "v",
+      "command": "ToggleViewed",
+      "label": "mark viewed"
+    },
+    {
+      "keys": "n",
+      "command": "NextHunk",
+      "label": "next hunk"
+    },
+    {
+      "keys": "p",
+      "command": "PrevHunk",
+      "label": "previous hunk"
+    },
+    {
+      "keys": "c",
+      "command": "Comment",
+      "label": "comment"
+    },
+    {
+      "keys": "y",
+      "command": "CopyPath",
+      "label": "copy path"
+    },
+    {
+      "keys": "C",
+      "command": "CollapseParent",
+      "label": "collapse parent"
+    },
+    {
+      "keys": "z",
+      "command": "CollapseAll",
+      "label": "collapse all"
+    },
+    {
+      "keys": "ctrl+d",
+      "command": "PageDown",
+      "label": "page down"
+    },
+    {
+      "keys": "ctrl+u",
+      "command": "PageUp",
+      "label": "page up"
+    },
+    {
+      "keys": "] c",
+      "command": "NextComment",
+      "label": "next comment"
+    },
+    {
+      "keys": "[ c",
+      "command": "PrevComment",
+      "label": "previous comment"
+    },
+    {
+      "keys": "x",
+      "command": "ExpandContext",
+      "label": "expand context"
+    },
+    {
+      "keys": "C",
+      "command": "ToggleFileCollapse",
+      "label": "fold file"
+    },
+    {
+      "keys": "X",
+      "command": "ExpandFile",
+      "label": "expand full file"
+    },
+    {
+      "keys": "V",
+      "command": "VisualMode",
+      "label": "select lines"
+    },
+    {
+      "keys": "z u",
+      "command": "ExpandUp",
+      "label": "expand up"
+    },
+    {
+      "keys": "z d",
+      "command": "ExpandDown",
+      "label": "expand down"
+    },
+    {
+      "keys": "z c",
+      "command": "CommentOnFile",
+      "label": "comment on file"
+    },
+    {
+      "keys": "r",
+      "command": "Reply",
+      "label": "reply"
+    },
+    {
+      "keys": "x",
+      "command": "ToggleResolved",
+      "label": "resolve"
+    },
+    {
+      "keys": "d",
+      "command": "Delete",
+      "label": "delete"
+    },
+    {
+      "keys": "a",
+      "command": "ApplySuggestion",
+      "label": "apply suggestion"
+    },
+    {
+      "keys": "ctrl+enter",
+      "command": "Submit",
+      "label": "submit"
+    }
+  ],
+  "help": {
+    "groups": [
+      {
+        "context": "Help",
+        "entries": [
+          {
+            "keys": "j",
+            "command": "MoveDown",
+            "label": "down",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "k",
+            "command": "MoveUp",
+            "label": "up",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "?",
+            "command": "ToggleHelp",
+            "label": "help",
+            "primary": true,
+            "overridden": false
+          },
+          {
+            "keys": "esc",
+            "command": "Back",
+            "label": "back",
+            "primary": true,
+            "overridden": false
+          }
+        ]
+      },
+      {
+        "context": "Global",
+        "entries": [
+          {
+            "keys": "?",
+            "command": "ToggleHelp",
+            "label": "help",
+            "primary": true,
+            "overridden": false
+          },
+          {
+            "keys": "tab",
+            "command": "NextPanel",
+            "label": "next panel",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "t",
+            "command": "FileSearch",
+            "label": "find file",
+            "primary": true,
+            "overridden": false
+          },
+          {
+            "keys": "ctrl+p",
+            "command": "FileSearch",
+            "label": "find file",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "meta+p",
+            "command": "FileSearch",
+            "label": "find file",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "F",
+            "command": "ContentSearch",
+            "label": "find in files",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": ":",
+            "command": "ActionPalette",
+            "label": "actions",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "1",
+            "command": "TabFiles",
+            "label": "files changed",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "2",
+            "command": "TabConversation",
+            "label": "conversation",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "3",
+            "command": "TabBrowse",
+            "label": "browse",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "s",
+            "command": "ToggleLayout",
+            "label": "split/unified",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "w",
+            "command": "ToggleWhitespace",
+            "label": "whitespace",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "g f",
+            "command": "NextFile",
+            "label": "next file",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "g F",
+            "command": "PrevFile",
+            "label": "previous file",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "g e",
+            "command": "FocusTree",
+            "label": "focus tree",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "g d",
+            "command": "FocusDiff",
+            "label": "focus diff",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "g t",
+            "command": "FocusThreads",
+            "label": "focus threads",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "g m",
+            "command": "FocusCommits",
+            "label": "focus commits",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "space a",
+            "command": "ScopeAll",
+            "label": "all changes",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "space c",
+            "command": "ScopeByCommit",
+            "label": "by commit",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "space w",
+            "command": "ScopeWorktree",
+            "label": "worktree",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "space s",
+            "command": "ToggleLayout",
+            "label": "split/unified",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "space h",
+            "command": "ToggleWhitespace",
+            "label": "whitespace",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "space b",
+            "command": "ToggleSidebar",
+            "label": "toggle sidebar",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "space C",
+            "command": "Commits",
+            "label": "commits",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "esc",
+            "command": "Back",
+            "label": "back",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "ctrl+shift+c",
+            "command": "Connect",
+            "label": "connect",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "ctrl+shift+d",
+            "command": "Disconnect",
+            "label": "disconnect",
+            "primary": false,
+            "overridden": false
+          }
+        ]
+      }
+    ],
+    "conflicts": []
+  },
+  "connection": {
+    "type": "Subscribed"
+  },
+  "last_error": null,
+  "workspaces": [],
+  "reviews": [
+    {
+      "id": "00000000040000000000000001",
+      "workspace_id": "00000000030000000000000003",
+      "title": "Add the parser",
+      "targets": [
+        {
+          "repo_id": "00000000020000000000000002",
+          "base": {
+            "type": "Branch",
+            "name": "main"
+          },
+          "head": {
+            "type": "WorkingTree"
+          }
+        }
+      ],
+      "created": 1000,
+      "status": "Open"
+    }
+  ],
+  "open_review": "00000000040000000000000001",
+  "resolved_targets": [
+    {
+      "repo_id": "00000000020000000000000002",
+      "base": {
+        "tree": "0101010101010101010101010101010101010101",
+        "source": {
+          "type": "Commit",
+          "oid": "0101010101010101010101010101010101010101"
+        }
+      },
+      "head": {
+        "tree": "0202020202020202020202020202020202020202",
+        "source": {
+          "type": "WorkingTree",
+          "dirty": [],
+          "branch": null
+        }
+      }
+    }
+  ],
+  "scope": {
+    "type": "All"
+  },
+  "browse_ref": null,
+  "content_search": null,
+  "action_palette": false,
+  "visual": null,
+  "review": {
+    "snapshot": {
+      "review": {
+        "id": "00000000040000000000000001",
+        "workspace_id": "00000000030000000000000003",
+        "title": "Add the parser",
+        "targets": [
+          {
+            "repo_id": "00000000020000000000000002",
+            "base": {
+              "type": "Branch",
+              "name": "main"
+            },
+            "head": {
+              "type": "WorkingTree"
+            }
+          }
+        ],
+        "created": 1000,
+        "status": "Open"
+      },
+      "resolved": [
+        {
+          "repo_id": "00000000020000000000000002",
+          "base": {
+            "tree": "0101010101010101010101010101010101010101",
+            "source": {
+              "type": "Commit",
+              "oid": "0101010101010101010101010101010101010101"
+            }
+          },
+          "head": {
+            "tree": "0202020202020202020202020202020202020202",
+            "source": {
+              "type": "WorkingTree",
+              "dirty": [],
+              "branch": null
+            }
+          }
+        }
+      ],
+      "threads": [
+        {
+          "id": "00000001YH0000000000000001",
+          "review_id": "00000000040000000000000001",
+          "root": "00000001YH0000000000000001",
+          "replies": [
+            "00000004W804WBTS55V6PYZR00"
+          ],
+          "resolution": {
+            "type": "Open"
+          }
+        },
+        {
+          "id": "00000001YJ0000000000000002",
+          "review_id": "00000000040000000000000001",
+          "root": "00000001YJ0000000000000002",
+          "replies": [],
+          "resolution": {
+            "type": "Open"
+          }
+        }
+      ],
+      "comments": [
+        {
+          "id": "00000001YH0000000000000001",
+          "review_id": "00000000040000000000000001",
+          "thread_id": "00000001YH0000000000000001",
+          "author": {
+            "type": "Human",
+            "name": "ada",
+            "machine": "workstation"
+          },
+          "kind": {
+            "type": "Note"
+          },
+          "anchor": {
+            "type": "Lines",
+            "repo_id": "00000000020000000000000002",
+            "path": "src/lib.rs",
+            "side": "Head",
+            "blob_oid": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+            "lines": {
+              "start": 2,
+              "end": 2
+            },
+            "context_hash": "0000000000000001"
+          },
+          "body": "Is `new` the right name?",
+          "created": 2001,
+          "edited": null,
+          "state": {
+            "type": "Live"
+          },
+          "context": null
+        },
+        {
+          "id": "00000001YJ0000000000000002",
+          "review_id": "00000000040000000000000001",
+          "thread_id": "00000001YJ0000000000000002",
+          "author": {
+            "type": "Human",
+            "name": "ada",
+            "machine": "workstation"
+          },
+          "kind": {
+            "type": "Note"
+          },
+          "anchor": {
+            "type": "Review"
+          },
+          "body": "Looks good overall.",
+          "created": 2002,
+          "edited": null,
+          "state": {
+            "type": "Live"
+          },
+          "context": null
+        },
+        {
+          "id": "00000004W804WBTS55V6PYZR00",
+          "review_id": "00000000040000000000000001",
+          "thread_id": "00000001YH0000000000000001",
+          "author": {
+            "type": "Human",
+            "name": "someone",
+            "machine": "laptop"
+          },
+          "kind": {
+            "type": "Note"
+          },
+          "anchor": {
+            "type": "Lines",
+            "repo_id": "00000000020000000000000002",
+            "path": "src/lib.rs",
+            "side": "Head",
+            "blob_oid": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+            "lines": {
+              "start": 2,
+              "end": 2
+            },
+            "context_hash": "0000000000000001"
+          },
+          "body": "Renamed in the next commit.",
+          "created": 5000,
+          "edited": null,
+          "state": {
+            "type": "Live"
+          },
+          "context": null
+        }
+      ],
+      "viewed": [],
+      "seq": 1
+    },
+    "pending": [
+      {
+        "client_seq": 1,
+        "body": {
+          "type": "CommentCreated",
+          "comment": {
+            "id": "00000004W804WBTS55V6PYZR00",
+            "review_id": "00000000040000000000000001",
+            "thread_id": "00000001YH0000000000000001",
+            "author": {
+              "type": "Human",
+              "name": "someone",
+              "machine": "laptop"
+            },
+            "kind": {
+              "type": "Note"
+            },
+            "anchor": {
+              "type": "Lines",
+              "repo_id": "00000000020000000000000002",
+              "path": "src/lib.rs",
+              "side": "Head",
+              "blob_oid": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+              "lines": {
+                "start": 2,
+                "end": 2
+              },
+              "context_hash": "0000000000000001"
+            },
+            "body": "Renamed in the next commit.",
+            "created": 5000,
+            "edited": null,
+            "state": {
+              "type": "Live"
+            },
+            "context": null
+          }
+        }
+      }
+    ],
+    "trees": [
+      "0101010101010101010101010101010101010101",
+      "0202020202020202020202020202020202020202"
+    ],
+    "files": [
+      {
+        "repo_id": "00000000020000000000000002",
+        "path": "src/lib.rs",
+        "target": {
+          "type": "Diff",
+          "change": {
+            "type": "Modified",
+            "old": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+            "new": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b"
+          }
+        },
+        "opts": {
+          "ignore_whitespace": false,
+          "context_lines": 3
+        }
+      },
+      {
+        "repo_id": "00000000020000000000000002",
+        "path": "src/parser.rs",
+        "target": {
+          "type": "Diff",
+          "change": {
+            "type": "Added",
+            "new": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c"
+          }
+        },
+        "opts": {
+          "ignore_whitespace": false,
+          "context_lines": 3
+        }
+      }
+    ],
+    "open_file": {
+      "render": {
+        "repo_id": "00000000020000000000000002",
+        "path": "src/lib.rs",
+        "target": {
+          "type": "Diff",
+          "change": {
+            "type": "Modified",
+            "old": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+            "new": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b"
+          }
+        },
+        "opts": {
+          "ignore_whitespace": false,
+          "context_lines": 3
+        }
+      },
+      "first_row": 0,
+      "last_row": 59
+    },
+    "scope": {
+      "type": "All"
+    },
+    "original": null,
+    "scoped_targets": []
+  },
+  "draft": null,
+  "pending_refresh": false
+}

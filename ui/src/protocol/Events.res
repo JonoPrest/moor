@@ -1,4 +1,4 @@
-// Events (moor-protocol `events.rs`).
+// Events (nits-protocol `events.rs`).
 
 open Ids
 open Domain

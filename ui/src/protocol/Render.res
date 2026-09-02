@@ -1,4 +1,4 @@
-// Render model (moor-protocol `render.rs`).
+// Render model (nits-protocol `render.rs`).
 
 open Ids
 

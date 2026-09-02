@@ -22,7 +22,7 @@ State of play (verified in the code, to discuss before building more):
   The MCP `subscribe_events` tool exposes it (`since_seq`, `timeout_ms`,
   `max`, scope by review/workspace/`awaiting_agent`) and returns
   `last_seq` to pass back — covered by
-  `crates/moor-mcp/tests/mcp.rs::subscribe_events_long_polls_and_resumes`.
+  `crates/nits-mcp/tests/mcp.rs::subscribe_events_long_polls_and_resumes`.
 
 Open questions for the chat:
 

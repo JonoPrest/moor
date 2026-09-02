@@ -3044,242 +3044,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "moor"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "assert_cmd",
- "clap",
- "gethostname",
- "moor-client-core",
- "moor-client-host",
- "moor-client-web",
- "moor-config",
- "moor-protocol",
- "moor-review-core",
- "moor-test-support",
- "moord",
- "predicates",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tokio-util",
-]
-
-[[package]]
-name = "moor-client-core"
-version = "0.1.0"
-dependencies = [
- "insta",
- "moor-protocol",
- "moor-test-support",
- "proptest",
- "serde",
- "serde_json",
- "strum",
- "thiserror 2.0.20",
-]
-
-[[package]]
-name = "moor-client-core-fixtures"
-version = "0.1.0"
-dependencies = [
- "moor-client-core",
- "moor-protocol",
- "moor-protocol-fixtures",
- "serde",
- "serde_json",
- "strum",
- "thiserror 2.0.20",
-]
-
-[[package]]
-name = "moor-client-host"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "moor-client-core",
- "moor-protocol",
- "moor-review-core",
- "moor-test-support",
- "moord",
- "redb",
- "schemars 1.2.2",
- "serde_json",
- "strum",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "tokio-util",
- "toml 0.9.12+spec-1.1.0",
- "tracing",
-]
-
-[[package]]
-name = "moor-client-tauri"
-version = "0.1.0"
-dependencies = [
- "fastrand",
- "gethostname",
- "moor-client-core",
- "moor-client-host",
- "moor-config",
- "moor-protocol",
- "moord",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "thiserror 2.0.20",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "moor-client-web"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "fastrand",
- "futures-util",
- "gethostname",
- "include_dir",
- "moor-client-core",
- "moor-client-host",
- "moor-config",
- "moor-protocol",
- "moor-review-core",
- "moor-test-support",
- "moord",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "tokio-tungstenite",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "moor-config"
-version = "0.1.0"
-dependencies = [
- "serde",
- "tempfile",
- "thiserror 2.0.20",
- "toml 0.9.12+spec-1.1.0",
-]
-
-[[package]]
-name = "moor-mcp"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "gethostname",
- "moor-config",
- "moor-protocol",
- "moor-review-core",
- "moor-test-support",
- "moord",
- "schemars 1.2.2",
- "serde",
- "serde_json",
- "strum",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "moor-protocol"
-version = "0.1.0"
-dependencies = [
- "proptest",
- "schemars 1.2.2",
- "serde",
- "serde_json",
- "strum",
- "thiserror 2.0.20",
- "ulid",
-]
-
-[[package]]
-name = "moor-protocol-fixtures"
-version = "0.1.0"
-dependencies = [
- "moor-protocol",
- "serde",
- "serde_json",
- "strum",
- "thiserror 2.0.20",
-]
-
-[[package]]
-name = "moor-review-core"
-version = "0.1.0"
-dependencies = [
- "gix",
- "imara-diff",
- "insta",
- "moor-protocol",
- "moor-protocol-fixtures",
- "moor-test-support",
- "proptest",
- "redb",
- "serde",
- "serde_json",
- "syntect",
- "tempfile",
- "thiserror 2.0.20",
-]
-
-[[package]]
-name = "moor-test-support"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "moor-client-core",
- "moor-protocol",
- "tempfile",
- "thiserror 2.0.20",
-]
-
-[[package]]
-name = "moord"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "fastrand",
- "futures-util",
- "gethostname",
- "moor-config",
- "moor-protocol",
- "moor-review-core",
- "moor-test-support",
- "notify",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "tokio-tungstenite",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "muda"
 version = "0.19.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3329,6 +3093,242 @@ name = "new_debug_unreachable"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
+
+[[package]]
+name = "nits"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "assert_cmd",
+ "clap",
+ "gethostname",
+ "nits-client-core",
+ "nits-client-host",
+ "nits-client-web",
+ "nits-config",
+ "nits-protocol",
+ "nits-review-core",
+ "nits-test-support",
+ "nitsd",
+ "predicates",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
+name = "nits-client-core"
+version = "0.1.0"
+dependencies = [
+ "insta",
+ "nits-protocol",
+ "nits-test-support",
+ "proptest",
+ "serde",
+ "serde_json",
+ "strum",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "nits-client-core-fixtures"
+version = "0.1.0"
+dependencies = [
+ "nits-client-core",
+ "nits-protocol",
+ "nits-protocol-fixtures",
+ "serde",
+ "serde_json",
+ "strum",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "nits-client-host"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "nits-client-core",
+ "nits-protocol",
+ "nits-review-core",
+ "nits-test-support",
+ "nitsd",
+ "redb",
+ "schemars 1.2.2",
+ "serde_json",
+ "strum",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
+ "toml 0.9.12+spec-1.1.0",
+ "tracing",
+]
+
+[[package]]
+name = "nits-client-tauri"
+version = "0.1.0"
+dependencies = [
+ "fastrand",
+ "gethostname",
+ "nits-client-core",
+ "nits-client-host",
+ "nits-config",
+ "nits-protocol",
+ "nitsd",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "nits-client-web"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "fastrand",
+ "futures-util",
+ "gethostname",
+ "include_dir",
+ "nits-client-core",
+ "nits-client-host",
+ "nits-config",
+ "nits-protocol",
+ "nits-review-core",
+ "nits-test-support",
+ "nitsd",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-tungstenite",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "nits-config"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tempfile",
+ "thiserror 2.0.20",
+ "toml 0.9.12+spec-1.1.0",
+]
+
+[[package]]
+name = "nits-mcp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "gethostname",
+ "nits-config",
+ "nits-protocol",
+ "nits-review-core",
+ "nits-test-support",
+ "nitsd",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+ "strum",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "nits-protocol"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+ "strum",
+ "thiserror 2.0.20",
+ "ulid",
+]
+
+[[package]]
+name = "nits-protocol-fixtures"
+version = "0.1.0"
+dependencies = [
+ "nits-protocol",
+ "serde",
+ "serde_json",
+ "strum",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "nits-review-core"
+version = "0.1.0"
+dependencies = [
+ "gix",
+ "imara-diff",
+ "insta",
+ "nits-protocol",
+ "nits-protocol-fixtures",
+ "nits-test-support",
+ "proptest",
+ "redb",
+ "serde",
+ "serde_json",
+ "syntect",
+ "tempfile",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "nits-test-support"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "nits-client-core",
+ "nits-protocol",
+ "tempfile",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "nitsd"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "fastrand",
+ "futures-util",
+ "gethostname",
+ "nits-config",
+ "nits-protocol",
+ "nits-review-core",
+ "nits-test-support",
+ "notify",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-tungstenite",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "nonempty"
@@ -6467,8 +6467,8 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "moor-client-core-fixtures",
- "moor-protocol-fixtures",
+ "nits-client-core-fixtures",
+ "nits-protocol-fixtures",
  "serde_json",
 ]
 

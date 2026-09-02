@@ -1,0 +1,10 @@
+---
+source: crates/nits-review-core/tests/render.rs
+expression: r
+---
+{
+  "content": {
+    "type": "Binary"
+  },
+  "rows": []
+}

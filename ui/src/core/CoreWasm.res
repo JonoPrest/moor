@@ -1,4 +1,4 @@
-// Browser adapter stub: the wasm build of `moor-client-core` (plan "Later").
+// Browser adapter stub: the wasm build of `nits-client-core` (plan "Later").
 // Until it exists the UI shows the empty model and refuses actions loudly,
 // so nothing silently pretends to work.
 

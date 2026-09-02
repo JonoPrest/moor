@@ -1,4 +1,4 @@
-// `moor_client_core::Action`: what the UI dispatches to the host.
+// `nits_client_core::Action`: what the UI dispatches to the host.
 
 open Ids
 

@@ -3,8 +3,8 @@
 The "measure before optimising" triggers from ARCHITECTURE §10. Run with
 
 ```
-cargo bench -p moor-review-core -p moord            # 50 000-file synthetic repo
-MOOR_BENCH_FILES=2000 cargo bench -p moor-review-core   # what CI runs
+cargo bench -p nits-review-core -p nitsd            # 50 000-file synthetic repo
+NITS_BENCH_FILES=2000 cargo bench -p nits-review-core   # what CI runs
 ```
 
 Each bench is a hand-timed realistic operation (median of 5) printed as a

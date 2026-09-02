@@ -1,0 +1,45 @@
+[package]
+name = "nits-client-web"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+authors.workspace = true
+homepage.workspace = true
+description = "Dev/test WebSocket bridge around nits-client-host: the browser UI sends dispatch/key/attach as JSON, view patch batches come back. Tauri remains the shipping shell."
+
+[[bin]]
+name = "nits-web"
+path = "src/main.rs"
+
+[dependencies]
+nits-client-core = { workspace = true }
+nits-client-host = { workspace = true }
+nits-config = { workspace = true }
+nitsd = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = "0.30.0"
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+clap = { workspace = true }
+gethostname = { workspace = true }
+fastrand = "2.5.0"
+futures-util = "0.3.34"
+include_dir = "0.7"
+
+[dev-dependencies]
+nits-protocol = { workspace = true }
+nits-review-core = { workspace = true }
+nits-test-support = { workspace = true }
+tempfile = { workspace = true }
+anyhow = { workspace = true }
+
+[lints]
+workspace = true

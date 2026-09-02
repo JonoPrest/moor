@@ -1,4 +1,4 @@
-// Domain types (moor-protocol `domain.rs`, `invariants.rs`), one module per
+// Domain types (nits-protocol `domain.rs`, `invariants.rs`), one module per
 // Rust type, schemas derived by `@schema`. Payload enums are `type`-tagged
 // objects (`@tag`), unit-only enums are bare strings, `Option` is null.
 

@@ -6,7 +6,7 @@ let authorName = (a: Domain.Author.t) =>
   switch a {
   | Human({name}) => name
   | Agent({name}) => name ++ " (agent)"
-  | Daemon(_) => "moord"
+  | Daemon(_) => "nitsd"
   }
 
 let placeText = (p: ThreadPlace.t) =>

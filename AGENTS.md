@@ -16,9 +16,9 @@ for the design and `docs/PLAN.md` for the milestones before making changes.
 - Distinct types for distinct lifecycle stages: `RefSpec` vs `ResolvedTarget`,
   `PendingEvent` vs `CommittedEvent`, typestate for connections.
 - `NonEmpty` and range types with constructor-enforced invariants where required.
-- Exhaustive matching on domain enums — no `_ =>` arms in `moor-review-core`/`moor-client-core`
+- Exhaustive matching on domain enums — no `_ =>` arms in `nits-review-core`/`nits-client-core`
   (clippy `wildcard_enum_match_arm` is on).
-- Sans-I/O cores (`moor-client-core`) return `Vec<Effect>`; tests assert exactly which effects.
+- Sans-I/O cores (`nits-client-core`) return `Vec<Effect>`; tests assert exactly which effects.
 - **Names are enums, not strings — in adapters too.** Tool names, RPC methods, subcommands
   and config keys are parsed into an enum once at the edge (`ToolName`, `Method`,
   `ToolCall::parse`) and matched exhaustively; never `match s.as_str() { "list_reviews" => .. }`
@@ -26,7 +26,7 @@ for the design and `docs/PLAN.md` for the milestones before making changes.
   type (`Call::Query | Call::Mutating`), so a new variant fails to compile until every
   site handles it. The wire spelling lives in one `serde`/`strum` rename; what is advertised
   is *derived* by iterating the enum (`ToolName::iter()`), and schemas come from the serde
-  types themselves (`schemars` behind `moor-protocol`'s `schema` feature) — never a
+  types themselves (`schemars` behind `nits-protocol`'s `schema` feature) — never a
   hand-written `json!` schema beside a `Deserialize` struct.
 
 ### Testing — every piece proves itself
@@ -34,10 +34,10 @@ for the design and `docs/PLAN.md` for the milestones before making changes.
 - Every crate ships with its own tests; a change without tests is incomplete.
 - `insta` snapshots for render models, fixtures, and `ViewModel`s; `proptest` for
   invariants (round-trips, view rebuilds, anchoring, client convergence).
-- Real git repos via `moor_test_support::RepoBuilder` — no mocked git.
+- Real git repos via `nits_test_support::RepoBuilder` — no mocked git.
 - Protocol changes must update the JSON fixtures (`cargo xtask fixtures`) and the
   ReScript Sury schemas; the boundary round-trip test enforces both directions.
-- `moor-client-core` behaviour under races is tested with the two-client simulator.
+- `nits-client-core` behaviour under races is tested with the two-client simulator.
 
 ## Style (from review)
 
@@ -53,16 +53,16 @@ for the design and `docs/PLAN.md` for the milestones before making changes.
   why it exists; readers should not have to expand it mentally.
 - **Placeholder data is neutral.** Fixtures and tests use invented names (`ada@example.com`),
   never real people or paths from a contributor's machine.
-- **Sample data lives in dev-only crates.** `moor-protocol` ships wire types and nothing else; example values are in `moor-protocol-fixtures` (`publish = false`, used by `xtask` and its own tests).
+- **Sample data lives in dev-only crates.** `nits-protocol` ships wire types and nothing else; example values are in `nits-protocol-fixtures` (`publish = false`, used by `xtask` and its own tests).
 - **Say what the underlying system stores.** When a field's precision or shape is dictated by
   git/redb/etc., the doc comment says so (e.g. git offsets are whole minutes).
 
 ## Conventions
 
-- `moor-protocol` and `moor-client-core` must stay wasm-safe: no tokio, std I/O, threads,
+- `nits-protocol` and `nits-client-core` must stay wasm-safe: no tokio, std I/O, threads,
   `Instant`, or non-`js` `rand`. CI checks `--target wasm32-unknown-unknown`.
 - Serde enums with payloads are `#[serde(tag = "type")]` with `deny_unknown_fields`; unit-only enums serialise as bare PascalCase strings.
-- Transports (`unix`, `ws`, `mcp`, `moor-cli`) are thin adapters over `Core`; never add a
+- Transports (`unix`, `ws`, `mcp`, `nits-cli`) are thin adapters over `Core`; never add a
   capability to a transport that `Core` doesn't have.
 - Run before pushing: `cargo fmt`, `cargo clippy -D warnings`, `cargo nextest run`.
 

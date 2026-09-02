@@ -1,0 +1,27 @@
+[package]
+name = "nits-client-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+authors.workspace = true
+homepage.workspace = true
+description = "Sans-I/O client state machine for Nits: inputs in, effects out. wasm-safe."
+
+[dependencies]
+nits-protocol = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+strum = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+insta = { workspace = true }
+nits-test-support = { workspace = true }
+
+[lints]
+workspace = true

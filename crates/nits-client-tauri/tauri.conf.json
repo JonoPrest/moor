@@ -1,0 +1,14 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "nits",
+  "version": "0.1.0",
+  "identifier": "dev.nits.desktop",
+  "build": {
+    "frontendDist": "../nits-client-web/dist"
+  },
+  "app": {
+    "windows": [{ "title": "nits", "width": 1400, "height": 900 }],
+    "security": { "csp": null }
+  },
+  "bundle": { "active": false }
+}
