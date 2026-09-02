@@ -400,11 +400,9 @@ module Shell = {
                   </div>
                 : <div className="diff-empty"> {React.string("No changed files")} </div>}
               {switch model.draft {
-              // A reply renders inline in its thread's card; only a fresh
-              // comment uses the bottom composer.
-              | Some({replyTo: None} as draft) =>
+              | Some(draft) if View.Draft.isDocked(draft) =>
                 <Composer draft pendingRefresh=model.pendingRefresh dispatch />
-              | Some({replyTo: Some(_)}) | None => React.null
+              | Some(_) | None => React.null
               }}
             </>
           | Conversation =>

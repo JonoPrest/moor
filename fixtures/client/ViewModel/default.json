@@ -68,6 +68,10 @@
     "original": false,
     "rows": [
       {
+        "drafted": [
+          "Anchor",
+          "Head"
+        ],
         "index": 121,
         "row": {
           "left": {
@@ -112,6 +116,7 @@
         },
         "threads": [
           {
+            "place": "Anchor",
             "side": "Base",
             "thread": "01HF7YAVYG0000000000000005"
           }
@@ -154,6 +159,10 @@
       "original": false,
       "rows": [
         {
+          "drafted": [
+            "Anchor",
+            "Head"
+          ],
           "index": 121,
           "row": {
             "left": {
@@ -198,6 +207,7 @@
           },
           "threads": [
             {
+              "place": "Anchor",
               "side": "Base",
               "thread": "01HF7YAVYG0000000000000005"
             }

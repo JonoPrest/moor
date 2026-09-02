@@ -1259,6 +1259,58 @@ fn enter_on_an_expander_opens_that_hidden_run() {
 }
 
 #[test]
+fn an_open_draft_marks_the_rows_it_is_about() {
+    // The composer renders under the anchor row, so the core has to say
+    // which rows the draft covers — a component cannot work that out
+    // without redoing the anchoring.
+    let mut core = on_row(MODIFIED_ROW, Side::Base);
+    press(&mut core, "V").unwrap();
+    press(&mut core, "j").unwrap();
+    press(&mut core, "c").unwrap();
+    let rows = &core.view().diff.as_ref().expect("a file is open").rows;
+    let drafted: Vec<(u32, nits_client_core::RowPlace, Side)> = rows
+        .iter()
+        .filter_map(|r| r.drafted.map(|(place, side)| (r.index, place, side)))
+        .collect();
+    assert_eq!(
+        drafted,
+        vec![
+            (MODIFIED_ROW, nits_client_core::RowPlace::Inside, Side::Base),
+            (
+                MODIFIED_ROW + 1,
+                nits_client_core::RowPlace::Anchor,
+                Side::Base
+            ),
+        ],
+        "both selected rows are marked, the last one carrying the composer"
+    );
+    // Discarding clears them.
+    press(&mut core, "esc").unwrap();
+    assert!(
+        core.view()
+            .diff
+            .as_ref()
+            .is_some_and(|d| d.rows.iter().all(|r| r.drafted.is_none()))
+    );
+}
+
+#[test]
+fn a_review_level_draft_marks_no_rows() {
+    // It has no line to sit under, so it keeps the docked composer.
+    let mut core = on_row(MODIFIED_ROW, Side::Head);
+    core.handle(Input::User(Action::DraftOpened {
+        anchor: Anchor::Review,
+    }))
+    .unwrap();
+    assert!(
+        core.view()
+            .diff
+            .as_ref()
+            .is_some_and(|d| d.rows.iter().all(|r| r.drafted.is_none()))
+    );
+}
+
+#[test]
 fn the_scroll_family_records_an_intent_the_host_performs() {
     let mut core = on_row(4, Side::Head);
     assert_eq!(core.view().scroll, None);

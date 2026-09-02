@@ -171,6 +171,7 @@ let make = (
                 focused
                 focusedSide
                 ?selectedSide
+                drafted=?r.drafted
                 threads=r.threads
                 onClick={side => {
                   dispatch(Viewport({file: diff.file, firstRow: r.index, lastRow: r.index + 59}))
@@ -211,7 +212,16 @@ let make = (
                 }}
             >
               rowEl
+              // A fresh comment is written where it will be read: the
+              // composer takes the slot the thread will occupy, under the
+              // last line of its range (UI-DESIGN §Comments).
+              {switch (r.drafted, draft) {
+              | (Some((Anchor, _)), Some({replyTo: None} as d)) =>
+                <Composer draft=d pendingRefresh dispatch />
+              | (Some(_), _) | (None, _) => React.null
+              }}
               {r.threads
+              ->Array.filter((t: View.RowThread.t) => t.place == Anchor)
               ->Array.map((t: View.RowThread.t) => t.thread)
               ->Array.filterMap(threadOf)
               ->Array.map(ti => {

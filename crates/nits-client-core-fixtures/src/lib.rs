@@ -149,6 +149,7 @@ registry!(
     DiffView,
     DiffRow,
     RowThread,
+    RowPlace,
     CommentView,
     ThreadView,
     ThreadPlace,
@@ -432,14 +433,17 @@ struct_fixture!(
         index: 121,
         row: proto_named::<Row>("Modified")?,
         threads: vec![local::<RowThread>()?],
+        drafted: Some((RowPlace::Anchor, Side::Head)),
     }
 );
+unit_enum_fixture!(RowPlace, "RowPlace");
 struct_fixture!(
     RowThread,
     "RowThread",
     RowThread {
         thread: thread_id()?,
         side: Side::Base,
+        place: RowPlace::Anchor,
     }
 );
 struct_fixture!(

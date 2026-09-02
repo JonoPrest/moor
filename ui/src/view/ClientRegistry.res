@@ -30,6 +30,7 @@ let schemas: dict<S.t<unknown>> = Dict.fromArray([
   ("DiffView", erase(View.DiffView.schema)),
   ("DiffRow", erase(View.DiffRow.schema)),
   ("RowThread", erase(View.RowThread.schema)),
+  ("RowPlace", erase(View.RowPlace.schema)),
   ("CommentView", erase(View.CommentView.schema)),
   ("ThreadView", erase(View.ThreadView.schema)),
   ("ThreadPlace", erase(View.ThreadPlace.schema)),

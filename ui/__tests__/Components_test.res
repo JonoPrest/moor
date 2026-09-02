@@ -26,7 +26,7 @@ describe("Row", () => {
                 layout
                 index=3
                 focused={v == "Added"}
-                threads={v == "Modified" ? [{thread: "t1", side: Head}] : []}
+                threads={v == "Modified" ? [{thread: "t1", side: Head, place: Anchor}] : []}
               />,
             )
             let el =
@@ -726,7 +726,7 @@ describe("Row sides", () => {
       collapsed: false,
       rows: [
         {...modified, index: 121, row: atLine(modified.row, 9)},
-        {index: 122, row: atLine(removed, 10), threads: []},
+        {index: 122, row: atLine(removed, 10), threads: [], drafted: None},
       ],
     }
   }
@@ -1318,5 +1318,99 @@ describe("Copying from the keyboard, through the shell", () => {
     await flush()
     expect(copiedPaths())->toEqual([])
     cleanup()
+  })
+})
+
+describe("Commented lines and the inline composer", () => {
+  // A two-line thread on the head side, its card under the last line,
+  // plus a draft over the same rows.
+  let diff = (~drafted): View.DiffView.t => {
+    let base = Fixtures.parse(View.DiffView.schema, "client", "DiffView", "default")
+    let row = Fixtures.parse(View.DiffRow.schema, "client", "DiffRow", "default")
+    let thread = (place: View.RowPlace.t): View.RowThread.t => {
+      thread: "t1",
+      side: Head,
+      place,
+    }
+    {
+      ...base,
+      firstRow: 121,
+      lastRow: 122,
+      missing: [],
+      collapsed: false,
+      rows: [
+        {
+          ...row,
+          index: 121,
+          threads: [thread(Inside)],
+          drafted: drafted ? Some((Inside, Head)) : None,
+        },
+        {
+          ...row,
+          index: 122,
+          threads: [thread(Anchor)],
+          drafted: drafted ? Some((Anchor, Head)) : None,
+        },
+      ],
+    }
+  }
+
+  let mount = (~diff as d, ~draft, ~dispatch) =>
+    render(
+      <FileDiff
+        diff=d
+        layout=Split
+        focus={Diff({row: 121, side: Head})}
+        threads=[]
+        draft
+        pendingRefresh=false
+        isOpen=true
+        dispatch
+      />,
+    )
+
+  test("every line of a range is marked, and the card's row is the last", () => {
+    let {container} = mount(~diff=diff(~drafted=false), ~draft=None, ~dispatch=fn())
+    let commented = Element.querySelectorAll(container, ".cell-commented")
+    expect(Array.length(commented))->toBe(2)
+    // The 💬 marker belongs to the row the card hangs under, not to
+    // every line of the range.
+    let markers = Element.querySelectorAll(container, ".cell-threads")
+    expect(Array.length(markers))->toBe(1)
+    let anchorRow =
+      Element.querySelector(container, "[data-row-index=\"122\"]")
+      ->Nullable.toOption
+      ->Option.getExn
+    expect(Element.querySelector(anchorRow, ".cell-threads"))->not_->toBeNull
+  })
+
+  test("a line draft composes under its own last line, not at the bottom", () => {
+    let draft: View.Draft.t = {
+      anchor: Lines({
+        repoId: "r",
+        path: "src/a.rs",
+        side: Head,
+        blobOid: "b",
+        lines: {start: 9, end_: 9},
+        contextHash: "0",
+      }),
+      replyTo: None,
+    }
+    expect(View.Draft.isDocked(draft))->toBe(false)
+    let {container} = mount(~diff=diff(~drafted=true), ~draft=Some(draft), ~dispatch=fn())
+    // Drafted rows are marked while typing…
+    expect(Array.length(Element.querySelectorAll(container, ".cell-drafting")))->toBe(2)
+    // …and the composer sits in the slot the thread will occupy.
+    let anchorRow =
+      Element.querySelector(container, "[data-row-index=\"122\"]")
+      ->Nullable.toOption
+      ->Option.getExn
+      ->Element.parentElement
+    expect(Element.querySelector(anchorRow, ".composer"))->not_->toBeNull
+  })
+
+  test("a review-level draft still docks", () => {
+    let draft: View.Draft.t = {anchor: Review({}), replyTo: None}
+    expect(View.Draft.isDocked(draft))->toBe(true)
   })
 })

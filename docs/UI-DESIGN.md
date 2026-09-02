@@ -95,9 +95,18 @@ light both):
 
 ## Comments and threads
 
-- **Inline threads are primary**: a thread renders under its anchored
+- ✓ **Inline threads are primary**: a thread renders under its anchored
   line, in the diff or in Browse. `c` opens the composer at the focused
   line/file, `r` replies, `⌘Enter`/`ctrl+enter` submits, `Esc` discards.
+  A line draft's composer takes the slot the thread will occupy — under
+  the last line of its range — and only a draft with no row of its own
+  (review- or file-level) docks at the bottom of the tab.
+- ✓ **The lines a thread is about are marked**, the whole range and not
+  just the anchor: the core says what each row is to a range
+  (`RowThread { side, place }`, `DiffRow::drafted`) and the cell carries
+  a rule down its edge. Four states can be on one cell at once — focused,
+  selected, commented, being drafted about — so each is drawn over the
+  diff-side colour rather than replacing it.
 - **Conversation tab** aggregates every thread chronologically
   (GitHub-style): review-level comments, file-anchored threads quoting
   their diff lines with a "jump to diff" link, resolved threads collapsed
