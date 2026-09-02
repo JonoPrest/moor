@@ -132,8 +132,12 @@ first, not a build target.
   workflow creates `Formula/` on first run. Users then get
   `brew install jonoprest/nits/nits`. Homebrew core needs notability (roughly
   75 stars or 30 forks) and can come later without changing anything here.
-- **AUR** — register an SSH key at <https://aur.archlinux.org/account>. The
-  first push creates `nits-bin`; the workflow handles the empty-repo case.
+- **AUR** — not set up, and the `aur` input therefore defaults to **off**.
+  To enable it, register an SSH key at <https://aur.archlinux.org/account> and
+  add `AUR_SSH_PRIVATE_KEY`; the first push creates `nits-bin`, and the
+  workflow handles the empty-repo case. The job still renders and validates
+  `PKGBUILD`/`.SRCINFO` in a dry run when ticked, so the code path does not rot
+  while the channel is unused.
 - **Signing key** — generate a dedicated key, no expiry:
   ```console
   $ gpg --batch --passphrase '<passphrase>' --quick-generate-key 'Nits <jjprest@gmail.com>' rsa4096 sign never
