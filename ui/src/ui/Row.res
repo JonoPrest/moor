@@ -130,16 +130,33 @@ let make = (
     }
   | (Context({right}), Unified) => <CellView cell=right side="right" />
   | (Context({left, right}), Split) =>
-    <> <CellView cell=left side="left" /> <CellView cell=right side="right" /> </>
+    <>
+      <CellView cell=left side="left" />
+      <CellView cell=right side="right" />
+    </>
   | (Removed({left}), Unified) => <CellView cell=left side="left" />
-  | (Removed({left}), Split) => <> <CellView cell=left side="left" /> {empty("right")} </>
+  | (Removed({left}), Split) =>
+    <>
+      <CellView cell=left side="left" />
+      {empty("right")}
+    </>
   | (Added({right}), Unified) => <CellView cell=right side="right" />
-  | (Added({right}), Split) => <> {empty("left")} <CellView cell=right side="right" /> </>
+  | (Added({right}), Split) =>
+    <>
+      {empty("left")}
+      <CellView cell=right side="right" />
+    </>
   | (Modified({left, right}), Unified | Split) =>
-    <> <CellView cell=left side="left" /> <CellView cell=right side="right" /> </>
+    <>
+      <CellView cell=left side="left" />
+      <CellView cell=right side="right" />
+    </>
   }
   Attrs.withData(
-    <div className role="row" onClick={_ => onClick()}> body marker </div>,
+    <div className role="row" onClick={_ => onClick()}>
+      body
+      marker
+    </div>,
     focused
       ? [("data-focused", "true"), ("data-row-index", Int.toString(index))]
       : [("data-row-index", Int.toString(index))],

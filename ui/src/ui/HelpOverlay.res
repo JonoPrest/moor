@@ -66,7 +66,9 @@ let make = (~help: HelpView.t, ~dispatch: Action.t => unit) => {
               ->Array.filter(matches)
               ->Array.map(e =>
                 <tr key={e.keys ++ e.label} className={e.overridden ? "help-overridden" : ""}>
-                  <td> <UI.Kbd keys=e.keys /> </td>
+                  <td>
+                    <UI.Kbd keys=e.keys />
+                  </td>
                   <td> {React.string(e.label)} </td>
                   <td> {React.string(e.primary ? "★" : "")} </td>
                 </tr>

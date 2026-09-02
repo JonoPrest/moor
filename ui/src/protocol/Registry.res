@@ -82,6 +82,7 @@ let roundtrip = (typeName: string, json: JSON.t): result<JSON.t, string> =>
       let value = S.parseJsonOrThrow(json, schema)
       Ok(S.reverseConvertToJsonOrThrow(value, schema))
     } catch {
-    | exn => Error(JsExn.fromException(exn)->Option.flatMap(JsExn.message)->Option.getOr("unknown error"))
+    | exn =>
+      Error(JsExn.fromException(exn)->Option.flatMap(JsExn.message)->Option.getOr("unknown error"))
     }
   }

@@ -92,56 +92,64 @@ let make = (
     | _ => false
     }
   <section className="file-diff" ariaLabel=diff.file.path ref={ReactDOM.Ref.domRef(sectionRef)}>
-    {Attrs.focused(<header className="file-diff-header">
-      <button
-        type_="button"
-        className="btn btn-ghost file-chevron"
-        title={collapsed ? "expand file section" : "collapse file section"}
-        onClick={_ => dispatch(ToggleFileCollapse({file: diff.file}))}>
-        {React.string(collapsed ? "▸" : "▾")}
-      </button>
-      <span className="file-path mono"> {React.string(diff.file.path)} </span>
-      <button
-        type_="button"
-        className="btn btn-ghost"
-        title="copy file path"
-        onClick={_ => writeText(diff.file.path)}>
-        {React.string("⧉")}
-      </button>
-      stats
-      {diff.fileThreads->Array.length > 0
-        ? <span className="tree-threads"> {React.string(Int.toString(Array.length(diff.fileThreads)))} </span>
-        : React.null}
-      <span className="file-diff-actions">
+    {Attrs.focused(
+      <header className="file-diff-header">
+        <button
+          type_="button"
+          className="btn btn-ghost file-chevron"
+          title={collapsed ? "expand file section" : "collapse file section"}
+          onClick={_ => dispatch(ToggleFileCollapse({file: diff.file}))}
+        >
+          {React.string(collapsed ? "▸" : "▾")}
+        </button>
+        <span className="file-path mono"> {React.string(diff.file.path)} </span>
         <button
           type_="button"
           className="btn btn-ghost"
-          title="comment on this file"
-          onClick={_ => dispatch(CommentFile({file: diff.file}))}>
-          {React.string("💬")}
+          title="copy file path"
+          onClick={_ => writeText(diff.file.path)}
+        >
+          {React.string("⧉")}
         </button>
-        <UI.Button
-          label="expand file"
-          kind=Ghost
-          title="show the whole file as context"
-          onClick={() => dispatch(ExpandContext({file: diff.file, full: true}))}
-        />
-        <label className="chip-check" title="mark viewed (v)">
-          <input
-            type_="checkbox"
-            checked={diff.viewed == Viewed}
-            onChange={_ => {
-              dispatch(
-                diff.viewed == Viewed
-                  ? UnmarkViewed({file: diff.file})
-                  : MarkViewed({file: diff.file}),
-              )
-            }}
+        stats
+        {diff.fileThreads->Array.length > 0
+          ? <span className="tree-threads">
+              {React.string(Int.toString(Array.length(diff.fileThreads)))}
+            </span>
+          : React.null}
+        <span className="file-diff-actions">
+          <button
+            type_="button"
+            className="btn btn-ghost"
+            title="comment on this file"
+            onClick={_ => dispatch(CommentFile({file: diff.file}))}
+          >
+            {React.string("💬")}
+          </button>
+          <UI.Button
+            label="expand file"
+            kind=Ghost
+            title="show the whole file as context"
+            onClick={() => dispatch(ExpandContext({file: diff.file, full: true}))}
           />
-          {React.string("Viewed")}
-        </label>
-      </span>
-    </header>, isOpen && collapsed)}
+          <label className="chip-check" title="mark viewed (v)">
+            <input
+              type_="checkbox"
+              checked={diff.viewed == Viewed}
+              onChange={_ => {
+                dispatch(
+                  diff.viewed == Viewed
+                    ? UnmarkViewed({file: diff.file})
+                    : MarkViewed({file: diff.file}),
+                )
+              }}
+            />
+            {React.string("Viewed")}
+          </label>
+        </span>
+      </header>,
+      isOpen && collapsed,
+    )}
     {collapsed
       ? React.null
       : <div className="file-diff-body" onMouseLeave={_ => setDrag(_ => None)}>
@@ -196,7 +204,8 @@ let make = (
                     }
                   }
                 | None => ()
-                }}>
+                }}
+            >
               rowEl
               {r.threads
               ->Array.filterMap(threadOf)
@@ -230,7 +239,8 @@ let make = (
               onClick={_ => {
                 let from = (rows->Array.getUnsafe(have - 1)).index + 1
                 dispatch(Viewport({file: diff.file, firstRow: from, lastRow: from + 199}))
-              }}>
+              }}
+            >
               {React.string("Load more (" ++ Int.toString(total - have) ++ " rows below)")}
             </button>
           | _ => React.null

@@ -10,8 +10,10 @@
 let root = join3(dirname, "..", "..")
 
 let json = (set: string, type_: string, name: string): JSON.t =>
-  readFileSync(join4(root, "fixtures", set, type_ ++ "/" ++ name ++ ".json"), "utf8")
-  ->JSON.parseOrThrow
+  readFileSync(
+    join4(root, "fixtures", set, type_ ++ "/" ++ name ++ ".json"),
+    "utf8",
+  )->JSON.parseOrThrow
 
 let parse = (schema: S.t<'a>, set: string, type_: string, name: string): 'a =>
   S.parseJsonOrThrow(json(set, type_, name), schema)

@@ -38,7 +38,10 @@ let make = (~url: string, ~onError: string => unit=e => Console.error(e)): Core.
     Ws.onopen(ws, () => {
       open_ := true
       // Attach first so the full model precedes any queued command's patches.
-      Ws.send(ws, JSON.stringify(JSON.Encode.object(Dict.fromArray([("cmd", JSON.Encode.string("attach"))]))))
+      Ws.send(
+        ws,
+        JSON.stringify(JSON.Encode.object(Dict.fromArray([("cmd", JSON.Encode.string("attach"))]))),
+      )
       let pending = queue.contents
       queue := []
       pending->Array.forEach(text => Ws.send(ws, text))
@@ -81,7 +84,8 @@ let defaultUrl = () => {
   let fromQuery = %raw(`new URLSearchParams(window.location.search).get("ws")`)
   switch fromQuery->Nullable.toOption {
   | Some(url) => url
-  | None => %raw(`(window.location.protocol === "https:" ? "wss://" : "ws://") + window.location.host + "/ws"`)
+  | None =>
+    %raw(`(window.location.protocol === "https:" ? "wss://" : "ws://") + window.location.host + "/ws"`)
   }
 }
 

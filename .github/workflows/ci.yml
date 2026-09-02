@@ -4,32 +4,21 @@ on:
     branches: [main]
   pull_request:
 
+# A superseded run tells you nothing; let a new push cancel it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  rust:
+  # Cheap, no Rust toolchain: fails in seconds rather than behind a build.
+  scripts:
+    name: scripts and workflows
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-          components: clippy, rustfmt
-      - uses: taiki-e/install-action@nextest
-      - uses: Swatinem/rust-cache@v2
-      - name: tauri system libraries (nits-client-tauri)
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
-      # `tauri::generate_context!` and nits-client-web's `include_dir!` embed
-      # `crates/nits-client-web/dist` at compile time; `pnpm build` writes it.
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: ui/pnpm-lock.yaml
-      - name: build the web bundle the Rust crates embed
-        working-directory: ui
-        run: pnpm install --frozen-lockfile && pnpm build
+      - uses: actions/checkout@v7
       - name: release scripts are sound
         run: shellcheck scripts/*.sh
       # The release workflow is only ever exercised by hand, so lint it here:
@@ -39,12 +28,61 @@ jobs:
         run: |
           bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
           ./actionlint -color
+
+  # Needs rustfmt and nothing else — no cache, no toolchain build, no bundle.
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
       - run: cargo fmt --all --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      # rust-cache adds the job id to the key by default, so each of these
+      # jobs gets its own cache without an explicit `key`.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # Caches are branch-scoped and PR branches are evicted quickly, so
+          # only main's cache is worth keeping; PRs restore from it.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Only clippy needs these: it is the job that compiles the tauri and
+      # web crates.
+      - uses: ./.github/actions/web-bundle
       - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  # nits-protocol and nits-client-core are sans-I/O and pull in neither tauri
+  # nor the embedded bundle, so this needs no web-bundle setup.
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo check -p nits-protocol -p nits-client-core --target wasm32-unknown-unknown
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@nextest
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: ./.github/actions/web-bundle
       - run: cargo nextest run --workspace
-      - name: benchmark triggers (small scale)
-        run: NITS_BENCH_FILES=2000 cargo bench -p nits-review-core -p nitsd
       - name: fixtures are up to date
         run: cargo xtask fixtures && git diff --exit-code -- fixtures
 
@@ -54,16 +92,17 @@ jobs:
       run:
         working-directory: ui
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: 11
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
           cache-dependency-path: ui/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      - run: pnpm rescript format --check
       - run: pnpm rescript
       - run: pnpm test
       - run: pnpm vite build

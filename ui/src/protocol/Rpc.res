@@ -28,9 +28,15 @@ module RpcError = {
     | @as("SeqTooOld") SeqTooOld({oldest: seq})
     | @as("Cancelled") Cancelled({})
     | @as("UnsupportedProtocol")
-    UnsupportedProtocol({requested: protocolVersion, supported: array<protocolVersion>})
+    UnsupportedProtocol({
+        requested: protocolVersion,
+        supported: array<protocolVersion>,
+      })
     | @as("VersionMismatch")
-    VersionMismatch({negotiated: protocolVersion, received: protocolVersion})
+    VersionMismatch({
+        negotiated: protocolVersion,
+        received: protocolVersion,
+      })
     | @as("Internal") Internal({message: string})
   @@warning("+27")
 }
@@ -76,8 +82,16 @@ module ViewSection = {
 module Mutation = {
   @schema @tag("type")
   type t =
-    | @as("CreateWorkspace") CreateWorkspace({@as("workspace_id") workspaceId: workspaceId, name: string})
-    | @as("RenameWorkspace") RenameWorkspace({@as("workspace_id") workspaceId: workspaceId, name: string})
+    | @as("CreateWorkspace")
+    CreateWorkspace({
+        @as("workspace_id") workspaceId: workspaceId,
+        name: string,
+      })
+    | @as("RenameWorkspace")
+    RenameWorkspace({
+        @as("workspace_id") workspaceId: workspaceId,
+        name: string,
+      })
     | @as("AttachRepo")
     AttachRepo({
         @as("workspace_id") workspaceId: workspaceId,
@@ -86,7 +100,10 @@ module Mutation = {
         @as("display_name") displayName: string,
       })
     | @as("DetachRepo")
-    DetachRepo({@as("workspace_id") workspaceId: workspaceId, @as("repo_id") repoId: repoId})
+    DetachRepo({
+        @as("workspace_id") workspaceId: workspaceId,
+        @as("repo_id") repoId: repoId,
+      })
     | @as("CreateReview")
     CreateReview({
         @as("review_id") reviewId: reviewId,
@@ -95,7 +112,11 @@ module Mutation = {
         targets: array<ReviewTarget.t>,
       })
     | @as("UpdateReview")
-    UpdateReview({@as("review_id") reviewId: reviewId, title: string, status: ReviewStatus.t})
+    UpdateReview({
+        @as("review_id") reviewId: reviewId,
+        title: string,
+        status: ReviewStatus.t,
+      })
     | @as("DeleteReview") DeleteReview({@as("review_id") reviewId: reviewId})
     | @as("AddComment")
     AddComment({
@@ -115,21 +136,49 @@ module Mutation = {
         body: string,
       })
     | @as("EditComment")
-    EditComment({@as("review_id") reviewId: reviewId, @as("comment_id") commentId: commentId, body: string})
+    EditComment({
+        @as("review_id") reviewId: reviewId,
+        @as("comment_id") commentId: commentId,
+        body: string,
+      })
     | @as("DeleteComment")
-    DeleteComment({@as("review_id") reviewId: reviewId, @as("comment_id") commentId: commentId})
+    DeleteComment({
+        @as("review_id") reviewId: reviewId,
+        @as("comment_id") commentId: commentId,
+      })
     | @as("ResolveThread")
-    ResolveThread({@as("review_id") reviewId: reviewId, @as("thread_id") threadId: threadId})
+    ResolveThread({
+        @as("review_id") reviewId: reviewId,
+        @as("thread_id") threadId: threadId,
+      })
     | @as("UnresolveThread")
-    UnresolveThread({@as("review_id") reviewId: reviewId, @as("thread_id") threadId: threadId})
+    UnresolveThread({
+        @as("review_id") reviewId: reviewId,
+        @as("thread_id") threadId: threadId,
+      })
     | @as("MarkViewed")
-    MarkViewed({@as("review_id") reviewId: reviewId, @as("repo_id") repoId: repoId, path: string})
+    MarkViewed({
+        @as("review_id") reviewId: reviewId,
+        @as("repo_id") repoId: repoId,
+        path: string,
+      })
     | @as("UnmarkViewed")
-    UnmarkViewed({@as("review_id") reviewId: reviewId, @as("repo_id") repoId: repoId, path: string})
+    UnmarkViewed({
+        @as("review_id") reviewId: reviewId,
+        @as("repo_id") repoId: repoId,
+        path: string,
+      })
     | @as("RequestReview")
-    RequestReview({@as("review_id") reviewId: reviewId, agent: string, note: string})
+    RequestReview({
+        @as("review_id") reviewId: reviewId,
+        agent: string,
+        note: string,
+      })
     | @as("ApplySuggestion")
-    ApplySuggestion({@as("review_id") reviewId: reviewId, @as("comment_id") commentId: commentId})
+    ApplySuggestion({
+        @as("review_id") reviewId: reviewId,
+        @as("comment_id") commentId: commentId,
+      })
 }
 
 module Request = {
@@ -151,7 +200,10 @@ module Request = {
     | @as("OpenReview") OpenReview({@as("review_id") reviewId: reviewId, opts: RenderOpts.t})
     | @as("ResolveTargets") ResolveTargets({@as("review_id") reviewId: reviewId})
     | @as("ListCommits")
-    ListCommits({@as("review_id") reviewId: reviewId, @as("repo_id") repoId: repoId})
+    ListCommits({
+        @as("review_id") reviewId: reviewId,
+        @as("repo_id") repoId: repoId,
+      })
     | @as("TreeSnapshot") TreeSnapshot({@as("repo_id") repoId: repoId, @as("ref") ref_: RefSpec.t})
     | @as("FileRender")
     FileRender({
@@ -219,8 +271,7 @@ module StreamItem = {
     | @as("ReviewSnapshot") ReviewSnapshot({snapshot: ReviewSnapshot.t})
     | @as("TreeSnapshot") TreeSnapshot({snapshot: TreeSnapshot.t})
     | @as("Header") Header({header: Render.FileRenderHeader.t})
-    | @as("Chunk")
-    Chunk({@as("repo_id") repoId: repoId, path: string, chunk: Render.RenderChunk.t})
+    | @as("Chunk") Chunk({@as("repo_id") repoId: repoId, path: string, chunk: Render.RenderChunk.t})
 }
 
 module ClientMsg = {

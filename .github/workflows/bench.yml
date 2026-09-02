@@ -1,0 +1,28 @@
+# Benchmarks are a regression *trigger*, not a correctness gate, and cost a
+# whole release-profile build of the workspace. They run on main only, never in
+# PR CI. `workflow_dispatch` is the escape hatch for checking a branch by hand
+# before merging it.
+name: bench
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  bench:
+    name: benchmark triggers
+    runs-on: ubuntu-latest
+    concurrency:
+      group: bench-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # nits-review-core and nitsd pull in neither tauri nor the web bundle.
+      - run: NITS_BENCH_FILES=2000 cargo bench -p nits-review-core -p nitsd

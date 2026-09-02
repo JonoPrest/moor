@@ -61,7 +61,7 @@ jobs:
       packages: ${{ steps.plan.outputs.packages }}
       tag_state: ${{ steps.plan.outputs.tag_state }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # tags, so the collision check can see them
       - uses: dtolnay/rust-toolchain@stable
@@ -133,7 +133,7 @@ jobs:
           - target: aarch64-apple-darwin
             runner: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -167,7 +167,7 @@ jobs:
           # shasum is the one checksum tool present on both runners.
           ( cd dist && shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256" )
           echo "name=$name" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.tarball.outputs.name }}
           path: |
@@ -189,14 +189,14 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             arch: arm64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-deb,cargo-generate-rpm
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.package }}-${{ needs.plan.outputs.version }}-${{ matrix.target }}
           path: incoming
@@ -260,7 +260,7 @@ jobs:
           done
           ( cd dist && for f in *.deb *.rpm; do shasum -a 256 "$f" > "$f.sha256"; done )
           ls -l dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux-packages-${{ matrix.arch }}
           path: dist/*
@@ -273,8 +273,8 @@ jobs:
     if: always() && needs.build.result == 'success' && needs.linux-packages.result != 'failure'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           path: incoming
           merge-multiple: true
@@ -305,7 +305,7 @@ jobs:
           else
             git push origin "$tag"
           fi
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         if: '!inputs.dry_run'
         with:
           tag_name: ${{ needs.plan.outputs.tag }}
@@ -319,7 +319,7 @@ jobs:
     if: inputs.crates_io && !failure() && !cancelled()
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: publish the dependency closure in order
@@ -333,8 +333,8 @@ jobs:
     if: inputs.homebrew && !failure() && !cancelled()
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           path: incoming
           merge-multiple: true
@@ -402,8 +402,8 @@ jobs:
     if: inputs.aur && !failure() && !cancelled()
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           path: incoming
           merge-multiple: true
@@ -475,8 +475,8 @@ jobs:
       group: linux-repo
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           path: incoming
           merge-multiple: true

@@ -485,7 +485,10 @@ module ViewPatch = {
   @schema @tag("type")
   type t =
     | @as("Connection")
-    Connection({connection: ConnectionView.t, @as("last_error") lastError: @s.null option<Rpc.RpcError.t>})
+    Connection({
+        connection: ConnectionView.t,
+        @as("last_error") lastError: @s.null option<Rpc.RpcError.t>,
+      })
     | @as("ReviewList")
     ReviewList({
         workspaces: array<Domain.Workspace.t>,
@@ -518,7 +521,11 @@ module ViewPatch = {
         chrome: array<Hint.t>,
       })
     | @as("Help") Help({help: @s.null option<HelpView.t>})
-    | @as("Draft") Draft({draft: @s.null option<Draft.t>, @as("pending_refresh") pendingRefresh: bool})
+    | @as("Draft")
+    Draft({
+        draft: @s.null option<Draft.t>,
+        @as("pending_refresh") pendingRefresh: bool,
+      })
     | @as("Search")
     Search({
         @as("content_search") contentSearch: @s.null option<ContentSearchView.t>,

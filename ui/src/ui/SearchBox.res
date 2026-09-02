@@ -45,7 +45,8 @@ let make = (~search: SearchView.t, ~dispatch: Action.t => unit) => {
             }
             None
           })}
-          onClick={_ => dispatch(Viewport({file: h.file, firstRow: 0, lastRow: 59}))}>
+          onClick={_ => dispatch(Viewport({file: h.file, firstRow: 0, lastRow: 59}))}
+        >
           {React.string(h.file.path)}
         </li>
       )

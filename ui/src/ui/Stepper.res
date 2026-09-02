@@ -40,7 +40,9 @@ module CommitPanel = {
         <dd>
           {commit.parents
           ->Array.map(p =>
-            <span key=p className="commit-oid"> {React.string(String.slice(p, ~start=0, ~end=8))} </span>
+            <span key=p className="commit-oid">
+              {React.string(String.slice(p, ~start=0, ~end=8))}
+            </span>
           )
           ->React.array}
         </dd>
@@ -65,8 +67,11 @@ let make = (~stepper: CommitStepper.t, ~focus: Focus.t, ~dispatch: Action.t => u
             key=c.oid
             className={"stepper-commit" ++ (isSelected ? " stepper-selected" : "")}
             onClick={_ => dispatch(SetFocus({focus: Focus.CommitStepper({index: i})}))}
-            onDoubleClick={_ => dispatch(StepCommit({selected: Some(i)}))}>
-            <span className="commit-oid"> {React.string(String.slice(c.oid, ~start=0, ~end=8))} </span>
+            onDoubleClick={_ => dispatch(StepCommit({selected: Some(i)}))}
+          >
+            <span className="commit-oid">
+              {React.string(String.slice(c.oid, ~start=0, ~end=8))}
+            </span>
             <span className="commit-subject"> {React.string(c.subject)} </span>
             <span className="commit-author"> {React.string(c.author)} </span>
           </li>,

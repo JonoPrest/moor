@@ -12,11 +12,12 @@ let make = (
   ~composer: React.element,
   ~dispatch: Action.t => unit,
 ) => {
-  let flags = [
-    thread.resolved ? "resolved" : "",
-    thread.outdated ? "outdated" : "",
-    thread.pending ? "pending" : "",
-  ]->Array.filter(s => s != "")
+  let flags =
+    [
+      thread.resolved ? "resolved" : "",
+      thread.outdated ? "outdated" : "",
+      thread.pending ? "pending" : "",
+    ]->Array.filter(s => s != "")
   Attrs.focused(
     <div
       className={["inline-thread", ...flags]->Array.join(" ")}
@@ -24,7 +25,8 @@ let make = (
       onClick={ev => {
         ReactEvent.Mouse.stopPropagation(ev)
         dispatch(SetFocus({focus: Focus.Thread({index: index})}))
-      }}>
+      }}
+    >
       {thread.comments
       ->Array.map(c =>
         <div key=c.id className={"inline-comment" ++ (c.pending ? " pending" : "")}>
@@ -44,9 +46,7 @@ let make = (
       {switch composer {
       | c if c != React.null => c
       | _ =>
-        <div
-          className="inline-thread-actions"
-          onClick={ev => ReactEvent.Mouse.stopPropagation(ev)}>
+        <div className="inline-thread-actions" onClick={ev => ReactEvent.Mouse.stopPropagation(ev)}>
           <UI.Button
             label="Reply (r)"
             kind=Primary
