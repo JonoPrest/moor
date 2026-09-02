@@ -1,7 +1,7 @@
 //! Reaching a daemon through a [`Context`]: connect (starting the daemon on
 //! demand where the context allows), probe status, start, stop. The CLI,
-//! MCP shim and desktop app all go through here so a machine's daemon is
-//! managed one way.
+//! the MCP server and the desktop app all go through here so a machine's
+//! daemon is managed one way.
 
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -82,14 +82,19 @@ pub fn local_spec(
     Ok(spec)
 }
 
+/// `ssh <host> <bin> daemon stdio <args...>`: the remote `nits` proxies to
+/// (and starts) the daemon on its own machine.
 fn ssh_command(
     host: &str,
-    nitsd: Option<&str>,
+    bin: Option<&str>,
     args: &[String],
     ssh: Option<&str>,
 ) -> tokio::process::Command {
     let mut cmd = tokio::process::Command::new(ssh.unwrap_or("ssh"));
-    cmd.arg(host).arg(nitsd.unwrap_or("nitsd")).args(args);
+    cmd.arg(host)
+        .arg(bin.unwrap_or("nits"))
+        .args(["daemon", "stdio"])
+        .args(args);
     cmd
 }
 
@@ -115,16 +120,16 @@ pub async fn connect(
         }
         Context::Ssh {
             host,
-            nitsd,
+            bin,
             args,
             ssh,
         } => {
-            let mut cmd = ssh_command(host, nitsd.as_deref(), args, ssh.as_deref());
-            cmd.arg(if autostart {
-                "--stdio"
-            } else {
-                "--stdio-if-running"
-            });
+            let mut cmd = ssh_command(host, bin.as_deref(), args, ssh.as_deref());
+            if !autostart {
+                // Exits 3 rather than waking a daemon, so a client can
+                // probe or stop a remote without starting one.
+                cmd.arg("--no-autostart");
+            }
             let mut child = cmd
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())

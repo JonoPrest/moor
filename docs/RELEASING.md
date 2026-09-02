@@ -1,23 +1,25 @@
 # Releasing
 
-One package at a time, triggered by hand. `nits`, `nitsd` and `nits-mcp` version
-independently and each gets its own tag (`nits-v0.3.1`, `nitsd-v0.2.0`, …), so
-shipping a CLI fix never forces a daemon release.
+Triggered by hand. `nits` is the only releasable package — the daemon and the
+MCP server are subcommands of it, not separate binaries — and it gets a
+namespaced tag (`nits-v0.3.1`). The plumbing stays package-shaped (`--package`,
+`Releasable`, `binaries`) so a second shipped binary would be a variant and a
+workflow option, not a rewrite.
 
 ## Cutting a release
 
-1. Bump the version. All three binaries inherit `workspace.package.version` from
-   the root `Cargo.toml`, so bumping it there releases whichever package you
-   then name. To version one independently, give that crate its own `version =`
-   instead of `version.workspace = true`.
+1. Bump the version. Every crate inherits `workspace.package.version` from the
+   root `Cargo.toml`, so bumping it there is the release. To version one
+   independently, give that crate its own `version =` instead of
+   `version.workspace = true`.
 2. Rehearse locally:
    ```console
    $ cargo xtask release-plan --package nits   # version, tag, publish order
    $ cargo xtask publish --package nits --dry-run
    ```
-3. Run the **release** workflow (Actions → release → Run workflow), choose the
-   package, and untick any channel you want to skip. `dry_run` builds every
-   artifact and checks every collision without tagging or publishing anything.
+3. Run the **release** workflow (Actions → release → Run workflow) and untick
+   any channel you want to skip. `dry_run` builds every artifact and checks
+   every collision without tagging or publishing anything.
 
 The run refuses to start only if the tag exists **on a different commit** —
 that means the version was released from other code, so bump rather than
@@ -27,12 +29,12 @@ finish. The tag step is idempotent to match, and `plan` reports `tag_state` as
 `absent`, `at_head` or `elsewhere`.
 
 Being on crates.io deliberately does **not** block a release. A crate is
-published whenever it appears in another package's dependency closure (a `nits`
-release publishes `nitsd` along the way), and that must not then block `nitsd`'s
-own release of the same version, which has produced no tag, tarball, formula,
-AUR package, deb or rpm. Re-publishing is harmless because `publish()` skips
-versions crates.io already has; the plan reports that state as
-`crate_already_published` for information only.
+published whenever it appears in the package's dependency closure (a `nits`
+release publishes `nitsd`, `nits-mcp`, … along the way), and a crate already
+being there says nothing about whether *this* release has produced its tag,
+tarball, formula, AUR package, deb or rpm. Re-publishing is harmless because
+`publish()` skips versions crates.io already has; the plan reports that state
+as `crate_already_published` for information only.
 
 ## What the workflow does
 
@@ -75,32 +77,26 @@ those path dependencies when it packages, which is also what keeps the
 
 ## What each package ships
 
-Every client-facing package contains **both** the client and `nitsd`. The
-clients start the daemon themselves — `nitsd::launch::sibling_binary` looks for
-`nitsd` next to the running executable, then on `PATH` — so a package with only
-the client installs something that passes `--version` and fails on its first
-real command. The set lives in `Releasable::binaries()` and every channel reads
-it, so the tarball, formula, PKGBUILD and deb/rpm cannot disagree.
+One binary: `nits`. The daemon is `nits daemon serve` and the MCP server is
+`nits mcp`, both linked in from the `nitsd` and `nits-mcp` *libraries*, and
+`nitsd::launch::nits_binary` starts a daemon by re-executing the running
+`nits`. So there is no second executable to bundle, to depend on, or to let
+drift a version behind the client — which is the failure this layout exists to
+remove.
 
 | Package | Binaries |
 | --- | --- |
-| `nits` | `nits`, `nitsd` |
-| `nitsd` | `nitsd` |
-| `nits-mcp` | `nits-mcp`, `nitsd` |
+| `nits` | `nits` |
+
+The set lives in `Releasable::binaries()` and every channel reads it, so the
+tarball, formula, PKGBUILD and deb/rpm cannot disagree.
 
 The Homebrew `test` block runs `nits workspace list`, which reaches
-`ensure_daemon`; `--version` and `daemon status` both pass without `nitsd`
-present, so neither would catch a client shipped without it.
+`ensure_daemon`, and drives one `initialize` through `nits mcp`. `--version`
+passes on a binary missing either piece, so neither would catch it.
 
-Archives, the formula and the AUR package **bundle** the daemon, because none of
-those formats can express a dependency on another of our artifacts. deb and rpm
-**depend** on it: the release builds one system package per binary, and the
-client packages carry `Depends: nitsd` / `Requires: nitsd`, so the two clients
-are co-installable and there is only ever one `/usr/bin/nitsd`.
-
-`cargo install` can do neither, so it is documented as `cargo install nits
-nitsd` — cargo does not install binaries from dependency crates, and a plain
-`cargo install nits` yields a client that fails at `ensure_daemon`.
+`cargo install nits` is now the whole instruction: one crate, one binary,
+nothing about dependency crates whose binaries cargo will not install.
 
 Note for deb metadata: cargo-deb interpolates only `$auto`, so a literal
 `$version` in `depends`/`provides` reaches the control file verbatim and
@@ -117,7 +113,7 @@ brownouts on 2026-09-17. The matrix is on `ubuntu-24.04`/`-arm` and
 `macos-15`/`macos-15-intel`; the glibc floor is therefore 2.39, and the musl
 targets are the static option for older systems.
 
-There is no Windows build. `nitsd` and `nits-client-host` use
+There is no Windows build. The daemon and `nits-client-host` use
 `std::os::unix::net` unconditionally; Windows needs a real named-pipe transport
 first, not a build target.
 
@@ -167,8 +163,7 @@ would mean. Two things gate it, and the second is not just a matter of waiting:
 - Core formulae must **build from source**; ours downloads prebuilt binaries.
   A core formula would be a different formula: the GitHub *source* tarball (not
   the crates.io `.crate`, which contains only the `nits` package and so cannot
-  build `nitsd`), `depends_on "rust" => :build`, and a `cargo install` per
-  binary.
+  build it), `depends_on "rust" => :build`, and `cargo install`.
 
 So this is not "the same formula, later" — budget for writing a second one.
 

@@ -10,7 +10,7 @@ keywords.workspace = true
 authors.workspace = true
 homepage.workspace = true
 readme = "README.md"
-description = "Command-line client for the nitsd code-review daemon"
+description = "Nits: daemon-backed code review. Client, daemon and MCP server in one binary."
 
 [[bin]]
 name = "nits"
@@ -22,6 +22,8 @@ nits-client-host = { workspace = true }
 nits-client-core = { workspace = true }
 nits-protocol = { workspace = true }
 nitsd = { workspace = true }
+nits-mcp = { workspace = true }
+tracing-subscriber = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
@@ -48,7 +50,7 @@ workspace = true
 name = "nits"
 maintainer = "Jono Prest <jjprest@gmail.com>"
 copyright = "Copyright (c) Jono Prest. MIT licensed."
-extended-description = "Command-line client for the nitsd code-review daemon"
+extended-description = "Nits: daemon-backed code review. Client, daemon and MCP server in one binary."
 section = "devel"
 priority = "optional"
 assets = [
@@ -56,16 +58,12 @@ assets = [
     ["../../README.md", "usr/share/doc/nits/README.md", "644"],
     ["../../LICENSE", "usr/share/doc/nits/LICENSE", "644"],
 ]
-# $auto keeps cargo-deb's generated libc/shlib dependencies; nitsd is the
-# separately packaged daemon this client spawns.
-depends = ["$auto", "nitsd"]
 
 [package.metadata.generate-rpm]
 name = "nits"
-summary = "Command-line client for the nitsd code-review daemon"
+summary = "Nits: daemon-backed code review. Client, daemon and MCP server in one binary."
 assets = [
     { source = "target/release/nits", dest = "/usr/bin/nits", mode = "755" },
     { source = "../../README.md", dest = "/usr/share/doc/nits/README.md", mode = "644", doc = true },
     { source = "../../LICENSE", dest = "/usr/share/doc/nits/LICENSE", mode = "644", doc = true },
 ]
-requires = { nitsd = "*" }

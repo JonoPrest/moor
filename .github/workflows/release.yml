@@ -1,6 +1,8 @@
-# Manual, one package at a time. Pick the package and the channels; the version
-# comes from its Cargo.toml, and the run refuses to start if that version was
-# already released (crates.io has it, or its tag exists).
+# Manual. Pick the channels; the version comes from the package's Cargo.toml,
+# and the run refuses to start if that version was already released (crates.io
+# has it, or its tag exists). `nits` is the only releasable package — the
+# daemon and the MCP server are subcommands of it, not separate binaries — but
+# the plumbing stays package-shaped in case that changes.
 #
 # Secrets, tap layout and the first-release checklist: docs/RELEASING.md.
 name: release
@@ -13,7 +15,7 @@ on:
         type: choice
         required: true
         default: nits
-        options: [nits, nitsd, nits-mcp]
+        options: [nits]
       crates_io:
         description: Publish to crates.io
         type: boolean
@@ -35,10 +37,10 @@ on:
         type: boolean
         default: false
 
-# One release at a time, globally — not per package. Two packages share most of
-# their dependency closure (both publish nits-protocol, nitsd, …), the Homebrew
-# tap, and the APT/YUM repo, so per-package groups would let two runs both see a
-# shared crate as absent and race to publish it, or push the tap concurrently.
+# One release at a time, globally — not per package. Packages would share most
+# of their dependency closure (nits-protocol, nitsd, …), the Homebrew tap and
+# the APT/YUM repo, so per-package groups would let two runs both see a shared
+# crate as absent and race to publish it, or push the tap concurrently.
 concurrency:
   group: release
   cancel-in-progress: false
@@ -112,7 +114,7 @@ jobs:
       matrix:
         include:
           # Native runners for every target: no cross toolchains to keep working.
-          # Windows is absent on purpose — nitsd and nits-client-host use
+          # Windows is absent on purpose — the daemon and nits-client-host use
           # std::os::unix unconditionally, so there is nothing to build yet.
           # ubuntu-22.04/-arm begin brownouts on 2026-09-17, and macos-13 was
           # retired on 2025-12-04. macos-15-intel is the last x86_64 macOS
@@ -143,8 +145,8 @@ jobs:
       - if: matrix.musl
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - name: build
-        # Every binary in the set, not just the headline one: the clients spawn
-        # nitsd and are unusable without it.
+        # Whatever `Releasable::binaries()` names — one binary today, since the
+        # daemon and the MCP server are subcommands of `nits`.
         run: |
           set -euo pipefail
           args=()
@@ -218,9 +220,8 @@ jobs:
           printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
           echo "GPG_KEY_ID=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec:/ {print $5; exit}')" >> "$GITHUB_ENV"
       - name: build packages
-        # One system package per binary. Unlike an archive, a deb/rpm can
-        # express a dependency, so the clients depend on a separately packaged
-        # nitsd rather than each owning /usr/bin/nitsd and conflicting.
+        # One system package per binary, so nothing has to declare a
+        # dependency on anything else we ship.
         run: |
           set -euo pipefail
           mkdir -p dist

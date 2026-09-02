@@ -1,6 +1,9 @@
-//! Lifecycle (plan 2.7): the real `nitsd` binary is `SIGKILL`ed while a client
-//! hammers it with mutations; the data dir reopens consistent and a fresh
-//! daemon takes over the stale socket path.
+//! Lifecycle (plan 2.7): the real daemon — `nits daemon serve` — is
+//! `SIGKILL`ed while a client hammers it with mutations; the data dir
+//! reopens consistent and a fresh daemon takes over the stale socket path.
+//!
+//! It lives beside the CLI tests because the daemon ships inside the `nits`
+//! binary, which is the one these spawn.
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -32,7 +35,8 @@ fn short_socket(tag: &str) -> PathBuf {
 
 /// Start the daemon binary and wait until it accepts connections.
 async fn spawn_daemon(data_dir: &Path, socket: &Path) -> Spawned {
-    let child = Command::new(env!("CARGO_BIN_EXE_nitsd"))
+    let child = Command::new(env!("CARGO_BIN_EXE_nits"))
+        .args(["daemon", "serve"])
         .arg("--data-dir")
         .arg(data_dir)
         .arg("--socket")
@@ -240,18 +244,18 @@ async fn sigkill_mid_burst_reopens_consistent_and_socket_is_reclaimed() {
     let _ = std::fs::remove_file(&socket);
 }
 
-/// `--stdio` proxies to the machine's daemon, starting it detached when
-/// nothing listens, and exits on EOF; `Request::Shutdown` stops the daemon.
+/// `nits daemon stdio` proxies to the machine's daemon, starting it detached
+/// when nothing listens, and exits on EOF; `Request::Shutdown` stops it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn stdio_proxies_to_an_autostarted_daemon_and_shutdown_stops_it() {
     let dir = tempfile::tempdir().unwrap();
     let socket = short_socket("stdio");
-    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_nitsd"))
+    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_nits"))
+        .args(["daemon", "stdio"])
         .arg("--data-dir")
         .arg(dir.path())
         .arg("--socket")
         .arg(&socket)
-        .arg("--stdio")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())

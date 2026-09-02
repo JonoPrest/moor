@@ -14,12 +14,9 @@ use anyhow::{Context, bail};
 /// a target is a variant here and nowhere else.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Releasable {
-    /// The `nits` CLI — the flagship crate, named `nits` on crates.io.
+    /// The `nits` binary — client, daemon (`nits daemon serve`) and MCP
+    /// server (`nits mcp`) in one executable.
     Cli,
-    /// The `nitsd` daemon.
-    Daemon,
-    /// The `nits-mcp` MCP stdio shim.
-    Mcp,
 }
 
 impl Releasable {
@@ -27,23 +24,18 @@ impl Releasable {
     pub fn crate_name(self) -> &'static str {
         match self {
             Self::Cli => "nits",
-            Self::Daemon => "nitsd",
-            Self::Mcp => "nits-mcp",
         }
     }
 
-    /// Every binary this release must ship, not just the headline one.
+    /// Every binary this release ships.
     ///
-    /// `nits` and `nits-mcp` are clients of a daemon they start themselves:
-    /// `nitsd::launch::sibling_binary` looks for `nitsd` next to the running
-    /// executable and falls back to `PATH`, so a package containing only the
-    /// client installs something that fails on its first real command. Every
-    /// channel ships this whole set.
+    /// One, deliberately. `nitsd` and `nits-mcp` are libraries linked into
+    /// `nits`, which starts its own daemon by re-executing itself
+    /// (`nitsd::launch::nits_binary`) — so there is no second executable to
+    /// keep in step, in any channel.
     pub fn binaries(self) -> &'static [&'static str] {
         match self {
-            Self::Cli => &["nits", "nitsd"],
-            Self::Daemon => &["nitsd"],
-            Self::Mcp => &["nits-mcp", "nitsd"],
+            Self::Cli => &["nits"],
         }
     }
 
@@ -52,9 +44,7 @@ impl Releasable {
     pub fn parse(s: &str) -> anyhow::Result<Self> {
         match s {
             "nits" => Ok(Self::Cli),
-            "nitsd" => Ok(Self::Daemon),
-            "nits-mcp" => Ok(Self::Mcp),
-            other => bail!("unknown package {other:?}; expected one of: nits, nitsd, nits-mcp"),
+            other => bail!("unknown package {other:?}; expected: nits"),
         }
     }
 }
@@ -488,6 +478,10 @@ fn unpublished_dep(
 mod tests {
     use super::*;
 
+    /// Every releasable package, so these tests cover whatever the enum
+    /// grows to rather than a hand-kept list per test.
+    const ALL: &[Releasable] = &[Releasable::Cli];
+
     fn member(name: &str, deps: &[&str], publish: bool) -> (String, Member) {
         (
             name.to_owned(),
@@ -503,29 +497,25 @@ mod tests {
 
     #[test]
     fn every_releasable_name_round_trips() {
-        for r in [Releasable::Cli, Releasable::Daemon, Releasable::Mcp] {
+        for &r in ALL {
             assert_eq!(Releasable::parse(r.crate_name()).expect("parses"), r);
         }
     }
 
     #[test]
-    fn every_client_ships_the_daemon_it_starts() {
-        // A client package without nitsd installs a CLI that fails on its
-        // first real command, which `--version` smoke tests do not catch.
-        for r in [Releasable::Cli, Releasable::Mcp] {
-            assert!(r.binaries().contains(&"nitsd"), "{r:?} must ship nitsd");
-            assert!(r.binaries().contains(&r.crate_name()));
+    fn a_release_ships_exactly_its_own_binary() {
+        // The daemon and the MCP server are subcommands of `nits`, not
+        // executables of their own: a release that shipped a second binary
+        // would be one more thing to install and to keep in version step.
+        for &r in ALL {
+            assert_eq!(r.binaries(), [r.crate_name()]);
         }
-        assert_eq!(Releasable::Daemon.binaries(), ["nitsd"]);
     }
 
     #[test]
     fn every_shipped_binary_is_built_by_a_known_package() {
-        let packages: BTreeSet<&str> = [Releasable::Cli, Releasable::Daemon, Releasable::Mcp]
-            .iter()
-            .map(|r| r.crate_name())
-            .collect();
-        for r in [Releasable::Cli, Releasable::Daemon, Releasable::Mcp] {
+        let packages: BTreeSet<&str> = ALL.iter().map(|r| r.crate_name()).collect();
+        for r in ALL {
             for bin in r.binaries() {
                 assert!(packages.contains(bin), "no package builds {bin}");
             }
@@ -534,6 +524,9 @@ mod tests {
 
     #[test]
     fn unknown_package_is_rejected() {
+        // Libraries `nits` links, not binaries anyone releases on their own.
+        assert!(Releasable::parse("nitsd").is_err());
+        assert!(Releasable::parse("nits-mcp").is_err());
         assert!(Releasable::parse("moor").is_err());
     }
 

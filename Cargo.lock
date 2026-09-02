@@ -3106,6 +3106,7 @@ dependencies = [
  "nits-client-host",
  "nits-client-web",
  "nits-config",
+ "nits-mcp",
  "nits-protocol",
  "nits-review-core",
  "nits-test-support",
@@ -3116,6 +3117,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-util",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -3232,7 +3234,6 @@ name = "nits-mcp"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "clap",
  "gethostname",
  "nits-config",
  "nits-protocol",
@@ -3248,7 +3249,6 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -3310,7 +3310,6 @@ name = "nitsd"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "clap",
  "fastrand",
  "futures-util",
  "gethostname",
@@ -3327,7 +3326,6 @@ dependencies = [
  "tokio-tungstenite",
  "tokio-util",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

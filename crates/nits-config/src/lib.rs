@@ -23,7 +23,7 @@
 //! ```
 //!
 //! Daemon lifecycle per kind: `Local` and `Ssh` contexts start the daemon on
-//! demand (locally, or via `ssh host nitsd --stdio` which does it remotely);
+//! demand (locally, or via `ssh host nits daemon stdio` which does it remotely);
 //! a `Ws` context is somebody else's daemon and is only connected to.
 
 use std::collections::BTreeMap;
@@ -65,14 +65,16 @@ pub enum Context {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         socket: Option<PathBuf>,
     },
-    /// A daemon on another machine, reached by `ssh <host> nitsd --stdio`,
-    /// which starts it there if needed. Auth, jumps and ports come from
-    /// `~/.ssh/config`.
+    /// A daemon on another machine, reached by `ssh <host> nits daemon
+    /// stdio`, which starts it there if needed. Auth, jumps and ports come
+    /// from `~/.ssh/config`.
     Ssh {
         host: String,
-        /// The remote `nitsd` binary. Default: `nitsd` on the remote PATH.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        nitsd: Option<String>,
+        /// The remote `nits` binary. Default: `nits` on the remote PATH.
+        /// The `nitsd` alias reads configs written when the daemon was a
+        /// second executable.
+        #[serde(default, alias = "nitsd", skip_serializing_if = "Option::is_none")]
+        bin: Option<String>,
         /// Extra arguments for the remote daemon, e.g. `--data-dir`.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         args: Vec<String>,
@@ -194,7 +196,7 @@ mod tests {
             "box".into(),
             Context::Ssh {
                 host: "build-box".into(),
-                nitsd: None,
+                bin: None,
                 args: vec!["--data-dir".into(), "/srv/nits".into()],
                 ssh: None,
             },

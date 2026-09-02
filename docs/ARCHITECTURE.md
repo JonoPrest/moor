@@ -46,7 +46,7 @@ Non-goals (for now): multi-machine sync of comments, hosting/PR integration, aut
                     └───────────┘ └─────────┘
 ```
 
-Remote use: the client tunnels the daemon's socket/port over SSH (`ssh -L` or `ssh host nitsd --stdio`). SSH is the only auth layer.
+Remote use: the client tunnels the daemon's socket/port over SSH (`ssh -L` or `ssh host nits daemon stdio`). SSH is the only auth layer.
 
 ## 3. Crate / package layout
 
@@ -54,13 +54,13 @@ Remote use: the client tunnels the daemon's socket/port over SSH (`ssh -L` or `s
 crates/
   nits-protocol/      wire types: requests, events, view/render models. serde. wasm-safe.
   nits-review-core/   git access, diffing, anchoring, event store, review logic. daemon-only.
-  nitsd/              daemon: socket + websocket + MCP transports over review-core. file watcher.
+  nitsd/              daemon library: socket + websocket transports over review-core, file watcher, launch. No binary — `nits daemon serve` is it.
   nits-client-core/   sans-I/O client state machine: cache, optimistic state, ViewModel. wasm-safe.
   nits-client-wasm/   wasm-bindgen shim around client-core.
   nits-client-tauri/  Tauri host: runs client-core natively, exposes dispatch/subscribe to the webview.
   nits-client-tui/    ratatui host (later).
   nits-cli/           `nits` command; thin RPC client. Used by shell-based agents and scripts.
-  nits-mcp/           MCP stdio shim proxying to nitsd.
+  nits-mcp/           MCP server library proxying to the daemon. No binary — `nits mcp` is it.
 ui/              ReScript + React + Vite. Shared by Tauri and browser.
   src/core/      Core.res interface + CoreTauri.res / CoreWasm.res adapters
   src/protocol/  Protocol.res — hand-written Sury schemas mirroring the Rust types
@@ -222,11 +222,12 @@ TreeDelta    { from_root, to_root, added: [TreeEntry], removed: [path], changed:
 ### 4.8 Transports
 
 - **Unix socket**, length-prefixed JSON frames. Multiplexed: `Request{id}` / `Response{id}` / `Event{seq}`.
-- **WebSocket**, same JSON envelopes, one per binary (or text) message — the socket does the framing, so no length prefix. Plain TCP, opt-in via `nitsd --ws <addr>`, for browser clients and remote daemons. Inside `nitsd` both share `connection::serve_framed` over the `FrameRead`/`FrameWrite` traits.
-- **MCP**, `nits-mcp` on stdio (newline-delimited JSON-RPC), proxying to the daemon's unix socket or ws port. Tools: `list_workspaces`, `list_reviews`, `get_review` (snapshot + changed files), `create_review`, `update_review`, `get_diff`, `get_file` (numbered text, any side, unchanged files too), `list_comments`, `add_comment` (review / file / line anchors), `suggest`, `reply`, `resolve`, `request_review`, `subscribe_events` (long-poll; pass `last_seq` back as `since_seq`). Author is `Agent{name: clientInfo.name, model: $NITS_AGENT_MODEL, session_id: $NITS_SESSION_ID, invoked_by: $USER@host, via: Mcp}`. `mark_viewed` is deliberately not offered. Anchors go up with a zero `context_hash`; the daemon computes the real one.
+- **WebSocket**, same JSON envelopes, one per binary (or text) message — the socket does the framing, so no length prefix. Plain TCP, opt-in via `nits daemon serve --ws-listen <addr>`, for browser clients and remote daemons. Inside `nitsd` both share `connection::serve_framed` over the `FrameRead`/`FrameWrite` traits.
+- **MCP**, `nits mcp` on stdio (newline-delimited JSON-RPC), proxying to the daemon's unix socket or ws port. Tools: `list_workspaces`, `list_reviews`, `get_review` (snapshot + changed files), `create_review`, `update_review`, `get_diff`, `get_file` (numbered text, any side, unchanged files too), `list_comments`, `add_comment` (review / file / line anchors), `suggest`, `reply`, `resolve`, `request_review`, `subscribe_events` (long-poll; pass `last_seq` back as `since_seq`). Author is `Agent{name: clientInfo.name, model: $NITS_AGENT_MODEL, session_id: $NITS_SESSION_ID, invoked_by: $USER@host, via: Mcp}`. `mark_viewed` is deliberately not offered. Anchors go up with a zero `context_hash`; the daemon computes the real one.
 - **CLI**, `nits`, the same recipes (`nitsd::ops`) printed as text or `--json`. Human author from `$USER`/`--user`; `--agent NAME` attributes to `Agent{via: Cli, invoked_by: user}` for scripts driven by an agent. `events --follow` is a loop of long-polls resuming from `last_seq`.
-- **Contexts** (`nits-config`, `~/.config/nits/config.toml`): named places a daemon lives — `Local{data_dir?, socket?}`, `Ssh{host, nitsd?, args}`, `Ws{url}`. **Definitions only, no "current" context** and no current workspace/review either: shared mutable selection would let one project's CLI or MCP session redirect another's, or flip what the desktop app shows. Every process selects explicitly — ad-hoc flags (`--socket`, `--ws`) > `--context`/`NITS_CONTEXT` > an implicit `local` — and the app keeps its selection in its own state. Workspace and repo default from the **working directory** (`Ops::locate`: the attached repo containing cwd) in both the CLI and MCP, so `nits review list` in a checkout just works and concurrent sessions in different projects never interfere. `nits context add-local|add-ssh|add-ws|list|show|remove`.
-- **Daemon lifecycle** (`nitsd::launch`, `nitsd::contexts`): **one daemon per machine**; the store is single-process so nothing else may open it. `nitsd --stdio` (what `ssh host nitsd --stdio` runs) is a *proxy*: it connects to the machine's socket, starting a detached daemon first if nothing answers (`nohup`, log in `<data_dir>/nitsd.log`, `--idle-exit 1800` so an auto-started daemon retires itself), then pipes bytes. `--stdio-if-running` exits 3 instead of starting, which is how a client probes or stops a remote without waking it. `Local` and `Ssh` contexts auto-start on connect (`--no-autostart` to refuse); `Ws` is somebody else's daemon. `Request::Shutdown` → `Response::ShuttingDown` stops any daemon from any client. `nits daemon status [--all] | start | stop` is the CLI face; the desktop app shows the same per-context status and buttons; `nits-mcp` auto-starts on `initialize` so an agent can always get going. Ssh specifics (keys, jumps, ports) stay in `~/.ssh/config`; `Context::Ssh.ssh` overrides the client binary (tests use a stand-in).
+- **Contexts** (`nits-config`, `~/.config/nits/config.toml`): named places a daemon lives — `Local{data_dir?, socket?}`, `Ssh{host, bin?, args}`, `Ws{url}`. **Definitions only, no "current" context** and no current workspace/review either: shared mutable selection would let one project's CLI or MCP session redirect another's, or flip what the desktop app shows. Every process selects explicitly — ad-hoc flags (`--socket`, `--ws`) > `--context`/`NITS_CONTEXT` > an implicit `local` — and the app keeps its selection in its own state. Workspace and repo default from the **working directory** (`Ops::locate`: the attached repo containing cwd) in both the CLI and MCP, so `nits review list` in a checkout just works and concurrent sessions in different projects never interfere. `nits context add-local|add-ssh|add-ws|list|show|remove`.
+- **One binary** (`nits`). The daemon and the MCP server are subcommands, not executables: `nits daemon serve` and `nits mcp`, linked in from the `nitsd` and `nits-mcp` libraries. `nitsd::launch::nits_binary` starts a daemon by **re-executing the running `nits`** (`$NITS_BIN` overrides; other embedders such as the desktop app look next to themselves, then `PATH`), so a client and the daemon it started are the same build and cannot fail the version handshake — the failure two separately-packaged binaries invite every time a channel updates one and not the other. It also collapses install to one artifact per channel and removes the `Depends: nitsd` relationships from the deb/rpm.
+- **Daemon lifecycle** (`nitsd::launch`, `nitsd::serve`, `nitsd::contexts`): **one daemon per machine**; the store is single-process so nothing else may open it. `nits daemon stdio` (what `ssh host nits daemon stdio` runs) is a *proxy*: it connects to the machine's socket, starting a detached daemon first if nothing answers (`nohup`, log in `<data_dir>/nitsd.log`, `--idle-exit 1800` so an auto-started daemon retires itself), then pipes bytes. With `--no-autostart` it exits 3 instead of starting, which is how a client probes or stops a remote without waking it. `Local` and `Ssh` contexts auto-start on connect (`--no-autostart` to refuse); `Ws` is somebody else's daemon. `Request::Shutdown` → `Response::ShuttingDown` stops any daemon from any client. `nits daemon status [--all] | start | stop` is the CLI face; the desktop app shows the same per-context status and buttons; `nits mcp` auto-starts on `initialize` so an agent can always get going. Ssh specifics (keys, jumps, ports) stay in `~/.ssh/config`; `Context::Ssh.ssh` overrides the client binary (tests use a stand-in), `Context::Ssh.bin` the remote `nits`.
 
 - **Subscriptions**: `subscribe(scope, since_seq)` streams events from `since_seq`. Reconnect = resubscribe from last seen seq; no other sync mechanism.
 - **Review open is one streamed request.** `open_review(id)` answers with an ordered stream — `ReviewSnapshot` (review, threads, comments) → `TreeSnapshot` per target ref → `FileRenderHeader` per changed file → first `RenderChunk` per file — rather than the client issuing hundreds of round-trips over SSH. The client consumes and its cache fills as a side effect; per-item requests remain for cache misses and viewport-driven chunks.
@@ -263,7 +264,7 @@ Two independent versions, both typed in `nits-protocol::version`.
 - Stamped in the redb `meta` table on creation. `SchemaVersion::CURRENT` is what this build
   writes.
 - On open: equal → proceed; older → run migrations forward in one transaction per step and
-  restamp; newer → refuse to open with a clear error (a newer `nitsd` wrote this; upgrade).
+  restamp; newer → refuse to open with a clear error (a newer `nits` wrote this; upgrade).
 - Events are stored as JSON with a per-event `schema` tag, so the event log itself migrates by
   re-serialisation, and materialised views can always be rebuilt from the migrated log.
 - The daemon reports `schema` in `Welcome` for diagnostics only; clients never depend on it.
@@ -390,7 +391,7 @@ Tailwind v4 via `@tailwindcss/vite`; no CSS-in-JS, no runtime style computation.
 
 ## 8. Remote / SSH
 
-The daemon is unaware of remoteness. Clients connect to a local socket/port; the user (or the client, as a convenience) forwards it over SSH. The `nits` CLI can be run remotely via `ssh host nitsd --stdio` as a fallback transport.
+The daemon is unaware of remoteness. Clients connect to a local socket/port; the user (or the client, as a convenience) forwards it over SSH. The `nits` CLI can be run remotely via `ssh host nits daemon stdio` as a fallback transport.
 
 ## 9. Persistence & lifecycle
 
@@ -434,7 +435,7 @@ Suspected bottlenecks with a ready solution, deliberately **not** built until a 
 | 14 | Highlighter | syntect |
 | 16 | Daemon concurrency | one writer thread (mutations + re-anchoring, strictly serialised) and the tokio blocking pool for reads/renders against the shared `Core`; events fan out via a broadcast channel, connections filter by scope |
 | 17 | Client cache when daemon is local | memory tier only; disk tier for remote daemons (§5.1) |
-| 18 | Daemon lifecycle | one daemon per machine; `nitsd --stdio` is a proxy that auto-starts it; clients hold named contexts (local/ssh/ws) and can probe/start/stop; ws contexts are unmanaged; no persisted current context/workspace — selection is per process, workspace/repo default from cwd | herdr-style remotes without a second store opener; kubectl-style switching for the app |
+| 18 | Daemon lifecycle | one daemon per machine; `nits daemon stdio` is a proxy that auto-starts it; clients hold named contexts (local/ssh/ws) and can probe/start/stop; ws contexts are unmanaged; no persisted current context/workspace — selection is per process, workspace/repo default from cwd | herdr-style remotes without a second store opener; kubectl-style switching for the app |
 | 19 | UI styling | Tailwind v4 (Vite plugin); utilities for chrome, semantic class set + `@theme` tokens for diff rows, `data-focused` variants (§6.6) | cheap rows at 10k lines; one palette for web and TUI |
 | 15 | Evolution | semver `ProtocolVersion` negotiated in `Hello`/`Welcome`, on every `Envelope`; integer `SchemaVersion` in redb `meta` with forward-only migrations (§4.9) |
 

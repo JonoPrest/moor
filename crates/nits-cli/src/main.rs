@@ -88,6 +88,9 @@ enum Cmd {
     /// Start, stop or inspect the current context's daemon.
     #[command(subcommand)]
     Daemon(DaemonCmd),
+    /// Serve the Model Context Protocol on stdin/stdout, for agents. The
+    /// global context flags choose the daemon, as everywhere else.
+    Mcp,
     /// Workspaces and their repos.
     #[command(subcommand)]
     Workspace(WorkspaceCmd),
@@ -161,9 +164,9 @@ enum ContextCmd {
         name: String,
         /// Host as understood by your ssh config (`user@host`, alias).
         host: String,
-        /// Remote `nitsd` binary. Default: `nitsd` on the remote PATH.
-        #[arg(long)]
-        nitsd: Option<String>,
+        /// Remote `nits` binary. Default: `nits` on the remote PATH.
+        #[arg(long = "bin", alias = "nitsd")]
+        bin: Option<String>,
         /// Extra arguments for the remote daemon, e.g. `--data-dir /x`.
         #[arg(long = "arg")]
         args: Vec<String>,
@@ -189,6 +192,36 @@ enum DaemonCmd {
     Start,
     /// Ask the daemon to exit; it restarts on the next connection.
     Stop,
+    /// Be the daemon: serve this context's socket in the foreground.
+    ///
+    /// Hidden because nothing needs to type it — `nits` starts daemons
+    /// itself, with exactly this command (see `nitsd::launch`).
+    #[command(hide = true)]
+    Serve(ServeArgs),
+    /// Pipe stdin/stdout to this machine's daemon, starting one if nothing
+    /// answers; `--no-autostart` exits 3 instead. What `ssh host nits
+    /// daemon stdio` runs for an ssh context.
+    #[command(hide = true)]
+    Stdio(ServeArgs),
+}
+
+/// Flags shared by `daemon serve` and `daemon stdio`. Where to listen comes
+/// from the global context flags; these say how to behave once listening.
+#[derive(Debug, Args)]
+struct ServeArgs {
+    /// Exit after this many seconds with no client connected.
+    #[arg(long, env = "NITS_IDLE_EXIT")]
+    idle_exit: Option<u64>,
+    /// Also listen for WebSocket clients on this address, e.g.
+    /// `127.0.0.1:7677`. Off unless given.
+    ///
+    /// `--ws-listen`, not `--ws`: the global `--ws` is the *client* side, a
+    /// URL to connect to. The field name has to differ too — clap keys
+    /// arguments by field name, and a global `--ws` reaching a subcommand
+    /// with its own `ws` field panics at parse time.
+    /// `nitsd::launch::WS_LISTEN_FLAG` is the same flag, for spawning.
+    #[arg(long, env = "NITS_WS")]
+    ws_listen: Option<std::net::SocketAddr>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -384,6 +417,54 @@ async fn connect(cli: &Cli, ctx: &Context) -> anyhow::Result<Ops> {
     Ok(Ops::new(client))
 }
 
+/// The daemon's own logs go to stderr, which `spawn_detached` points at
+/// `<data-dir>/nitsd.log`. `RUST_LOG` steers it; off by default.
+fn init_daemon_logging() {
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_writer(std::io::stderr)
+        .init();
+}
+
+/// The paths a `Local` context names, or an error naming the context that
+/// is not local.
+fn ctx_local(ctx: &Context, name: &str) -> anyhow::Result<nitsd::launch::DaemonSpec> {
+    match ctx {
+        Context::Local { data_dir, socket } => {
+            Ok(contexts::local_spec(data_dir.as_ref(), socket.as_ref())?)
+        }
+        Context::Ssh { .. } | Context::Ws { .. } => {
+            bail!("context `{name}` is remote; a daemon can only be served locally")
+        }
+    }
+}
+
+fn serve_opts(spec: &nitsd::launch::DaemonSpec, args: &ServeArgs) -> nitsd::serve::ServeOpts {
+    nitsd::serve::ServeOpts {
+        data_dir: spec.data_dir.clone(),
+        socket: spec.socket.clone(),
+        idle_exit: args.idle_exit,
+        ws: args.ws_listen,
+    }
+}
+
+/// `nits mcp`: the MCP stdio server, on the context the global flags chose.
+async fn mcp(ctx: &Context, no_autostart: bool) -> anyhow::Result<()> {
+    init_daemon_logging();
+    nits_mcp::serve_stdio(
+        nits_mcp::Endpoint {
+            context: ctx.clone(),
+            autostart: !no_autostart,
+        },
+        nits_mcp::server::AgentIdentity::from_env(),
+        BuildInfo {
+            name: "nits-mcp".into(),
+            version: env!("CARGO_PKG_VERSION").into(),
+        },
+    )
+    .await
+}
+
 /// One line of `daemon status --json`.
 #[derive(Debug, Serialize)]
 struct Row<'a> {
@@ -565,14 +646,19 @@ async fn main() -> anyhow::Result<()> {
     }
     let (name, ctx) = resolve_context(&cli, &cfg)?;
     if let Some(Cmd::Daemon(c)) = cli.cmd {
-        return daemon_cmd(&cfg, &name, &ctx, c, json).await;
+        return daemon_cmd(&cfg, &name, &ctx, c, json, cli.no_autostart).await;
+    }
+    if let Some(Cmd::Mcp) = cli.cmd {
+        return mcp(&ctx, cli.no_autostart).await;
     }
     let mut ops = connect(&cli, &ctx).await?;
     let Some(cmd) = cli.cmd else {
         return open_ui(&cli, &ctx, &mut ops).await;
     };
     match cmd {
-        Cmd::Context(_) | Cmd::Daemon(_) | Cmd::Keys(_) => unreachable!("handled above"),
+        Cmd::Context(_) | Cmd::Daemon(_) | Cmd::Keys(_) | Cmd::Mcp => {
+            unreachable!("handled above")
+        }
         Cmd::Workspace(c) => workspace(&mut ops, c, json).await,
         Cmd::Review(c) => review(&mut ops, c, json).await,
         Cmd::Comment(c) => comment(&mut ops, c, json).await,
@@ -1147,7 +1233,7 @@ fn context_cmd(
         ContextCmd::AddSsh {
             name,
             host,
-            nitsd,
+            bin,
             args,
         } => add(
             cfg,
@@ -1155,7 +1241,7 @@ fn context_cmd(
             &name,
             &Context::Ssh {
                 host,
-                nitsd,
+                bin,
                 args,
                 ssh: None,
             },
@@ -1191,8 +1277,25 @@ async fn daemon_cmd(
     ctx: &Context,
     cmd: DaemonCmd,
     json: bool,
+    no_autostart: bool,
 ) -> anyhow::Result<()> {
     match cmd {
+        // Being the daemon, and reaching it over a pipe. Both need a place
+        // to listen rather than someone to talk to, so only a local context
+        // makes sense: a remote one is reached *through* `daemon stdio`.
+        DaemonCmd::Serve(args) => {
+            init_daemon_logging();
+            nitsd::serve::serve(serve_opts(&ctx_local(ctx, name)?, &args)).await
+        }
+        DaemonCmd::Stdio(args) => {
+            init_daemon_logging();
+            let opts = serve_opts(&ctx_local(ctx, name)?, &args);
+            match nitsd::serve::stdio(opts, !no_autostart).await? {
+                nitsd::serve::StdioOutcome::Proxied => Ok(()),
+                // Not an error: the caller asked whether one was running.
+                nitsd::serve::StdioOutcome::NotRunning => std::process::exit(3),
+            }
+        }
         DaemonCmd::Status { all } => {
             let mut targets: Vec<(String, Context)> = if all {
                 let mut v: Vec<(String, Context)> = cfg
@@ -1264,5 +1367,16 @@ async fn daemon_cmd(
                 if stopped { "stopping" } else { "not running" }.into()
             })
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// clap's own consistency check over the whole command tree.
+    #[test]
+    fn the_command_definition_is_valid() {
+        <Cli as clap::CommandFactory>::command().debug_assert();
     }
 }
