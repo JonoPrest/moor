@@ -1,0 +1,19 @@
+Architectures: amd64 arm64
+Codename: stable
+Components: main
+Date: Wed, 02 Sep 2026 11:34:28 +0000
+Label: nits
+Origin: nits
+Suite: stable
+MD5Sum:
+ 059698fcb6928530880e7060091fab1b             2201 Packages
+ 6cfff7fe5cf30c8e32f92f3a6ecc0784              789 Packages.gz
+SHA1:
+ 711e3671ec6f42069507261521a57cf6cb3a991b             2201 Packages
+ 88d3c068dd5780fb674cf7f7f81853404b52dd71              789 Packages.gz
+SHA256:
+ 1dbd4d3f59e4fdc7d5ee65d2402995895595bd3b786ca0e4bd2a7b52baf86426             2201 Packages
+ 6845aaad8e2d5c1d08f16035e2d53bf006eb0a03a65244eb4efa3082703050f5              789 Packages.gz
+SHA512:
+ e4fcad07365763f2f8562b84394cf1d606d4056f30cee0b8c39a85370f9c4defa2174968220b044ee59ac4dfbe161a7f18005f9ec3a53f955c7972941b285029             2201 Packages
+ 4b1663964055b409294306e5b2272dcf9cbfd40d353f063cc21ca82e0c99a712e85649f9213721eaf5c438136f379593d9b79e6de7f842a34f89de587dadbd6b              789 Packages.gz

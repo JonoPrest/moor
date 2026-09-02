@@ -1,0 +1,67 @@
+Package: nits
+Version: 0.1.0-1
+Architecture: amd64
+Maintainer: Jono Prest <jjprest@gmail.com>
+Installed-Size: 8477
+Depends: libc6 (>= 2.39), nitsd
+Filename: ./nits_0.1.0-1_amd64.deb
+Size: 2141548
+MD5sum: 3058f2d571663d2065e5433833906f42
+SHA1: 3845164ffa650065f7e38c5a9b4812b17fb5ef45
+SHA256: b028bc09134174d669181ebde16d917ced41eb1ebc42c43301b282ddf9662491
+Section: devel
+Priority: optional
+Homepage: https://github.com/JonoPrest/nits
+Description: Command-line client for the nitsd code-review daemon
+ Command-line client for the nitsd code-review daemon
+
+Package: nits
+Version: 0.1.0-1
+Architecture: arm64
+Maintainer: Jono Prest <jjprest@gmail.com>
+Installed-Size: 7442
+Depends: nitsd
+Filename: ./nits_0.1.0-1_arm64.deb
+Size: 1793736
+MD5sum: b9e3e87e32ce3d58340c735cfe99f4c7
+SHA1: 1628f936700d2c5ea1dcce005838e4b220113ff3
+SHA256: c59ecc58dee980e94d1c480adeed7275c3df8ee5b29d1f4b1d29bf48d8f3b0ac
+Section: devel
+Priority: optional
+Homepage: https://github.com/JonoPrest/nits
+Description: Command-line client for the nitsd code-review daemon
+ Command-line client for the nitsd code-review daemon
+
+Package: nitsd
+Version: 0.1.0-1
+Architecture: amd64
+Maintainer: Jono Prest <jjprest@gmail.com>
+Installed-Size: 10241
+Depends: libc6 (>= 2.39)
+Filename: ./nitsd_0.1.0-1_amd64.deb
+Size: 3028060
+MD5sum: 9382fd064a3f1236ce95ce7afdf7138e
+SHA1: fc740fbddf719e4f3805dec1e8f9681ac94922db
+SHA256: 244a03d7153b2df51f282e3c18354eae4f452ff79304901f15bc56a0e5f03af4
+Section: devel
+Priority: optional
+Homepage: https://github.com/JonoPrest/nits
+Description: Nits daemon: unix-socket/stdio server over nits-review-core
+ Nits daemon: unix-socket/stdio server over nits-review-core
+
+Package: nitsd
+Version: 0.1.0-1
+Architecture: arm64
+Maintainer: Jono Prest <jjprest@gmail.com>
+Installed-Size: 9299
+Filename: ./nitsd_0.1.0-1_arm64.deb
+Size: 2687200
+MD5sum: 3359e3178fc8e29cc102f402dc24d669
+SHA1: ce03e2cbf1a0c4312d549f1e927fce15633b424f
+SHA256: 2a4f6b8cab161f764696e0abd3ab6c5151e7fcd8f068ff602a402f1c7619edd0
+Section: devel
+Priority: optional
+Homepage: https://github.com/JonoPrest/nits
+Description: Nits daemon: unix-socket/stdio server over nits-review-core
+ Nits daemon: unix-socket/stdio server over nits-review-core
+
