@@ -149,7 +149,7 @@ pub enum RenderContent {
         /// name the gap beside the cursor without the chunk it lives in
         /// (a hunk can be taller than what the cache holds).
         #[serde(default)]
-        gaps: Vec<GapRow>,
+        gaps: GapTable,
     },
 }
 
@@ -160,6 +160,63 @@ pub enum RenderContent {
 pub struct GapRow {
     pub gap: crate::domain::Gap,
     pub row: u32,
+}
+
+/// Wire input that is not a canonical gap table.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum GapTableError {
+    #[error("gap rows are not in row order")]
+    Unordered,
+    #[error("gap {0:?} appears more than once")]
+    Duplicate(crate::domain::Gap),
+}
+
+/// A render's gaps in row order, one entry per gap. Callers pick the
+/// nearest gap above or below a row by walking this in order, so the
+/// order is the invariant: it is parsed at the boundary rather than
+/// trusted, or a malformed header would silently misdirect `z u`/`z d`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(try_from = "Vec<GapRow>", into = "Vec<GapRow>")]
+pub struct GapTable(Vec<GapRow>);
+
+impl TryFrom<Vec<GapRow>> for GapTable {
+    type Error = GapTableError;
+
+    fn try_from(v: Vec<GapRow>) -> Result<Self, Self::Error> {
+        for w in v.windows(2) {
+            if w[0].gap == w[1].gap {
+                return Err(GapTableError::Duplicate(w[0].gap));
+            }
+            if w[0].row >= w[1].row {
+                return Err(GapTableError::Unordered);
+            }
+        }
+        Ok(Self(v))
+    }
+}
+
+impl From<GapTable> for Vec<GapRow> {
+    fn from(t: GapTable) -> Self {
+        t.0
+    }
+}
+
+impl GapTable {
+    #[must_use]
+    pub fn as_slice(&self) -> &[GapRow] {
+        &self.0
+    }
+
+    /// The gap whose expander is nearest at or above (below) `row`.
+    #[must_use]
+    pub fn nearest(&self, row: u32, up: bool) -> Option<crate::domain::Gap> {
+        if up {
+            self.0.iter().rev().find(|g| g.row <= row).map(|g| g.gap)
+        } else {
+            self.0.iter().find(|g| g.row >= row).map(|g| g.gap)
+        }
+    }
 }
 
 /// Header for a rendered file: everything but the rows.
@@ -214,4 +271,49 @@ pub struct DiffSummary {
     pub files: Vec<FileSummary>,
     pub additions: u32,
     pub deletions: u32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::Gap;
+
+    fn at(gap: u32, row: u32) -> GapRow {
+        GapRow {
+            gap: Gap::new(gap),
+            row,
+        }
+    }
+
+    #[test]
+    fn a_gap_table_is_parsed_into_the_order_its_readers_walk() {
+        // `nearest` walks the table in order; a header that arrived out of
+        // order would silently send `z u` to the wrong gap.
+        let t = GapTable::try_from(vec![at(0, 4), at(1, 40), at(2, 90)]).unwrap();
+        assert_eq!(t.nearest(50, true), Some(Gap::new(1)), "the run above");
+        assert_eq!(t.nearest(50, false), Some(Gap::new(2)), "the run below");
+        assert_eq!(t.nearest(40, true), Some(Gap::new(1)), "on the expander");
+        assert_eq!(t.nearest(95, false), None, "nothing hidden below");
+        assert_eq!(t.nearest(2, true), None, "nothing hidden above");
+
+        assert_eq!(
+            GapTable::try_from(vec![at(1, 40), at(0, 4)]),
+            Err(GapTableError::Unordered)
+        );
+        assert_eq!(
+            GapTable::try_from(vec![at(1, 40), at(1, 90)]),
+            Err(GapTableError::Duplicate(Gap::new(1)))
+        );
+        // Two expanders cannot share a row either.
+        assert_eq!(
+            GapTable::try_from(vec![at(0, 40), at(1, 40)]),
+            Err(GapTableError::Unordered)
+        );
+        assert!(
+            serde_json::from_str::<GapTable>(r#"[{"gap":1,"row":40},{"gap":0,"row":4}]"#).is_err()
+        );
+        let t = GapTable::try_from(vec![at(0, 4)]).unwrap();
+        let json = serde_json::to_string(&t).unwrap();
+        assert_eq!(serde_json::from_str::<GapTable>(&json).unwrap(), t);
+    }
 }

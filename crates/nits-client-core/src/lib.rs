@@ -1274,7 +1274,7 @@ impl ClientCore {
         }
         // Remember the cursor's line, not its row index: the row numbers
         // below an opened gap all shift by however much it revealed.
-        self.realign = self.focused_line(&old);
+        self.realign = self.focused_line(&old, &key);
         let Some(open) = &mut self.view.review else {
             return Err(CoreError::NoOpenReview);
         };
@@ -1327,7 +1327,7 @@ impl ClientCore {
     }
 
     /// The line the cursor is on in `render`, if that is the open file.
-    fn focused_line(&self, render: &RenderKey) -> Option<Realign> {
+    fn focused_line(&self, render: &RenderKey, waiting_for: &RenderKey) -> Option<Realign> {
         let Focus::Diff { row, .. } = self.view.focus else {
             return None;
         };
@@ -1341,14 +1341,19 @@ impl ClientCore {
         let (side, line) = [nits_protocol::Side::Head, nits_protocol::Side::Base]
             .into_iter()
             .find_map(|side| diff::line_on(&r.row, side).map(|line| (side, line)))?;
-        Some(Realign { side, line, row })
+        Some(Realign {
+            render: waiting_for.clone(),
+            side,
+            line,
+            row,
+        })
     }
 
     /// After a re-render lands: put the cursor back on the line it was on
     /// and shift the viewport by the same amount, so the reader keeps
     /// looking at what they were looking at.
     fn apply_realign(&mut self, sections: &mut Vec<ViewSection>) {
-        let Some(want) = self.realign else {
+        let Some(want) = self.realign.clone() else {
             return;
         };
         let Some(open) = &self.view.review else {
@@ -1357,6 +1362,11 @@ impl ClientCore {
         let Some(render) = open.open_file.as_ref().map(|f| f.render.clone()) else {
             return;
         };
+        // Only the render this was recorded for: opening another file
+        // before the response lands must not move that file's cursor.
+        if render != want.render {
+            return;
+        }
         let rows = diff::all_rows(&self.content.cache, &open.snapshot, &render);
         let Some(now) = rows
             .iter()

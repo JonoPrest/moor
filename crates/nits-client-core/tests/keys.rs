@@ -158,10 +158,11 @@ fn header(p: &str) -> FileRenderHeader {
             deletions: 1,
             // The gap table the daemon carries on the header, so a chord
             // can name a gap whose chunk is not cached.
-            gaps: vec![nits_protocol::GapRow {
+            gaps: nits_protocol::GapTable::try_from(vec![nits_protocol::GapRow {
                 gap: Gap::new(1),
                 row: EXPANDER_ROW,
-            }],
+            }])
+            .unwrap(),
         },
     }
 }
@@ -1652,10 +1653,11 @@ fn deliver_render(core: &mut ClientCore, effects: &[Effect], extra: u32) -> Vec<
         highlighted: false,
         additions: 1,
         deletions: 1,
-        gaps: vec![nits_protocol::GapRow {
+        gaps: nits_protocol::GapTable::try_from(vec![nits_protocol::GapRow {
             gap: Gap::new(1),
             row: EXPANDER_ROW + extra,
-        }],
+        }])
+        .unwrap(),
     };
     let mut out = core
         .handle(Input::Server(ServerMsg::StreamItem {
@@ -1749,4 +1751,87 @@ fn the_cursor_keeps_its_line_when_a_gap_above_it_opens() {
         }
         other => panic!("expected a diff patch, got {other:?}"),
     }
+}
+
+/// Open `b.rs`, returning the chunk requests it made. Its rows arrive
+/// separately (`deliver_b_rs`) so a test can focus a row in between.
+fn request_b_rs(core: &mut ClientCore) -> Vec<(nits_protocol::RequestId, u32)> {
+    let effects = core
+        .handle(Input::User(Action::Viewport {
+            file: nits_client_core::FileRef {
+                repo_id: repo_id(),
+                path: path("b.rs"),
+            },
+            first_row: 0,
+            last_row: 199,
+        }))
+        .unwrap();
+    // b.rs's header is already cached, so only its chunks are asked for.
+    let wanted: Vec<(nits_protocol::RequestId, u32)> = effects
+        .iter()
+        .filter_map(|e| match e {
+            Effect::Send(ClientMsg::Request {
+                id,
+                request: Request::RenderChunk { index, .. },
+            }) => Some((*id, index.get())),
+            _ => None,
+        })
+        .collect();
+    assert!(!wanted.is_empty(), "b.rs's chunks were asked for");
+    wanted
+}
+
+/// b.rs's rows: the same line numbers as `src/a.rs`, five rows earlier,
+/// so a realign meant for that file would visibly move the cursor here.
+fn deliver_b_rs(core: &mut ClientCore, wanted: Vec<(nits_protocol::RequestId, u32)>) {
+    use nits_protocol::{Cell, LineNo, Response};
+    let row = |n: u32| {
+        let cell = Cell {
+            line_no: LineNo::new(n).unwrap(),
+            text: format!("l{n}"),
+            spans: Vec::new(),
+            changed: Vec::new(),
+        };
+        Row::Context {
+            left: cell.clone(),
+            right: cell,
+        }
+    };
+    for (id, index) in wanted {
+        core.handle(Input::Server(ServerMsg::Response {
+            id,
+            response: Response::RenderChunk {
+                chunk: RenderChunk {
+                    index: ChunkIndex::new(index),
+                    rows: (0..100).map(|i| row(index * 100 + i + 6)).collect(),
+                },
+            },
+        }))
+        .unwrap();
+    }
+}
+
+#[test]
+fn a_realign_belongs_to_the_render_that_asked_for_it() {
+    // Expand a.rs, then open b.rs before the response lands, and put the
+    // cursor somewhere in it. b.rs holds the same line numbers five rows
+    // earlier, so a realign that is not bound to the render it was
+    // recorded for would drag this cursor when b.rs's rows arrive.
+    let core = &mut on_row(160);
+    press(core, "z u").unwrap();
+    let wanted = request_b_rs(core);
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::Diff { row: 100 },
+    }))
+    .unwrap();
+    deliver_b_rs(core, wanted);
+    assert_eq!(
+        core.view().diff.as_ref().map(|d| d.file.path.clone()),
+        Some(path("b.rs"))
+    );
+    assert_eq!(
+        core.view().focus,
+        Focus::Diff { row: 100 },
+        "a.rs's pending realign leaves b.rs's cursor where it is"
+    );
 }

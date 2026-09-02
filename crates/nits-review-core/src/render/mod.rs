@@ -119,7 +119,7 @@ pub fn render_file(
                 highlighted: false,
                 additions: 0,
                 deletions: 0,
-                gaps: Vec::new(),
+                gaps: nits_protocol::GapTable::default(),
             },
             rows: vec![Row::WhitespaceOnly],
         };
@@ -185,7 +185,7 @@ pub fn render_blob(hl: &Highlighter, bytes: &[u8], lang: Option<&str>) -> Render
             highlighted,
             additions: 0,
             deletions: 0,
-            gaps: Vec::new(),
+            gaps: nits_protocol::GapTable::default(),
         },
         rows,
     }
@@ -284,8 +284,9 @@ struct Window {
 /// Where each still-hidden run's expander sits. Carried on the header so
 /// a client can name the gap beside the cursor without holding the chunk
 /// the expander lives in.
-fn gaps_of(rows: &[Row]) -> Vec<nits_protocol::GapRow> {
-    rows.iter()
+fn gaps_of(rows: &[Row]) -> nits_protocol::GapTable {
+    let table: Vec<nits_protocol::GapRow> = rows
+        .iter()
         .enumerate()
         .filter_map(|(i, r)| match r {
             Row::Expander { gap, .. } => Some(nits_protocol::GapRow {
@@ -299,7 +300,9 @@ fn gaps_of(rows: &[Row]) -> Vec<nits_protocol::GapRow> {
             | Row::Modified { .. }
             | Row::WhitespaceOnly => None,
         })
-        .collect()
+        .collect();
+    // Built in row order, one entry per gap, by construction.
+    nits_protocol::GapTable::try_from(table).unwrap_or_default()
 }
 
 /// Build the row list with context collapsing. Returns

@@ -82,8 +82,12 @@ pub struct VisualAnchor {
 /// A line to put the cursor back on once a re-render renumbers the rows:
 /// opening a gap inserts lines, so the row index the cursor had names a
 /// different line afterwards.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Realign {
+    /// The render this is waiting for. The reader can open another file
+    /// before the response lands, and that file's rows must not be
+    /// shifted by this one's expansion.
+    pub render: crate::cache::RenderKey,
     pub side: Side,
     pub line: u32,
     /// The row the line was on before, for shifting the viewport with it.
@@ -1267,11 +1271,7 @@ fn nearest_gap(
     let nits_protocol::RenderContent::Text { gaps, .. } = content else {
         return None;
     };
-    if up {
-        gaps.iter().rev().find(|g| g.row <= row).map(|g| g.gap)
-    } else {
-        gaps.iter().find(|g| g.row >= row).map(|g| g.gap)
-    }
+    gaps.nearest(row, up)
 }
 
 #[cfg(test)]

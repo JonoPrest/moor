@@ -165,7 +165,7 @@ fn header(p: &str, chunk_rows: u32, chunk_count: u32) -> FileRenderHeader {
             highlighted: true,
             additions: 1,
             deletions: 1,
-            gaps: Vec::new(),
+            gaps: nits_protocol::GapTable::default(),
         },
     }
 }

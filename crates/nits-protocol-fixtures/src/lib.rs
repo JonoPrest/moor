@@ -33,6 +33,8 @@ pub enum FixtureError {
     ZeroLine,
     #[error("fixture does not serialise: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("invalid gap table in fixture: {0}")]
+    GapTable(#[from] nits_protocol::GapTableError),
 }
 
 /// A named example value of a protocol type.
@@ -623,10 +625,10 @@ fn render_header() -> Result<FileRenderHeader, FixtureError> {
             highlighted: true,
             additions: 12,
             deletions: 4,
-            gaps: vec![GapRow {
+            gaps: GapTable::try_from(vec![GapRow {
                 gap: Gap::new(1),
                 row: 40,
-            }],
+            }])?,
         },
     })
 }
@@ -1073,10 +1075,10 @@ enum_fixture!(
             highlighted: true,
             additions: 12,
             deletions: 4,
-            gaps: vec![GapRow {
+            gaps: GapTable::try_from(vec![GapRow {
                 gap: Gap::new(1),
-                row: 40
-            }]
+                row: 40,
+            }])?
         },
     ]
 );

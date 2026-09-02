@@ -1138,7 +1138,7 @@ mod tests {
                 highlighted: true,
                 additions: 0,
                 deletions: 0,
-                gaps: Vec::new(),
+                gaps: nits_protocol::GapTable::default(),
             },
         }
     }
