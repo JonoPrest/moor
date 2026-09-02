@@ -29,34 +29,50 @@ jobs:
           bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
           ./actionlint -color
 
-  lint:
-    name: fmt, clippy, wasm
+  # Needs rustfmt and nothing else — no cache, no toolchain build, no bundle.
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      # rust-cache adds the job id to the key by default, so each of these
+      # jobs gets its own cache without an explicit `key`.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # Caches are branch-scoped and PR branches are evicted quickly, so
+          # only main's cache is worth keeping; PRs restore from it.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Only clippy needs these: it is the job that compiles the tauri and
+      # web crates.
+      - uses: ./.github/actions/web-bundle
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  # nits-protocol and nits-client-core are sans-I/O and pull in neither tauri
+  # nor the embedded bundle, so this needs no web-bundle setup.
+  wasm:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-          components: clippy, rustfmt
-      # Per-job cache key: this job builds check artifacts, `test` builds dev
-      # with codegen and `bench` builds release. One shared cache would have
-      # them overwriting each other's profile on every run.
       - uses: Swatinem/rust-cache@v2
         with:
-          key: lint
-          # A single lint failure on main would otherwise leave main with no
-          # cache at all, and every PR branched from it then builds cold.
-          cache-on-failure: true
-          # Caches are branch-scoped and PR branches are evicted quickly, so
-          # only main's cache is worth keeping; PRs restore from it.
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: ./.github/actions/web-bundle
-      - run: cargo fmt --all --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo check -p nits-protocol -p nits-client-core --target wasm32-unknown-unknown
 
   test:
-    name: tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -64,34 +80,11 @@ jobs:
       - uses: taiki-e/install-action@nextest
       - uses: Swatinem/rust-cache@v2
         with:
-          key: test
-          # A single lint failure on main would otherwise leave main with no
-          # cache at all, and every PR branched from it then builds cold.
-          cache-on-failure: true
-          # Caches are branch-scoped and PR branches are evicted quickly, so
-          # only main's cache is worth keeping; PRs restore from it.
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: ./.github/actions/web-bundle
       - run: cargo nextest run --workspace
       - name: fixtures are up to date
         run: cargo xtask fixtures && git diff --exit-code -- fixtures
-
-  # Benchmarks are a regression *trigger*, not a correctness gate, and cost a
-  # whole release-profile build of the workspace. Run them on main, and on a
-  # PR only when it is labelled `perf`.
-  bench:
-    name: benchmark triggers
-    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'perf')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: bench
-          cache-on-failure: true
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: NITS_BENCH_FILES=2000 cargo bench -p nits-review-core -p nitsd
 
   ui:
     runs-on: ubuntu-latest

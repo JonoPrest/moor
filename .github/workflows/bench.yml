@@ -1,0 +1,33 @@
+# Benchmarks are a regression *trigger*, not a correctness gate, and cost a
+# whole release-profile build of the workspace. They live in their own workflow
+# so that opting a PR in does not re-run every other CI job, and so `labeled`
+# can be an activity type here without making every label change re-run CI.
+name: bench
+on:
+  push:
+    branches: [main]
+  pull_request:
+    # `labeled` is not one of the default activity types; without naming them
+    # explicitly, adding the label would not trigger anything.
+    types: [opened, reopened, synchronize, labeled]
+
+concurrency:
+  group: bench-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  bench:
+    name: benchmark triggers
+    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'perf')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # nits-review-core and nitsd pull in neither tauri nor the web bundle.
+      - run: NITS_BENCH_FILES=2000 cargo bench -p nits-review-core -p nitsd
