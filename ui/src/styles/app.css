@@ -775,9 +775,15 @@
     /* relative: .cell-threads is absolute and hangs on the cell that owns
        the thread, so each cell has to be its own containing block. */
     @apply relative min-w-0 overflow-hidden px-2;
-    /* The state layers above; absent ones are a transparent no-op, so
-       every combination composes. */
-    box-shadow: var(--cell-rule, 0 0 transparent), var(--cell-tint, 0 0 transparent);
+    /* One layer per state, absent ones a transparent no-op, so every
+       combination composes. Earlier layers paint on top: the draft's rule
+       covers the comment's while a composer is open, and both tints show
+       through each other. */
+    box-shadow:
+      var(--cell-draft-rule, 0 0 transparent),
+      var(--cell-comment-rule, 0 0 transparent),
+      var(--cell-draft-tint, 0 0 transparent),
+      var(--cell-select-tint, 0 0 transparent);
   }
   .cell-focused {
     outline: 1px solid var(--color-focus);
@@ -787,21 +793,19 @@
      is more specific than any class here, and tinting over it keeps the
      side visible under the selection. */
   .cell-selected {
-    --cell-tint: inset 0 0 0 100vmax color-mix(in oklch, var(--color-accent) 18%, transparent);
+    --cell-select-tint: inset 0 0 0 100vmax color-mix(in oklch, var(--color-accent) 18%, transparent);
   }
   /* Commented, selected and being-drafted-about can all be true of one
-     cell at once, so each sets its own layer of a single shadow rather
-     than a shadow of its own — declaring the whole shadow per state means
-     whichever rule wins erases the others. The rule down the edge marks a
-     range; the tint fills the cell. */
+     cell at once, so each owns a layer of the cell's single shadow and
+     none of them can overwrite another. Declaring a whole shadow per
+     state — or sharing one variable between states — means whichever
+     rule wins erases the rest. */
   .cell-commented {
-    --cell-rule: inset 2px 0 0 var(--color-accent);
+    --cell-comment-rule: inset 2px 0 0 var(--color-accent);
   }
-  /* Later than `.cell-selected` on purpose: while a draft is open, its
-     colour is the one that matters. */
   .cell-drafting {
-    --cell-rule: inset 2px 0 0 var(--color-focus);
-    --cell-tint: inset 0 0 0 100vmax color-mix(in oklch, var(--color-focus) 10%, transparent);
+    --cell-draft-rule: inset 2px 0 0 var(--color-focus);
+    --cell-draft-tint: inset 0 0 0 100vmax color-mix(in oklch, var(--color-focus) 10%, transparent);
   }
   .cell-left {
     border-right: 1px solid var(--color-border);
