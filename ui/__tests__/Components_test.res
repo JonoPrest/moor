@@ -987,7 +987,9 @@ describe("Copy path", () => {
     // Rebound: the tooltip follows the keymap rather than a literal `y`.
     let rebound: array<View.Hint.t> = [{keys: "ctrl+y", command: CopyPath, label: "copy path"}]
     let {container} = render(
-      <DiffView diff=base layout=Unified focus={Diff({row: 0, side: Head})} chrome=rebound dispatch />,
+      <DiffView
+        diff=base layout=Unified focus={Diff({row: 0, side: Head})} chrome=rebound dispatch
+      />,
     )
     expect(Element.querySelector(container, "[title=\"copy path (ctrl+y)\"]"))->not_->toBeNull
   })
