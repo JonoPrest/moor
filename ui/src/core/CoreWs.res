@@ -23,6 +23,9 @@ let make = (~url: string, ~onError: string => unit=e => Console.error(e)): Core.
   let socket: ref<option<Ws.t>> = ref(None)
   let open_ = ref(false)
   let queue: ref<array<string>> = ref([])
+  // A stale socket may report close after its successor exists. Only the
+  // current generation may reset the store or schedule another connection.
+  let generation = ref(0)
   let send = (text: string) =>
     switch (socket.contents, open_.contents) {
     | (Some(ws), true) => Ws.send(ws, text)
@@ -32,39 +35,50 @@ let make = (~url: string, ~onError: string => unit=e => Console.error(e)): Core.
     send(JSON.stringify(JSON.Encode.object(Dict.fromArray(fields))))
   let attach = () => command([("cmd", JSON.Encode.string("attach"))])
   let rec connect = () => {
+    generation := generation.contents + 1
+    let mine = generation.contents
     let ws = Ws.make(url)
     socket := Some(ws)
     open_ := false
     Ws.onopen(ws, () => {
-      open_ := true
-      // Attach first so the full model precedes any queued command's patches.
-      Ws.send(
-        ws,
-        JSON.stringify(JSON.Encode.object(Dict.fromArray([("cmd", JSON.Encode.string("attach"))]))),
-      )
-      let pending = queue.contents
-      queue := []
-      pending->Array.forEach(text => Ws.send(ws, text))
+      if mine == generation.contents {
+        open_ := true
+        // Attach first so the full model precedes any queued command's patches.
+        Ws.send(
+          ws,
+          JSON.stringify(
+            JSON.Encode.object(Dict.fromArray([("cmd", JSON.Encode.string("attach"))])),
+          ),
+        )
+        let pending = queue.contents
+        queue := []
+        pending->Array.forEach(text => Ws.send(ws, text))
+      }
     })
-    Ws.onmessage(ws, ev =>
-      switch try Ok(JSON.parseOrThrow(ev["data"])) catch {
-      | exn => Error(Core.message(exn))
-      } {
-      | Ok(json) =>
-        switch Core.patchesOfJson(json) {
-        | Ok(patches) => Core.Store.apply(store, patches)
+    Ws.onmessage(ws, ev => {
+      if mine == generation.contents {
+        switch try Ok(JSON.parseOrThrow(ev["data"])) catch {
+        | exn => Error(Core.message(exn))
+        } {
+        | Ok(json) =>
+          switch Core.patchesOfJson(json) {
+          | Ok(patches) => Core.Store.apply(store, patches)
+          | Error(e) => onError("view message: " ++ e)
+          }
         | Error(e) => onError("view message: " ++ e)
         }
-      | Error(e) => onError("view message: " ++ e)
       }
-    )
+    })
     Ws.onclose(ws, () => {
-      if open_.contents {
-        onError("nits-web connection lost; retrying")
+      if mine == generation.contents {
+        if open_.contents {
+          onError("nits-web connection lost; retrying")
+        }
+        open_ := false
+        socket := None
+        Core.Store.reset(store)
+        setTimeout(connect, retryMs)
       }
-      open_ := false
-      socket := None
-      setTimeout(connect, retryMs)
     })
     Ws.onerror(ws, () => ())
   }

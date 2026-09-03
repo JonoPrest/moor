@@ -1204,9 +1204,8 @@ describe("Copying from the keyboard, through the shell", () => {
   })
 
   testAsync("a shell that attaches mid-session does not read the core as caught up", async () => {
-    // A reload, or a second browser on the shared web host: the core has
-    // handled keys this shell never sent, so its count says nothing about
-    // this shell's own.
+    // A Tauri shell remount can meet a core that has handled keys this
+    // shell never sent, so its count says nothing about this shell's own.
     installClipboard("ok")
     let (_, push) = mount(model(~target="before.rs", ~lastKey=after(10, Some(MoveDown))))
     pressKey("j")
@@ -1258,6 +1257,28 @@ describe("Copying from the keyboard, through the shell", () => {
     act(() => push.contents(model(~target="after-two.rs", ~lastKey=after(4, Some(CopyPath)))))
     await flush()
     expect(copiedPaths())->toEqual(["after-one.rs", "after-two.rs"])
+    cleanup()
+  })
+
+  testAsync("a reconnect drops copy verdicts belonging to the old session", async () => {
+    installClipboard("ok")
+    let (_, push) = mount(model(~target="old.rs", ~lastKey=None))
+    pressKey("j")
+    pressKey("y")
+    await flush()
+    expect(copiedPaths())->toEqual([])
+
+    // CoreWs publishes the empty, disconnected model before the fresh
+    // host attaches. Its sequence starts over and must not release the
+    // copy that was waiting for old-session sequence 2.
+    act(() => push.contents(View.ViewModel.empty))
+    act(() => push.contents(model(~target="fresh.rs", ~lastKey=after(2, Some(CopyPath)))))
+    await flush()
+    expect(copiedPaths())->toEqual([])
+
+    pressKey("y")
+    await flush()
+    expect(copiedPaths())->toEqual(["fresh.rs"])
     cleanup()
   })
 

@@ -6,15 +6,15 @@ use std::net::{Ipv4Addr, SocketAddr};
 
 use clap::Parser;
 use nits_client_core::IdSeed;
-use nits_client_host::{Identity, KvConfig, host_config};
+use nits_client_host::KvConfig;
 use nits_config::Config;
-use nits_protocol_shim::{Author, BuildInfo, ClientId};
+use nits_protocol_shim::{Author, BuildInfo};
 use nitsd::contexts::{DaemonEndpoint, StartPolicy};
 
 // The wire types come through nits-client-core's re-export so the bin
 // needs no direct nits-protocol dependency.
 mod nits_protocol_shim {
-    pub use nits_client_core::protocol::{Author, BuildInfo, ClientId};
+    pub use nits_client_core::protocol::{Author, BuildInfo};
 }
 
 #[derive(Debug, Parser)]
@@ -27,18 +27,10 @@ struct Args {
     port: u16,
 }
 
-fn identity() -> Identity {
+fn author() -> Author {
     let machine = gethostname::gethostname().to_string_lossy().into_owned();
     let name = std::env::var("USER").unwrap_or_else(|_| "anonymous".into());
-    let (ts, r) = nitsd::ids::fresh_parts();
-    Identity {
-        client_id: ClientId::from_parts(ts, r),
-        client: BuildInfo {
-            name: "nits-web".into(),
-            version: env!("CARGO_PKG_VERSION").into(),
-        },
-        author: Author::Human { name, machine },
-    }
+    Author::Human { name, machine }
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -51,9 +43,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (name, ctx) = cfg.resolve(args.context.as_deref())?;
     let endpoint = DaemonEndpoint::resolve(&ctx, StartPolicy::StartIfNeeded)?;
     // Dev tool: memory KV is enough (prefs reset per run).
-    let config = host_config(
+    let config = nits_client_web::web_config(
         endpoint,
-        identity(),
+        BuildInfo {
+            name: "nits-web".into(),
+            version: env!("CARGO_PKG_VERSION").into(),
+        },
+        author(),
         IdSeed(fastrand::u128(..)),
         KvConfig::Memory,
     );

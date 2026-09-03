@@ -3,23 +3,32 @@
 //!
 //! One port: `GET /…` serves the embedded `ui/dist` build, `GET /ws`
 //! upgrades to the WebSocket that speaks the same contract as the Tauri
-//! wrapper: commands in, `view` patch batches out. One `nits-client-host`
-//! per server; every connected browser sees the same view. Messages are
-//! JSON text frames:
+//! wrapper: commands in, `view` patch batches out. Every browser WebSocket
+//! owns one `nits-client-host`, [`ClientCore`](nits_client_core::ClientCore),
+//! and daemon connection. Messages are JSON text frames:
 //!
 //! - in: `{"cmd":"dispatch","action":…}` | `{"cmd":"key","chord":…}` |
 //!   `{"cmd":"attach"}`
 //! - out: an array of `ViewPatch`
 //!
-//! `Attach` re-emits every section, so each frame is broadcast: a client
-//! that attaches late catches up from its own attach.
+//! `Attach` re-emits every section of that socket's core. The prepared KV
+//! store is the only shared state: preferences and content-addressed disk
+//! entries survive into later sessions, while focus, review, cursor and key
+//! sequence state stay in one core.
 
 use std::net::SocketAddr;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::time::Duration;
 
 use futures_util::{SinkExt as _, StreamExt as _};
 use include_dir::{Dir, include_dir};
-use nits_client_core::{Action, KeyChord};
-use nits_client_host::{Handle, HostConfig, HostError};
+use nits_client_core::protocol::{Author, BuildInfo, ClientId};
+use nits_client_core::{Action, CacheConfig, IdSeed, KeyChord};
+use nits_client_host::{
+    Handle, HostError, HostFactory, HostSession, HostSettings, Identity, KvConfig,
+};
+use nitsd::contexts::DaemonEndpoint;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::broadcast;
@@ -137,6 +146,93 @@ enum Command {
     Attach,
 }
 
+/// Reusable settings for browser sessions. `id_seed` seeds a monotonic
+/// allocator; it is not installed directly into any core.
+#[derive(Debug, Clone)]
+pub struct WebConfig {
+    pub endpoint: DaemonEndpoint,
+    pub kv: KvConfig,
+    pub client: BuildInfo,
+    pub author: Author,
+    pub cache: CacheConfig,
+    pub id_seed: IdSeed,
+    pub tick: Duration,
+    pub keys_file: Option<std::path::PathBuf>,
+}
+
+/// Sensible defaults for a browser bridge: the caller picks the endpoint,
+/// principal and KV lifetime; every connection receives fresh session ids.
+#[must_use]
+pub fn web_config(
+    endpoint: DaemonEndpoint,
+    client: BuildInfo,
+    author: Author,
+    id_seed: IdSeed,
+    kv: KvConfig,
+) -> WebConfig {
+    WebConfig {
+        endpoint,
+        kv,
+        client,
+        author,
+        cache: CacheConfig::default(),
+        id_seed,
+        tick: Duration::from_millis(100),
+        keys_file: nits_client_host::keys_file::default_keys_path(),
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+enum SessionError {
+    #[error("browser session id space exhausted")]
+    Exhausted,
+}
+
+/// Settings shared by sessions plus the only allocator allowed to mint one.
+/// Refusing at `u64::MAX` makes reuse impossible rather than wrapping.
+#[derive(Debug)]
+struct Sessions {
+    config: WebConfig,
+    host: HostFactory,
+    next: AtomicU64,
+}
+
+impl Sessions {
+    fn new(config: WebConfig) -> Result<Self, HostError> {
+        let host = HostFactory::new(HostSettings {
+            endpoint: config.endpoint.clone(),
+            kv: config.kv.clone(),
+            cache: config.cache.clone(),
+            tick: config.tick,
+            keys_file: config.keys_file.clone(),
+        })?;
+        Ok(Self {
+            config,
+            host,
+            next: AtomicU64::new(0),
+        })
+    }
+
+    fn next(&self) -> Result<HostSession, SessionError> {
+        let session = self
+            .next
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+            .map_err(|_| SessionError::Exhausted)?;
+        let unique = self.config.id_seed.0.wrapping_add(u128::from(session));
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX));
+        Ok(HostSession {
+            identity: Identity {
+                client_id: ClientId::from_parts(now, unique),
+                client: self.config.client.clone(),
+                author: self.config.author.clone(),
+            },
+            id_seed: IdSeed(unique),
+        })
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ServeError {
     #[error("bind {addr}: {source}")]
@@ -146,8 +242,6 @@ pub enum ServeError {
     },
     #[error("host: {0}")]
     Host(#[from] HostError),
-    #[error("host task exited during setup")]
-    HostGone,
 }
 
 /// A running bridge: the bound address and a way to stop it.
@@ -155,6 +249,7 @@ pub enum ServeError {
 pub struct Server {
     addr: SocketAddr,
     shutdown: CancellationToken,
+    active_sessions: Arc<AtomicUsize>,
 }
 
 impl Server {
@@ -166,6 +261,12 @@ impl Server {
     pub fn stop(&self) {
         self.shutdown.cancel();
     }
+
+    /// Browser WebSocket sessions whose private host is still alive.
+    #[must_use]
+    pub fn active_sessions(&self) -> usize {
+        self.active_sessions.load(Ordering::Relaxed)
+    }
 }
 
 impl Drop for Server {
@@ -174,8 +275,9 @@ impl Drop for Server {
     }
 }
 
-/// Start the host and accept browsers on `addr` (port 0 picks a free one).
-pub async fn serve(addr: SocketAddr, config: HostConfig) -> Result<Server, ServeError> {
+/// Accept browsers on `addr` (port 0 picks a free one). A host is started
+/// only after a successful `/ws` upgrade.
+pub async fn serve(addr: SocketAddr, config: WebConfig) -> Result<Server, ServeError> {
     let listener = TcpListener::bind(addr)
         .await
         .map_err(|source| ServeError::Bind { addr, source })?;
@@ -183,28 +285,11 @@ pub async fn serve(addr: SocketAddr, config: HostConfig) -> Result<Server, Serve
         .local_addr()
         .map_err(|source| ServeError::Bind { addr, source })?;
     let shutdown = CancellationToken::new();
-    let (handle, mut patches) = nits_client_host::spawn(config, shutdown.clone())?;
-    // Serialize once, fan out to every socket.
-    let (patches_tx, _) = broadcast::channel::<String>(256);
-    let fan_out = patches_tx.clone();
-    let stop = shutdown.clone();
-    tokio::spawn(async move {
-        while let Some(batch) = patches.recv().await {
-            match serde_json::to_string(&batch) {
-                Ok(text) => {
-                    // No receivers is fine: nobody is attached yet.
-                    let _ = fan_out.send(text);
-                }
-                Err(e) => tracing::error!(error = %e, "serialize patches"),
-            }
-        }
-        stop.cancel();
-    });
-    // The core only dials when asked; a bridge always wants a connection.
-    if !handle.dispatch(Action::Connect) {
-        return Err(ServeError::HostGone);
-    }
+    let sessions = Arc::new(Sessions::new(config)?);
+    let active_sessions = Arc::new(AtomicUsize::new(0));
     let accept_shutdown = shutdown.clone();
+    let accept_sessions = Arc::clone(&sessions);
+    let accept_active = Arc::clone(&active_sessions);
     tokio::spawn(async move {
         let mut tasks = tokio::task::JoinSet::<()>::new();
         loop {
@@ -212,11 +297,11 @@ pub async fn serve(addr: SocketAddr, config: HostConfig) -> Result<Server, Serve
                 () = accept_shutdown.cancelled() => break,
                 accepted = listener.accept() => match accepted {
                     Ok((stream, peer)) => {
-                        let handle = handle.clone();
-                        let rx = patches_tx.subscribe();
+                        let sessions = Arc::clone(&accept_sessions);
+                        let active = Arc::clone(&accept_active);
                         let stop = accept_shutdown.clone();
                         tasks.spawn(async move {
-                            if let Err(e) = route(stream, handle, rx, stop).await {
+                            if let Err(e) = route(stream, sessions, active, stop).await {
                                 tracing::debug!(%peer, error = %e, "connection failed");
                             }
                         });
@@ -230,17 +315,50 @@ pub async fn serve(addr: SocketAddr, config: HostConfig) -> Result<Server, Serve
         }
         tasks.abort_all();
     });
-    Ok(Server { addr, shutdown })
+    Ok(Server {
+        addr,
+        shutdown,
+        active_sessions,
+    })
+}
+
+#[derive(Debug, thiserror::Error)]
+enum RouteError {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Session(#[from] SessionError),
+    #[error("host task exited during setup")]
+    HostGone,
+}
+
+struct ActiveSession {
+    active: Arc<AtomicUsize>,
+    shutdown: CancellationToken,
+}
+
+impl ActiveSession {
+    fn new(active: Arc<AtomicUsize>, shutdown: CancellationToken) -> Self {
+        active.fetch_add(1, Ordering::Relaxed);
+        Self { active, shutdown }
+    }
+}
+
+impl Drop for ActiveSession {
+    fn drop(&mut self) {
+        self.shutdown.cancel();
+        self.active.fetch_sub(1, Ordering::Relaxed);
+    }
 }
 
 /// One TCP connection: `/ws` + upgrade becomes a bridge client, anything
 /// else is a single asset response.
 async fn route(
     mut stream: TcpStream,
-    handle: Handle,
-    patches: broadcast::Receiver<String>,
+    sessions: Arc<Sessions>,
+    active: Arc<AtomicUsize>,
     shutdown: CancellationToken,
-) -> std::io::Result<()> {
+) -> Result<(), RouteError> {
     let (head, _raw) = read_head(&mut stream).await?;
     if head.get && head.upgrade_websocket && head.path.starts_with("/ws") {
         let Some(key) = &head.ws_key else {
@@ -256,10 +374,37 @@ async fn route(
         stream.write_all(reply.as_bytes()).await?;
         let ws =
             tokio_tungstenite::WebSocketStream::from_raw_socket(stream, Role::Server, None).await;
-        client(ws, handle, patches, shutdown).await;
+        let session_shutdown = shutdown.child_token();
+        let _active = ActiveSession::new(active, session_shutdown.clone());
+        let session = sessions.next()?;
+        let (handle, mut host_patches) = sessions.host.spawn(session, session_shutdown.clone());
+        // A bounded per-session queue keeps a slow browser from growing the
+        // host's output without limit. It has exactly one receiver and never
+        // carries another session's patches.
+        let (patches_tx, patches) = broadcast::channel::<String>(256);
+        let fan_out = patches_tx.clone();
+        let fan_shutdown = session_shutdown.clone();
+        let fan = tokio::spawn(async move {
+            while let Some(batch) = host_patches.recv().await {
+                match serde_json::to_string(&batch) {
+                    Ok(text) => {
+                        let _ = fan_out.send(text);
+                    }
+                    Err(error) => tracing::error!(%error, "serialize patches"),
+                }
+            }
+            fan_shutdown.cancel();
+        });
+        if !handle.dispatch(Action::Connect) {
+            return Err(RouteError::HostGone);
+        }
+        client(ws, handle, patches, session_shutdown.clone()).await;
+        session_shutdown.cancel();
+        fan.abort();
         return Ok(());
     }
-    respond_asset(&mut stream, &head).await
+    respond_asset(&mut stream, &head).await?;
+    Ok(())
 }
 
 async fn client<S>(
@@ -309,5 +454,65 @@ async fn client<S>(
                 Some(Ok(Message::Close(_)) | Err(_)) | None => break,
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_session_gets_a_distinct_typed_identity_and_seed() {
+        let sessions = Sessions::new(web_config(
+            DaemonEndpoint::WebSocket {
+                url: "ws://127.0.0.1:1".into(),
+            },
+            BuildInfo {
+                name: "web-test".into(),
+                version: "0".into(),
+            },
+            Author::Human {
+                name: "ada".into(),
+                machine: "test".into(),
+            },
+            IdSeed(700),
+            KvConfig::Memory,
+        ))
+        .unwrap();
+
+        let first = sessions.next().unwrap();
+        let second = sessions.next().unwrap();
+
+        let first_id: ClientId = first.identity.client_id;
+        let second_id: ClientId = second.identity.client_id;
+        let first_seed: IdSeed = first.id_seed;
+        let second_seed: IdSeed = second.id_seed;
+        assert_ne!(first_id, second_id);
+        assert_ne!(first_id.random(), second_id.random());
+        assert_eq!(first_seed, IdSeed(700));
+        assert_eq!(second_seed, IdSeed(701));
+    }
+
+    #[test]
+    fn session_allocator_refuses_to_wrap() {
+        let sessions = Sessions::new(web_config(
+            DaemonEndpoint::WebSocket {
+                url: "ws://127.0.0.1:1".into(),
+            },
+            BuildInfo {
+                name: "web-test".into(),
+                version: "0".into(),
+            },
+            Author::Human {
+                name: "ada".into(),
+                machine: "test".into(),
+            },
+            IdSeed(0),
+            KvConfig::Memory,
+        ))
+        .unwrap();
+        sessions.next.store(u64::MAX, Ordering::Relaxed);
+
+        assert!(matches!(sessions.next(), Err(SessionError::Exhausted)));
     }
 }

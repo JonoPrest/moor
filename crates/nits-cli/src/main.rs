@@ -448,6 +448,16 @@ fn desktop_args(cli: &Cli) -> Vec<std::ffi::OsString> {
 }
 
 fn identity(cli: &Cli) -> Identity {
+    let (client, author) = principal(cli);
+    let (ts, r) = nitsd::ids::fresh_parts();
+    Identity {
+        client_id: ClientId::from_parts(ts, r),
+        client,
+        author,
+    }
+}
+
+fn principal(cli: &Cli) -> (BuildInfo, Author) {
     let machine = gethostname::gethostname().to_string_lossy().into_owned();
     let name = cli
         .user
@@ -464,15 +474,13 @@ fn identity(cli: &Cli) -> Identity {
         },
         None => Author::Human { name, machine },
     };
-    let (ts, r) = nitsd::ids::fresh_parts();
-    Identity {
-        client_id: ClientId::from_parts(ts, r),
-        client: BuildInfo {
+    (
+        BuildInfo {
             name: "nits".into(),
             version: env!("CARGO_PKG_VERSION").into(),
         },
         author,
-    }
+    )
 }
 
 async fn connect(cli: &Cli, ctx: &Context) -> anyhow::Result<Ops> {
@@ -778,9 +786,11 @@ async fn open_ui(cli: &Cli, ctx: &Context, mut ops: Ops) -> anyhow::Result<()> {
     // Release the command client's SSH proxy before the host dials another.
     drop(ops);
     let endpoint = contexts::DaemonEndpoint::resolve(ctx, cli.start_policy.into())?;
-    let host = nits_client_host::host_config(
+    let (client, author) = principal(cli);
+    let host = nits_client_web::web_config(
         endpoint,
-        web_identity(cli),
+        client,
+        author,
         nits_client_core::IdSeed(nitsd::ids::fresh_parts().1),
         nits_client_host::KvConfig::Memory,
     );
@@ -909,15 +919,6 @@ fn repo_root(from: &Path) -> Option<PathBuf> {
         if !dir.pop() {
             return None;
         }
-    }
-}
-
-fn web_identity(cli: &Cli) -> nits_client_host::Identity {
-    let id = identity(cli);
-    nits_client_host::Identity {
-        client_id: id.client_id,
-        client: id.client,
-        author: id.author,
     }
 }
 
