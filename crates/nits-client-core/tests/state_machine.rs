@@ -822,6 +822,7 @@ fn stream_item_strategy() -> impl Strategy<Value = StreamItem> {
             highlighted: false,
             additions: 0,
             deletions: 0,
+            gaps: nits_protocol::GapTable::default(),
         },
     };
     prop_oneof![

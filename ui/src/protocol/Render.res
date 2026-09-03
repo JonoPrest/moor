@@ -55,7 +55,7 @@ module Row = {
     | @as("Removed") Removed({left: Cell.t})
     | @as("Added") Added({right: Cell.t})
     | @as("Modified") Modified({left: Cell.t, right: Cell.t})
-    | @as("Expander") Expander({hidden: int, dir: ExpandDir.t})
+    | @as("Expander") Expander({hidden: int, dir: ExpandDir.t, gap: int})
     | @as("WhitespaceOnly") WhitespaceOnly({})
   @@warning("+27")
 }
@@ -67,6 +67,12 @@ module RenderTarget = {
   type t =
     | @as("Diff") Diff({change: Domain.ChangeKind.t})
     | @as("Blob") Blob({oid: blobOid})
+}
+
+/// One gap's expander row: which gap, and the row it is on.
+module GapRow = {
+  @schema
+  type t = {gap: int, row: int}
 }
 
 module RenderContent = {
@@ -82,6 +88,8 @@ module RenderContent = {
         highlighted: bool,
         additions: int,
         deletions: int,
+        /// Where each still-hidden run's expander sits, in row order.
+        gaps: array<GapRow.t>,
       })
   @@warning("+27")
 }

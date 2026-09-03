@@ -13,11 +13,11 @@ use nits_client_core::{
 };
 use nits_protocol::{
     Anchor, Author, BuildInfo, ChangeKind, ChunkIndex, ClientId, ClientMsg, Comment, CommentId,
-    CommentKind, CommentState, FileChange, FileRenderHeader, NonEmpty, Oid, ProtocolVersion,
-    RefSpec, RenderChunk, RenderContent, RenderOpts, RenderTarget, RepoId, RepoPath, Request,
-    Review, ReviewId, ReviewSnapshot, ReviewStatus, ReviewTarget, Row, SchemaVersion, Seq,
-    ServerMsg, Side, StreamItem, Timestamp, TreeEntry, TreeEntryKind, TreeOid, TreeSnapshot,
-    ViewSection, WorkspaceId,
+    CommentKind, CommentState, ExpandDir, FileChange, FileRenderHeader, Gap, NonEmpty, Oid,
+    ProtocolVersion, RefSpec, RenderChunk, RenderContent, RenderOpts, RenderTarget, RepoId,
+    RepoPath, Request, Review, ReviewId, ReviewSnapshot, ReviewStatus, ReviewTarget, Row,
+    SchemaVersion, Seq, ServerMsg, Side, StreamItem, Timestamp, TreeEntry, TreeEntryKind, TreeOid,
+    TreeSnapshot, ViewSection, WorkspaceId,
 };
 use strum::IntoEnumIterator;
 
@@ -156,6 +156,13 @@ fn header(p: &str) -> FileRenderHeader {
             highlighted: false,
             additions: 1,
             deletions: 1,
+            // The gap table the daemon carries on the header, so a chord
+            // can name a gap whose chunk is not cached.
+            gaps: nits_protocol::GapTable::try_from(vec![nits_protocol::GapRow {
+                gap: Gap::new(1),
+                row: EXPANDER_ROW,
+            }])
+            .unwrap(),
         },
     }
 }
@@ -173,9 +180,10 @@ fn chunk(index: u32) -> RenderChunk {
         rows: (0..100)
             .map(|i| {
                 let n = index * 100 + i + 1;
-                // A hunk with one of every commentable row shape, so the
-                // side-aware paths have something to aim at: row 4 is
-                // modified (two cells), row 6 added, row 8 removed.
+                // One of every commentable row shape, so the side-aware
+                // paths have something to aim at (row 4 modified, 6 added,
+                // 8 removed), and a hidden run between the two hunks for
+                // the expander paths.
                 match n {
                     1 | 150 => Row::HunkHeader {
                         text: format!("@@ {n} @@"),
@@ -186,6 +194,11 @@ fn chunk(index: u32) -> RenderChunk {
                     },
                     7 => Row::Added { right: cell(n) },
                     9 => Row::Removed { left: cell(n) },
+                    149 => Row::Expander {
+                        hidden: 40,
+                        dir: ExpandDir::Both,
+                        gap: Gap::new(1),
+                    },
                     _ => Row::Context {
                         left: cell(n),
                         right: cell(n),
@@ -498,6 +511,8 @@ fn every_action_is_reachable_from_a_binding() {
         }))
         .unwrap();
     states.push(with_file);
+    // On an expander row: `enter` and `z u`/`z d` open that hidden run.
+    states.push(on_row(EXPANDER_ROW, Side::Head));
     // Visual mode on: `esc` (Back) and `V` resolve to LeaveVisual.
     let mut with_visual = ready();
     with_visual
@@ -1218,6 +1233,28 @@ fn a_row_with_one_cell_has_no_other_side_to_move_to() {
     );
 }
 
+/// The rows of `chunk()`: the expander sits at index 148, between the
+/// hunk headers at 0 and 149.
+const EXPANDER_ROW: u32 = 148;
+
+#[test]
+fn enter_on_an_expander_opens_that_hidden_run() {
+    // The mouse can click an expander, so the keyboard has to reach it.
+    let core = on_row(EXPANDER_ROW, Side::Head);
+    let action = nits_client_core::resolve_command(&core, nits_client_core::Command::Open).unwrap();
+    assert_eq!(
+        action,
+        Action::ExpandGap {
+            file: nits_client_core::FileRef {
+                repo_id: repo_id(),
+                path: path("src/a.rs"),
+            },
+            gap: Gap::new(1),
+            dir: ExpandDir::Both,
+        }
+    );
+}
+
 #[test]
 fn the_scroll_family_records_an_intent_the_host_performs() {
     let mut core = on_row(4, Side::Head);
@@ -1419,6 +1456,46 @@ fn stepping_over_a_file_boundary_follows_but_a_jump_pins() {
 }
 
 #[test]
+fn the_directional_expands_open_the_gap_beside_the_cursor() {
+    // Inside the second hunk: `z u` opens the run above it. Both used to
+    // resolve to the same undirected whole-file re-render.
+    let core = on_row(160, Side::Head);
+    let up = nits_client_core::resolve_command(&core, nits_client_core::Command::ExpandUp).unwrap();
+    assert_eq!(
+        up,
+        Action::ExpandGap {
+            file: nits_client_core::FileRef {
+                repo_id: repo_id(),
+                path: path("src/a.rs"),
+            },
+            gap: Gap::new(1),
+            dir: ExpandDir::Up,
+        }
+    );
+    // Above the gap, `z d` opens the same run from the other end.
+    let core = on_row(100, Side::Head);
+    let down =
+        nits_client_core::resolve_command(&core, nits_client_core::Command::ExpandDown).unwrap();
+    assert_eq!(
+        down,
+        Action::ExpandGap {
+            file: nits_client_core::FileRef {
+                repo_id: repo_id(),
+                path: path("src/a.rs"),
+            },
+            gap: Gap::new(1),
+            dir: ExpandDir::Down,
+        }
+    );
+    // Nothing hidden that way: the command means nothing rather than
+    // re-rendering the file.
+    let core = on_row(160, Side::Head);
+    assert!(
+        nits_client_core::resolve_command(&core, nits_client_core::Command::ExpandDown).is_err()
+    );
+}
+
+#[test]
 fn re_opening_the_file_already_open_keeps_its_window_and_pins_it() {
     // `enter` on the tree item for the open file (and its mouse alias,
     // the tree click, which runs the same command) must not throw the
@@ -1448,5 +1525,324 @@ fn re_opening_the_file_already_open_keeps_its_window_and_pins_it() {
         core.view().scroll.map(|s| s.align),
         Some(nits_client_core::ScrollAlign::Top),
         "picking a file out of the tree pins it, open or not"
+    );
+}
+
+#[test]
+fn opening_a_gap_re_renders_only_that_file_with_the_gap_recorded() {
+    let mut core = on_row(EXPANDER_ROW, Side::Head);
+    press(&mut core, "enter").unwrap();
+    let opts = core
+        .view()
+        .review
+        .as_ref()
+        .and_then(|o| o.open_file.as_ref())
+        .map(|f| f.render.opts.clone())
+        .expect("a file is open");
+    assert_eq!(
+        opts.expanded.of(Gap::new(1)),
+        (20, 20),
+        "both ends of gap 1 opened"
+    );
+    assert_eq!(
+        opts.context_lines,
+        nits_protocol::RenderOpts::default().context_lines,
+        "the file's own context is untouched — other hunks do not move"
+    );
+}
+
+#[test]
+fn the_gap_beside_the_cursor_is_found_without_its_chunk() {
+    // `b.rs` has a header and no chunks: `diff.rows` is empty, so nothing
+    // about the gap can come from the rows. A hunk taller than what the
+    // cache holds is the same situation, and the chord still means the
+    // gap bordering the cursor.
+    let mut core = ready();
+    core.handle(Input::User(Action::Viewport {
+        file: nits_client_core::FileRef {
+            repo_id: repo_id(),
+            path: path("b.rs"),
+        },
+        first_row: 140,
+        last_row: 199,
+    }))
+    .unwrap();
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::Diff {
+            row: 170,
+            side: Side::Head,
+        },
+    }))
+    .unwrap();
+    assert!(
+        core.view()
+            .diff
+            .as_ref()
+            .is_some_and(|d| d.rows.is_empty() && !d.missing.is_empty()),
+        "no chunk of this file is cached"
+    );
+    let up = nits_client_core::resolve_command(&core, nits_client_core::Command::ExpandUp).unwrap();
+    assert_eq!(
+        up,
+        Action::ExpandGap {
+            file: nits_client_core::FileRef {
+                repo_id: repo_id(),
+                path: path("b.rs"),
+            },
+            gap: Gap::new(1),
+            dir: ExpandDir::Up,
+        }
+    );
+    // Below the last gap there is nothing to open that way.
+    assert!(
+        nits_client_core::resolve_command(&core, nits_client_core::Command::ExpandDown).is_err()
+    );
+}
+
+/// The file's rows once a gap has been opened: the same rows, with
+/// `extra` more context lines revealed just before the second hunk.
+fn expanded_rows(extra: u32) -> Vec<Row> {
+    use nits_protocol::{Cell, LineNo};
+    let base: Vec<Row> = (0..3).flat_map(|c| chunk(c).rows).collect();
+    let revealed = |i: u32| {
+        let cell = Cell {
+            line_no: LineNo::new(1000 + i).unwrap(),
+            text: format!("revealed {i}"),
+            spans: Vec::new(),
+            changed: Vec::new(),
+        };
+        Row::Context {
+            left: cell.clone(),
+            right: cell,
+        }
+    };
+    let mut out = base[..EXPANDER_ROW as usize].to_vec();
+    out.extend((0..extra).map(revealed));
+    out.extend_from_slice(&base[EXPANDER_ROW as usize..]);
+    out
+}
+
+/// Answer the render request in flight with a file `extra` rows longer,
+/// returning what the core emitted for it.
+fn deliver_render(core: &mut ClientCore, effects: &[Effect], extra: u32) -> Vec<Effect> {
+    let id = effects
+        .iter()
+        .find_map(|e| match e {
+            Effect::Send(ClientMsg::Request {
+                id,
+                request: Request::FileRender { .. },
+            }) => Some(*id),
+            _ => None,
+        })
+        .expect("a render was requested");
+    let rows = expanded_rows(extra);
+    let total = u32::try_from(rows.len()).unwrap();
+    let mut header = header("src/a.rs");
+    header.opts = core
+        .view()
+        .review
+        .as_ref()
+        .and_then(|o| o.open_file.as_ref())
+        .map(|f| f.render.opts.clone())
+        .expect("a file is open");
+    header.content = RenderContent::Text {
+        total_rows: total,
+        chunk_rows: 100,
+        chunk_count: total.div_ceil(100),
+        highlighted: false,
+        additions: 1,
+        deletions: 1,
+        gaps: nits_protocol::GapTable::try_from(vec![nits_protocol::GapRow {
+            gap: Gap::new(1),
+            row: EXPANDER_ROW + extra,
+        }])
+        .unwrap(),
+    };
+    let mut out = core
+        .handle(Input::Server(ServerMsg::StreamItem {
+            id,
+            item: StreamItem::Header { header },
+        }))
+        .unwrap();
+    for (ci, rows) in rows.chunks(100).enumerate() {
+        out.extend(
+            core.handle(Input::Server(ServerMsg::StreamItem {
+                id,
+                item: StreamItem::Chunk {
+                    repo_id: repo_id(),
+                    path: path("src/a.rs"),
+                    chunk: RenderChunk {
+                        index: ChunkIndex::new(u32::try_from(ci).unwrap()),
+                        rows: rows.to_vec(),
+                    },
+                },
+            }))
+            .unwrap(),
+        );
+    }
+    if let Ok(end) = core.handle(Input::Server(ServerMsg::StreamEnd { id })) {
+        out.extend(end);
+    }
+    out
+}
+
+#[test]
+fn the_cursor_keeps_its_line_when_a_gap_above_it_opens() {
+    // Opening a gap inserts rows above everything below it. The cursor
+    // must stay on the line it was on — moving it is the "everything
+    // shifts under you" behaviour this change is meant to remove.
+    let core = &mut on_row(160, Side::Head);
+    let text_at = |core: &ClientCore, row: u32| -> Option<String> {
+        core.view()
+            .diff
+            .as_ref()?
+            .rows
+            .iter()
+            .find(|r| r.index == row)
+            .and_then(|r| match &r.row {
+                Row::Context { right, .. } => Some(right.text.clone()),
+                Row::HunkHeader { .. }
+                | Row::Expander { .. }
+                | Row::Added { .. }
+                | Row::Removed { .. }
+                | Row::Modified { .. }
+                | Row::WhitespaceOnly => None,
+            })
+    };
+    let before = text_at(core, 160).expect("a context row");
+    let first_row = core.view().diff.as_ref().unwrap().first_row;
+    let effects = press(core, "z u").unwrap();
+    let landed = deliver_render(core, &effects, 20);
+    // The host is told: without the focus patch it would keep the cursor
+    // on the old row number over the new rows.
+    let sections = rendered(&landed);
+    assert!(sections.contains(&ViewSection::Focus), "{sections:?}");
+    assert!(sections.contains(&ViewSection::Diff), "{sections:?}");
+    assert_eq!(
+        text_at(core, 180).as_deref(),
+        Some(before.as_str()),
+        "the line moved down by the rows the gap revealed"
+    );
+    assert_eq!(
+        core.view().focus,
+        Focus::Diff {
+            row: 180,
+            side: Side::Head
+        },
+        "and the cursor moved with it"
+    );
+    assert_eq!(
+        core.view().diff.as_ref().unwrap().first_row,
+        first_row + 20,
+        "the viewport followed, so the row keeps its place on screen"
+    );
+    // And what the host reads for those sections is the moved cursor and
+    // the shifted window, in this pass rather than after the next input.
+    match core.view().patch(ViewSection::Focus) {
+        nits_client_core::ViewPatch::Focus { focus, .. } => {
+            assert_eq!(
+                focus,
+                Focus::Diff {
+                    row: 180,
+                    side: Side::Head
+                }
+            );
+        }
+        other => panic!("expected a focus patch, got {other:?}"),
+    }
+    match core.view().patch(ViewSection::Diff) {
+        nits_client_core::ViewPatch::Diff { diff, .. } => {
+            assert_eq!(diff.map(|d| d.first_row), Some(first_row + 20));
+        }
+        other => panic!("expected a diff patch, got {other:?}"),
+    }
+}
+
+/// Open `b.rs`, returning the chunk requests it made. Its rows arrive
+/// separately (`deliver_b_rs`) so a test can focus a row in between.
+fn request_b_rs(core: &mut ClientCore) -> Vec<(nits_protocol::RequestId, u32)> {
+    let effects = core
+        .handle(Input::User(Action::Viewport {
+            file: nits_client_core::FileRef {
+                repo_id: repo_id(),
+                path: path("b.rs"),
+            },
+            first_row: 0,
+            last_row: 199,
+        }))
+        .unwrap();
+    // b.rs's header is already cached, so only its chunks are asked for.
+    let wanted: Vec<(nits_protocol::RequestId, u32)> = effects
+        .iter()
+        .filter_map(|e| match e {
+            Effect::Send(ClientMsg::Request {
+                id,
+                request: Request::RenderChunk { index, .. },
+            }) => Some((*id, index.get())),
+            _ => None,
+        })
+        .collect();
+    assert!(!wanted.is_empty(), "b.rs's chunks were asked for");
+    wanted
+}
+
+/// b.rs's rows: the same line numbers as `src/a.rs`, five rows earlier,
+/// so a realign meant for that file would visibly move the cursor here.
+fn deliver_b_rs(core: &mut ClientCore, wanted: Vec<(nits_protocol::RequestId, u32)>) {
+    use nits_protocol::{Cell, LineNo, Response};
+    let row = |n: u32| {
+        let cell = Cell {
+            line_no: LineNo::new(n).unwrap(),
+            text: format!("l{n}"),
+            spans: Vec::new(),
+            changed: Vec::new(),
+        };
+        Row::Context {
+            left: cell.clone(),
+            right: cell,
+        }
+    };
+    for (id, index) in wanted {
+        core.handle(Input::Server(ServerMsg::Response {
+            id,
+            response: Response::RenderChunk {
+                chunk: RenderChunk {
+                    index: ChunkIndex::new(index),
+                    rows: (0..100).map(|i| row(index * 100 + i + 6)).collect(),
+                },
+            },
+        }))
+        .unwrap();
+    }
+}
+
+#[test]
+fn a_realign_belongs_to_the_render_that_asked_for_it() {
+    // Expand a.rs, then open b.rs before the response lands, and put the
+    // cursor somewhere in it. b.rs holds the same line numbers five rows
+    // earlier, so a realign that is not bound to the render it was
+    // recorded for would drag this cursor when b.rs's rows arrive.
+    let core = &mut on_row(160, Side::Head);
+    press(core, "z u").unwrap();
+    let wanted = request_b_rs(core);
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::Diff {
+            row: 100,
+            side: Side::Head,
+        },
+    }))
+    .unwrap();
+    deliver_b_rs(core, wanted);
+    assert_eq!(
+        core.view().diff.as_ref().map(|d| d.file.path.clone()),
+        Some(path("b.rs"))
+    );
+    assert_eq!(
+        core.view().focus,
+        Focus::Diff {
+            row: 100,
+            side: Side::Head
+        },
+        "a.rs's pending realign leaves b.rs's cursor where it is"
     );
 }

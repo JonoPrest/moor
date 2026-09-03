@@ -44,7 +44,7 @@ pub enum DiskTier {
 }
 
 /// Cache sizing and fetch policy, fixed for the life of a `ClientCore`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CacheConfig {
     pub memory_budget: Bytes,
     pub disk: DiskTier,
@@ -202,9 +202,10 @@ impl Content {
             DiskTier::Disabled => None,
             DiskTier::Enabled { budget } => Some(DiskIndex::new(budget)),
         };
+        let memory_budget = config.memory_budget;
         Self {
             config,
-            cache: ContentCache::new(config.memory_budget),
+            cache: ContentCache::new(memory_budget),
             disk,
             pending: HashMap::new(),
             loads: HashMap::new(),
@@ -373,7 +374,7 @@ impl ClientCore {
                             repo_id: render.repo_id,
                             path: render.path.clone(),
                             change: change.clone(),
-                            opts: render.opts,
+                            opts: render.opts.clone(),
                             first_chunk,
                         },
                         (RenderTarget::Blob { oid }, _) => Request::BlobRender {
@@ -386,7 +387,7 @@ impl ClientCore {
                             review_id,
                             repo_id: render.repo_id,
                             path: render.path.clone(),
-                            opts: render.opts,
+                            opts: render.opts.clone(),
                             first_chunk,
                             scope: open.map(|r| r.scope).unwrap_or_default(),
                         },
@@ -694,14 +695,14 @@ impl ClientCore {
         files: Vec<FileChange>,
         effects: &mut Vec<Effect>,
     ) {
-        let opts = self.content.config.render_opts;
+        let opts = self.content.config.render_opts.clone();
         let renders: Vec<RenderKey> = files
             .into_iter()
             .map(|f| RenderKey {
                 repo_id: f.repo_id,
                 path: f.path,
                 target: RenderTarget::Diff { change: f.kind },
-                opts,
+                opts: opts.clone(),
             })
             .collect();
         let Some(open) = &mut self.view.review else {
@@ -851,7 +852,7 @@ impl ClientCore {
             repo_id: file.repo_id,
             path: file.path.clone(),
             target: RenderTarget::Blob { oid },
-            opts: self.content.config.render_opts,
+            opts: self.content.config.render_opts.clone(),
         })
     }
 
@@ -1137,6 +1138,7 @@ mod tests {
                 highlighted: true,
                 additions: 0,
                 deletions: 0,
+                gaps: nits_protocol::GapTable::default(),
             },
         }
     }

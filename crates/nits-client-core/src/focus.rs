@@ -4,7 +4,7 @@
 //! it means right now, or says why it means nothing.
 
 use nits_protocol::{
-    Anchor, BlobOid, ContextHash, DiffScope, LineNo, LineRange, RenderTarget, Row, Side,
+    Anchor, BlobOid, ContextHash, DiffScope, ExpandDir, LineNo, LineRange, RenderTarget, Row, Side,
 };
 use serde::{Deserialize, Serialize};
 use strum::EnumDiscriminants;
@@ -77,6 +77,21 @@ impl Focus {
 pub struct VisualAnchor {
     pub row: u32,
     pub side: Side,
+}
+
+/// A line to put the cursor back on once a re-render renumbers the rows:
+/// opening a gap inserts lines, so the row index the cursor had names a
+/// different line afterwards.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Realign {
+    /// The render this is waiting for. The reader can open another file
+    /// before the response lands, and that file's rows must not be
+    /// shifted by this one's expansion.
+    pub render: crate::cache::RenderKey,
+    pub side: Side,
+    pub line: u32,
+    /// The row the line was on before, for shifting the viewport with it.
+    pub row: u32,
 }
 
 /// Why a command means nothing right now.
@@ -700,12 +715,23 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                         file: diff.file.clone(),
                     });
                 }
+                let here = diff.rows.iter().find(|r| r.index == row);
+                // On an expander, enter opens that hidden run — the mouse
+                // can click it, so the keyboard must reach it too.
+                if let Some(crate::diff::DiffRow {
+                    row: Row::Expander { dir, gap, .. },
+                    ..
+                }) = here
+                {
+                    return Ok(Action::ExpandGap {
+                        file: diff.file.clone(),
+                        gap: *gap,
+                        dir: *dir,
+                    });
+                }
                 // The focused half's thread first: on a modified row the
                 // red and the green cell can each carry one.
-                let thread = diff
-                    .rows
-                    .iter()
-                    .find(|r| r.index == row)
+                let thread = here
                     .and_then(|r| {
                         r.threads
                             .iter()
@@ -1055,9 +1081,10 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
         Command::ActionPalette => Ok(Action::ActionPalette {
             open: !view.action_palette,
         }),
-        // The directional expands re-render the whole file with more
-        // context until band splicing gives them distinct semantics.
-        Command::ExpandContext | Command::ExpandUp | Command::ExpandDown => {
+        // `x` widens the whole file (UI-DESIGN §expanders); `z u`/`z d`
+        // open the hidden run above or below the cursor's hunk, leaving
+        // the rest of the file where it is.
+        Command::ExpandContext => {
             let Focus::Diff { .. } = focus else {
                 return Err(nothing());
             };
@@ -1114,6 +1141,22 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 crate::view::ScrollAlign::Center
             };
             Ok(Action::ScrollView { align })
+        }
+        Command::ExpandUp | Command::ExpandDown => {
+            let Focus::Diff { row, .. } = focus else {
+                return Err(nothing());
+            };
+            let diff = view.diff.as_ref().ok_or(NoTarget::NoOpenFile)?;
+            let up = command == Command::ExpandUp;
+            // From the header's gap table, not from the rows: a hunk can
+            // be taller than the viewport — or than what the cache holds —
+            // and the chord still means the gap bordering it.
+            let gap = nearest_gap(&diff.content, row, up).ok_or(NoTarget::AtEdge)?;
+            Ok(Action::ExpandGap {
+                file: diff.file.clone(),
+                gap,
+                dir: if up { ExpandDir::Up } else { ExpandDir::Down },
+            })
         }
         Command::CommentOnFile => {
             let file = target_file(view, focus).ok_or_else(nothing)?;
@@ -1215,6 +1258,20 @@ fn line_anchor(file: &FileRef, target: &RenderTarget, row: &Row, side: Side) -> 
         lines: LineRange::single(line),
         context_hash: ContextHash::new(0),
     })
+}
+
+/// The gap the cursor would open going up (or down): the nearest hidden
+/// run above (below) `row`, which is the one bordering the hunk the
+/// cursor is in. `None` when nothing is hidden that way.
+fn nearest_gap(
+    content: &nits_protocol::RenderContent,
+    row: u32,
+    up: bool,
+) -> Option<nits_protocol::Gap> {
+    let nits_protocol::RenderContent::Text { gaps, .. } = content else {
+        return None;
+    };
+    gaps.nearest(row, up)
 }
 
 #[cfg(test)]

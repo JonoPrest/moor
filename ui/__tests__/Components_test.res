@@ -300,7 +300,7 @@ describe("Palette", () => {
 })
 
 describe("Context expanders", () => {
-  test("an expander row click and the expand-file button dispatch ExpandContext", () => {
+  test("the expand-file button dispatches ExpandContext for the whole file", () => {
     let dispatch = fn()
     let base = Fixtures.parse(View.DiffView.schema, "client", "DiffView", "default")
     let _ = render(
@@ -308,14 +308,49 @@ describe("Context expanders", () => {
     )
     FireEvent.click(Screen.getByText("expand file"))
     expect(dispatch)->toHaveBeenLastCalledWith(Action.ExpandContext({file: base.file, full: true}))
+  })
+
+  test("expander tooltips come from the keymap, not from the code", () => {
+    let chrome: array<View.Hint.t> = [
+      {keys: "z u", command: ExpandUp, label: "expand up"},
+      {keys: "z d", command: ExpandDown, label: "expand down"},
+    ]
+    let row = Fixtures.parse(Render.Row.schema, "protocol", "Row", "Expander")
+    let {container} = render(
+      <Row row layout=Unified index=0 focused=false threads=[] chrome onExpand={(_, _) => ()} />,
+    )
+    expect(Element.querySelector(container, "[title=\"expand up (z u)\"]"))->not_->toBeNull
+    expect(Element.querySelector(container, "[title=\"expand down (z d)\"]"))->not_->toBeNull
     cleanup()
+    // Rebound: the tooltip follows.
+    let rebound: array<View.Hint.t> = [{keys: "] u", command: ExpandUp, label: "expand up"}]
+    let {container} = render(
+      <Row
+        row layout=Unified index=0 focused=false threads=[] chrome=rebound onExpand={(_, _) => ()}
+      />,
+    )
+    expect(Element.querySelector(container, "[title=\"expand up (] u)\"]"))->not_->toBeNull
+  })
+
+  test("an expander opens its own gap, in the direction that was clicked", () => {
+    // The fixture expander is `Both` on gap 1: two arrows, each opening
+    // that one hidden run rather than re-rendering the whole file.
     let row = Fixtures.parse(Render.Row.schema, "protocol", "Row", "Expander")
     let expand = fn()
-    let _ = render(
-      <Row row layout=Unified index=0 focused=false threads=[] onExpand={() => expand()} />,
+    let {container} = render(
+      <Row
+        row layout=Unified index=0 focused=false threads=[] onExpand={(g, d) => expand((g, d))}
+      />,
     )
+    let arrows = Element.querySelectorAll(container, ".expander-arrow")
+    expect(Array.length(arrows))->toBe(2)
+    FireEvent.click(arrows->Array.getUnsafe(0))
+    expect(expand)->toHaveBeenLastCalledWith((1, Render.ExpandDir.Up))
+    FireEvent.click(arrows->Array.getUnsafe(1))
+    expect(expand)->toHaveBeenLastCalledWith((1, Render.ExpandDir.Down))
+    // Clicking the row itself opens the gap in its own direction.
     FireEvent.click(Screen.getByTextRe(/more lines/))
-    expect(expand)->toHaveBeenCalled
+    expect(expand)->toHaveBeenLastCalledWith((1, Render.ExpandDir.Both))
   })
 })
 

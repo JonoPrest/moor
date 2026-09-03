@@ -183,6 +183,8 @@ impl ViewPrefs {
         RenderOpts {
             ignore_whitespace: self.ignore_whitespace,
             context_lines: self.context_lines,
+            // Expansions belong to one file, not to the preferences.
+            expanded: nits_protocol::Expansions::default(),
         }
     }
 }

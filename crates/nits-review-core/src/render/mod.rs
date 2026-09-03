@@ -23,7 +23,8 @@ mod intraline;
 mod lines;
 
 use nits_protocol::{
-    Cell, ChunkIndex, ColRange, ExpandDir, LineNo, RenderChunk, RenderContent, RenderOpts, Row,
+    Cell, ChunkIndex, ColRange, ExpandDir, Expansions, Gap, LineNo, RenderChunk, RenderContent,
+    RenderOpts, Row,
 };
 
 pub use highlight::{Highlighter, detect_lang};
@@ -97,7 +98,7 @@ pub fn render_file(
     old: Option<&[u8]>,
     new: Option<&[u8]>,
     lang: Option<&str>,
-    opts: RenderOpts,
+    opts: &RenderOpts,
 ) -> Rendered {
     if old.is_some_and(crate::git::is_binary) || new.is_some_and(crate::git::is_binary) {
         return Rendered {
@@ -118,6 +119,7 @@ pub fn render_file(
                 highlighted: false,
                 additions: 0,
                 deletions: 0,
+                gaps: nits_protocol::GapTable::default(),
             },
             rows: vec![Row::WhitespaceOnly],
         };
@@ -134,6 +136,7 @@ pub fn render_file(
         &new_spans,
         &hunks,
         opts.context_lines,
+        &opts.expanded,
     );
     let total_rows = u32::try_from(rows.len()).unwrap_or(u32::MAX);
     Rendered {
@@ -144,6 +147,7 @@ pub fn render_file(
             highlighted,
             additions,
             deletions,
+            gaps: gaps_of(&rows),
         },
         rows,
     }
@@ -181,6 +185,7 @@ pub fn render_blob(hl: &Highlighter, bytes: &[u8], lang: Option<&str>) -> Render
             highlighted,
             additions: 0,
             deletions: 0,
+            gaps: nits_protocol::GapTable::default(),
         },
         rows,
     }
@@ -268,6 +273,38 @@ fn cell(
     }
 }
 
+/// A group's visible window, in old and new line coordinates.
+struct Window {
+    start_o: usize,
+    end_o: usize,
+    start_n: usize,
+    end_n: usize,
+}
+
+/// Where each still-hidden run's expander sits. Carried on the header so
+/// a client can name the gap beside the cursor without holding the chunk
+/// the expander lives in.
+fn gaps_of(rows: &[Row]) -> nits_protocol::GapTable {
+    let table: Vec<nits_protocol::GapRow> = rows
+        .iter()
+        .enumerate()
+        .filter_map(|(i, r)| match r {
+            Row::Expander { gap, .. } => Some(nits_protocol::GapRow {
+                gap: *gap,
+                row: u32::try_from(i).unwrap_or(u32::MAX),
+            }),
+            Row::HunkHeader { .. }
+            | Row::Context { .. }
+            | Row::Added { .. }
+            | Row::Removed { .. }
+            | Row::Modified { .. }
+            | Row::WhitespaceOnly => None,
+        })
+        .collect();
+    // Built in row order, one entry per gap, by construction.
+    nits_protocol::GapTable::try_from(table).unwrap_or_default()
+}
+
 /// Build the row list with context collapsing. Returns
 /// `(rows, additions, deletions)`.
 ///
@@ -281,6 +318,7 @@ fn build_rows(
     new_spans: &[Vec<nits_protocol::Span>],
     hunks: &[Hunk],
     context: u32,
+    expanded: &Expansions,
 ) -> (Vec<Row>, u32, u32) {
     let ctx = context as usize;
     let mut rows = Vec::new();
@@ -288,11 +326,24 @@ fn build_rows(
     let to_u32 = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
 
     if hunks.is_empty() {
+        // One gap, the whole file; opening it reveals lines from either
+        // end, since there is no hunk to expand away from.
         if !old.is_empty() {
-            rows.push(Row::Expander {
-                hidden: to_u32(old.len()),
-                dir: ExpandDir::Both,
-            });
+            let (up, down) = expanded.of(Gap::new(0));
+            let shown = (up as usize).saturating_add(down as usize).min(old.len());
+            let head = (down as usize).min(shown);
+            let tail = shown - head;
+            emit_context(&mut rows, old, new, old_spans, new_spans, 0, 0, head);
+            let hidden = old.len() - shown;
+            if hidden > 0 {
+                rows.push(Row::Expander {
+                    hidden: to_u32(hidden),
+                    dir: ExpandDir::Both,
+                    gap: Gap::new(0),
+                });
+            }
+            let from = old.len() - tail;
+            emit_context(&mut rows, old, new, old_spans, new_spans, from, from, tail);
         }
         return (rows, 0, 0);
     }
@@ -310,61 +361,102 @@ fn build_rows(
         }
     }
 
-    // `oi`/`ni`: first old/new line not yet accounted for.
+    // Each group's visible window, in old and new coordinates: `ctx`
+    // lines around its changes, plus however far its own gaps have been
+    // opened — the gap above it upward, the gap below it downward. A
+    // trailing expansion stops at the next group's first change; past
+    // that the lines belong to the next window.
     let (mut oi, mut ni) = (0usize, 0usize);
+    let mut windows: Vec<Window> = Vec::with_capacity(groups.len());
     for (g_idx, g) in groups.iter().enumerate() {
         let first = &hunks[g.start];
         let last = &hunks[g.end - 1];
-        // Visible window: ctx lines before the first change, ctx after the last.
-        let vis_start_o = (first.before.start as usize).saturating_sub(ctx).max(oi);
-        let vis_start_n = ni + (vis_start_o - oi);
-        let hidden_before = vis_start_o - oi;
+        let (up, _) = expanded.of(Gap::new(to_u32(g_idx)));
+        let (_, down) = expanded.of(Gap::new(to_u32(g_idx + 1)));
+        let lead = ctx.saturating_add(up as usize);
+        let start_o = (first.before.start as usize).saturating_sub(lead).max(oi);
+        let start_n = ni + (start_o - oi);
+        let trail = ctx.saturating_add(down as usize);
+        let next_change = groups
+            .get(g_idx + 1)
+            .map_or(old.len(), |ng| hunks[ng.start].before.start as usize);
+        let end_o = (last.before.end as usize + trail)
+            .min(old.len())
+            .min(next_change);
+        let end_n = last.after.end as usize + (end_o - last.before.end as usize);
+        windows.push(Window {
+            start_o,
+            end_o,
+            start_n,
+            end_n,
+        });
+        oi = end_o;
+        ni = end_n;
+    }
+
+    // Groups whose windows meet — because the gap between them was opened
+    // all the way — are one block under one header, as git prints
+    // overlapping hunks.
+    let mut blocks: Vec<std::ops::Range<usize>> = Vec::new();
+    for g_idx in 0..groups.len() {
+        match blocks.last_mut() {
+            Some(b) if windows[g_idx].start_o <= windows[b.end - 1].end_o => b.end = g_idx + 1,
+            Some(_) | None => blocks.push(g_idx..g_idx + 1),
+        }
+    }
+
+    let (mut oi, mut ni) = (0usize, 0usize);
+    for b in &blocks {
+        let head = &windows[b.start];
+        let tail = &windows[b.end - 1];
+        let hidden_before = head.start_o - oi;
         if hidden_before > 0 {
             rows.push(Row::Expander {
                 hidden: to_u32(hidden_before),
-                dir: if g_idx == 0 {
+                dir: if b.start == 0 {
                     ExpandDir::Up
                 } else {
                     ExpandDir::Both
                 },
+                gap: Gap::new(to_u32(b.start)),
             });
         }
-        let vis_end_o = (last.before.end as usize + ctx).min(old.len());
-        let vis_end_n = last.after.end as usize + (vis_end_o - last.before.end as usize);
+        // One header over the whole block, not over its first group.
         rows.push(Row::HunkHeader {
             text: hunk_header(
-                vis_start_o,
-                vis_end_o - vis_start_o,
-                vis_start_n,
-                vis_end_n - vis_start_n,
+                head.start_o,
+                tail.end_o - head.start_o,
+                head.start_n,
+                tail.end_n - head.start_n,
             ),
         });
-
-        let (mut co, mut cn) = (vis_start_o, vis_start_n);
-        for h in &hunks[g.clone()] {
-            let eq = h.before.start as usize - co;
-            emit_context(&mut rows, old, new, old_spans, new_spans, co, cn, eq);
-            let removed = h.before.start as usize..h.before.end as usize;
-            let added = h.after.start as usize..h.after.end as usize;
-            let paired = removed.len().min(added.len());
-            for k in 0..paired {
-                let (o, n) = (removed.start + k, added.start + k);
-                let (lc, rc) = intraline::changed_ranges(&old[o].text, &new[n].text);
-                rows.push(Row::Modified {
-                    left: cell(o, &old[o], old_spans, lc),
-                    right: cell(n, &new[n], new_spans, rc),
-                });
+        let (mut co, mut cn) = (head.start_o, head.start_n);
+        for g in &groups[b.clone()] {
+            for h in &hunks[g.clone()] {
+                let eq = h.before.start as usize - co;
+                emit_context(&mut rows, old, new, old_spans, new_spans, co, cn, eq);
+                let removed = h.before.start as usize..h.before.end as usize;
+                let added = h.after.start as usize..h.after.end as usize;
+                let paired = removed.len().min(added.len());
+                for k in 0..paired {
+                    let (o, n) = (removed.start + k, added.start + k);
+                    let (lc, rc) = intraline::changed_ranges(&old[o].text, &new[n].text);
+                    rows.push(Row::Modified {
+                        left: cell(o, &old[o], old_spans, lc),
+                        right: cell(n, &new[n], new_spans, rc),
+                    });
+                }
+                rows.extend((removed.start + paired..removed.end).map(|o| Row::Removed {
+                    left: cell(o, &old[o], old_spans, vec![]),
+                }));
+                rows.extend((added.start + paired..added.end).map(|n| Row::Added {
+                    right: cell(n, &new[n], new_spans, vec![]),
+                }));
+                deletions += to_u32(removed.len());
+                additions += to_u32(added.len());
+                co = h.before.end as usize;
+                cn = h.after.end as usize;
             }
-            rows.extend((removed.start + paired..removed.end).map(|o| Row::Removed {
-                left: cell(o, &old[o], old_spans, vec![]),
-            }));
-            rows.extend((added.start + paired..added.end).map(|n| Row::Added {
-                right: cell(n, &new[n], new_spans, vec![]),
-            }));
-            deletions += to_u32(removed.len());
-            additions += to_u32(added.len());
-            co = h.before.end as usize;
-            cn = h.after.end as usize;
         }
         emit_context(
             &mut rows,
@@ -374,17 +466,19 @@ fn build_rows(
             new_spans,
             co,
             cn,
-            vis_end_o - co,
+            tail.end_o - co,
         );
-        oi = vis_end_o;
-        ni = vis_end_n;
+        oi = tail.end_o;
+        ni = tail.end_n;
     }
+    let _ = ni;
 
-    let tail = old.len() - oi;
-    if tail > 0 {
+    let hidden_tail = old.len() - oi;
+    if hidden_tail > 0 {
         rows.push(Row::Expander {
-            hidden: to_u32(tail),
+            hidden: to_u32(hidden_tail),
             dir: ExpandDir::Down,
+            gap: Gap::new(to_u32(groups.len())),
         });
     }
     (rows, additions, deletions)

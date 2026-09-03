@@ -232,6 +232,7 @@ module Shell = {
                         threads=model.threads
                         draft=model.draft
                         pendingRefresh=model.pendingRefresh
+                        chrome=model.chrome
                         visual=?model.visual
                         isOpen={switch model.diff {
                         | Some(open_) => open_.file == diff.file
@@ -271,7 +272,12 @@ module Shell = {
               {switch model.diff {
               | Some(diff) =>
                 <DiffView
-                  diff layout=model.prefs.layout focus=model.focus scroll=?model.scroll dispatch
+                  diff
+                  layout=model.prefs.layout
+                  focus=model.focus
+                  scroll=?model.scroll
+                  chrome=model.chrome
+                  dispatch
                 />
               | None => <div className="diff-empty"> {React.string("Open a file")} </div>
               }}

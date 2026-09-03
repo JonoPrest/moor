@@ -33,6 +33,7 @@ let make = (
   ~draft: option<Draft.t>,
   ~pendingRefresh: bool,
   ~isOpen: bool,
+  ~chrome: array<View.Hint.t>=[],
   ~visual: option<VisualView.t>=?,
   ~dispatch: Action.t => unit,
 ) => {
@@ -192,7 +193,8 @@ let make = (
                     setDrag(_ => Some({...d, current: line}))
                   | (Some(_), Some(_) | None) | (None, _) => ()
                   }}
-                onExpand={() => dispatch(ExpandContext({file: diff.file, full: false}))}
+                chrome
+                onExpand={(gap, dir) => dispatch(ExpandGap({file: diff.file, gap, dir}))}
               />
             <div
               key={Int.toString(r.index)}

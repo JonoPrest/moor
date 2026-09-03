@@ -10,13 +10,20 @@ expression: r
     "chunk_count": 1,
     "highlighted": false,
     "additions": 0,
-    "deletions": 0
+    "deletions": 0,
+    "gaps": [
+      {
+        "gap": 0,
+        "row": 0
+      }
+    ]
   },
   "rows": [
     {
       "type": "Expander",
       "hidden": 2,
-      "dir": "Both"
+      "dir": "Both",
+      "gap": 0
     }
   ]
 }

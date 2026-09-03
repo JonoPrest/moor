@@ -21,6 +21,7 @@ let make = (
   ~layout: Layout.t,
   ~focus: Focus.t,
   ~scroll: option<ScrollIntent.t>=?,
+  ~chrome: array<View.Hint.t>=[],
   ~threads: array<ThreadView.t>=[],
   ~draft: option<Draft.t>=?,
   ~pendingRefresh: bool=false,
@@ -174,7 +175,8 @@ let make = (
                 focusedSide
                 threads=r.threads
                 onClick={side => dispatch(SetFocus({focus: Focus.Diff({row: item.index, side})}))}
-                onExpand={() => dispatch(ExpandContext({file: diff.file, full: false}))}
+                chrome
+                onExpand={(gap, dir) => dispatch(ExpandGap({file: diff.file, gap, dir}))}
               />
               {r.threads
               ->Array.map((t: View.RowThread.t) => t.thread)

@@ -9,6 +9,7 @@ use crate::ids::{
     BlobOid, CommentId, CommitOid, RepoId, ReviewId, ThreadId, Timestamp, TreeOid, WorkspaceId,
 };
 use crate::invariants::{LineRange, NonEmpty, RepoPath};
+use crate::render::ExpandDir;
 
 /// A named group of repositories.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -384,13 +385,131 @@ pub struct ViewedMark {
     pub blob_oid: Option<BlobOid>,
 }
 
-/// Options that change the render model; part of every render cache key.
+/// Which hidden run: gap `i` is the run before visible group `i`, and
+/// the last one is the run after the final group. Groups are decided by
+/// `context_lines` alone, so a gap keeps its number however far it is
+/// opened — but not across a change of `context_lines`, which can merge
+/// groups and renumber everything after them.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
+)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(transparent)]
+pub struct Gap(u32);
+
+impl Gap {
+    #[must_use]
+    pub const fn new(i: u32) -> Self {
+        Self(i)
+    }
+
+    #[must_use]
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// How far one hidden run has been pushed apart. `up` is revealed going
+/// up from the hunk below the gap, `down` going down from the hunk above
+/// it, in lines; the render clamps both to what the gap actually holds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct GapExpansion {
+    pub gap: Gap,
+    pub up: u32,
+    pub down: u32,
+}
+
+/// Wire input that is not a canonical expansion set.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ExpansionsError {
+    #[error("gap {0:?} appears more than once")]
+    Duplicate(Gap),
+    #[error("expansions are not ordered by gap")]
+    Unordered,
+}
+
+/// The gaps a render has opened: at most one entry per gap, ordered by
+/// gap. Parsed, not validated — two requests that mean the same thing
+/// must not become two cache keys, so a non-canonical set is rejected at
+/// the boundary rather than silently accepted.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(try_from = "Vec<GapExpansion>", into = "Vec<GapExpansion>")]
+pub struct Expansions(Vec<GapExpansion>);
+
+impl TryFrom<Vec<GapExpansion>> for Expansions {
+    type Error = ExpansionsError;
+
+    fn try_from(v: Vec<GapExpansion>) -> Result<Self, Self::Error> {
+        for w in v.windows(2) {
+            if w[0].gap == w[1].gap {
+                return Err(ExpansionsError::Duplicate(w[0].gap));
+            }
+            if w[0].gap > w[1].gap {
+                return Err(ExpansionsError::Unordered);
+            }
+        }
+        Ok(Self(v))
+    }
+}
+
+impl From<Expansions> for Vec<GapExpansion> {
+    fn from(e: Expansions) -> Self {
+        e.0
+    }
+}
+
+impl Expansions {
+    #[must_use]
+    pub fn as_slice(&self) -> &[GapExpansion] {
+        &self.0
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// What `gap` has been opened to, `(up, down)`, zero when untouched.
+    #[must_use]
+    pub fn of(&self, gap: Gap) -> (u32, u32) {
+        self.0
+            .iter()
+            .find(|e| e.gap == gap)
+            .map_or((0, 0), |e| (e.up, e.down))
+    }
+
+    /// Open `gap` by `step` more lines in `dir`, keeping the entries
+    /// ordered and unique.
+    #[must_use]
+    pub fn opened(&self, gap: Gap, dir: ExpandDir, step: u32) -> Self {
+        let (up, down) = self.of(gap);
+        let (up, down) = match dir {
+            ExpandDir::Up => (up.saturating_add(step), down),
+            ExpandDir::Down => (up, down.saturating_add(step)),
+            ExpandDir::Both => (up.saturating_add(step), down.saturating_add(step)),
+        };
+        let mut out: Vec<GapExpansion> = self.0.iter().filter(|e| e.gap != gap).copied().collect();
+        out.push(GapExpansion { gap, up, down });
+        out.sort_by_key(|e| e.gap);
+        Self(out)
+    }
+}
+
+/// Options that change the render model; part of every render cache key.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct RenderOpts {
     pub ignore_whitespace: bool,
     pub context_lines: u32,
+    /// Hidden runs the reader has opened, one gap at a time (`enter` on an
+    /// expander, `z u`/`z d`). Widening `context_lines` instead would move
+    /// every other hunk in the file.
+    #[serde(default)]
+    pub expanded: Expansions,
 }
 
 impl Default for RenderOpts {
@@ -398,6 +517,7 @@ impl Default for RenderOpts {
         Self {
             ignore_whitespace: false,
             context_lines: 3,
+            expanded: Expansions::default(),
         }
     }
 }
@@ -551,4 +671,58 @@ pub struct TreeDelta {
     pub added: Vec<TreeEntry>,
     pub removed: Vec<RepoPath>,
     pub changed: Vec<TreeEntry>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn gap(i: u32, up: u32, down: u32) -> GapExpansion {
+        GapExpansion {
+            gap: Gap::new(i),
+            up,
+            down,
+        }
+    }
+
+    #[test]
+    fn an_expansion_set_is_parsed_into_its_canonical_shape_or_rejected() {
+        // Two requests that mean the same thing must not become two cache
+        // keys, so the boundary refuses anything but the canonical order.
+        let ok = Expansions::try_from(vec![gap(0, 20, 0), gap(2, 0, 20)]).unwrap();
+        assert_eq!(ok.of(Gap::new(0)), (20, 0));
+        assert_eq!(ok.of(Gap::new(2)), (0, 20));
+        assert_eq!(ok.of(Gap::new(1)), (0, 0), "an untouched gap is closed");
+
+        assert_eq!(
+            Expansions::try_from(vec![gap(1, 20, 0), gap(1, 0, 20)]),
+            Err(ExpansionsError::Duplicate(Gap::new(1)))
+        );
+        assert_eq!(
+            Expansions::try_from(vec![gap(2, 20, 0), gap(1, 0, 20)]),
+            Err(ExpansionsError::Unordered)
+        );
+
+        // The same refusal off the wire, where it matters.
+        let wire = r#"[{"gap":1,"up":20,"down":0},{"gap":1,"up":0,"down":20}]"#;
+        assert!(serde_json::from_str::<Expansions>(wire).is_err());
+    }
+
+    #[test]
+    fn opening_a_gap_keeps_the_set_canonical() {
+        let e = Expansions::default()
+            .opened(Gap::new(2), ExpandDir::Up, 20)
+            .opened(Gap::new(0), ExpandDir::Both, 20)
+            .opened(Gap::new(2), ExpandDir::Up, 20);
+        assert_eq!(
+            e.as_slice().iter().map(|g| g.gap).collect::<Vec<_>>(),
+            vec![Gap::new(0), Gap::new(2)],
+            "ordered, one entry per gap"
+        );
+        assert_eq!(e.of(Gap::new(2)), (40, 0), "repeat opens further");
+        assert_eq!(e.of(Gap::new(0)), (20, 20));
+        // Round-trips through the wire unchanged.
+        let json = serde_json::to_string(&e).unwrap();
+        assert_eq!(serde_json::from_str::<Expansions>(&json).unwrap(), e);
+    }
 }

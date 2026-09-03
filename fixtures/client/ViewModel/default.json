@@ -34,6 +34,12 @@
       "chunk_count": 3,
       "chunk_rows": 500,
       "deletions": 4,
+      "gaps": [
+        {
+          "gap": 1,
+          "row": 40
+        }
+      ],
       "highlighted": true,
       "total_rows": 1203,
       "type": "Text"
@@ -114,6 +120,12 @@
         "chunk_count": 3,
         "chunk_rows": 500,
         "deletions": 4,
+        "gaps": [
+          {
+            "gap": 1,
+            "row": 40
+          }
+        ],
         "highlighted": true,
         "total_rows": 1203,
         "type": "Text"
@@ -262,6 +274,7 @@
       {
         "opts": {
           "context_lines": 3,
+          "expanded": [],
           "ignore_whitespace": false
         },
         "path": "src/lib.rs",
@@ -282,6 +295,7 @@
       "render": {
         "opts": {
           "context_lines": 3,
+          "expanded": [],
           "ignore_whitespace": false
         },
         "path": "src/lib.rs",

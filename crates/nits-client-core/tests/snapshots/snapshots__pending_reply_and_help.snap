@@ -83,7 +83,8 @@ expression: core.view()
       "chunk_count": 2,
       "highlighted": true,
       "additions": 2,
-      "deletions": 1
+      "deletions": 1,
+      "gaps": []
     },
     "viewed": "Unviewed",
     "first_row": 0,
@@ -239,7 +240,8 @@ expression: core.view()
         "chunk_count": 2,
         "highlighted": true,
         "additions": 2,
-        "deletions": 1
+        "deletions": 1,
+        "gaps": []
       },
       "viewed": "Unviewed",
       "first_row": 0,
@@ -394,7 +396,8 @@ expression: core.view()
         "chunk_count": 1,
         "highlighted": true,
         "additions": 2,
-        "deletions": 1
+        "deletions": 1,
+        "gaps": []
       },
       "viewed": "Unviewed",
       "first_row": 0,
@@ -1476,7 +1479,8 @@ expression: core.view()
         },
         "opts": {
           "ignore_whitespace": false,
-          "context_lines": 3
+          "context_lines": 3,
+          "expanded": []
         }
       },
       {
@@ -1491,7 +1495,8 @@ expression: core.view()
         },
         "opts": {
           "ignore_whitespace": false,
-          "context_lines": 3
+          "context_lines": 3,
+          "expanded": []
         }
       }
     ],
@@ -1509,7 +1514,8 @@ expression: core.view()
         },
         "opts": {
           "ignore_whitespace": false,
-          "context_lines": 3
+          "context_lines": 3,
+          "expanded": []
         }
       },
       "first_row": 0,

@@ -139,7 +139,8 @@ let make = (
   ~onClick: Domain.Side.t => unit=_ => (),
   ~onMouseDown: Domain.Side.t => unit=_ => (),
   ~onMouseEnter: Domain.Side.t => unit=_ => (),
-  ~onExpand: unit => unit=() => (),
+  ~onExpand: (int, Render.ExpandDir.t) => unit=(_, _) => (),
+  ~chrome: array<View.Hint.t>=[],
 ) => {
   let base = "row " ++ rowClassName(row)
   let className = switch layout {
@@ -181,14 +182,46 @@ let make = (
   | (HunkHeader({text}), _) => <div className="cell-hunk"> {React.string(text)} </div>
   | (WhitespaceOnly(_), _) =>
     <div className="cell-hunk"> {React.string("whitespace-only changes hidden")} </div>
-  | (Expander({hidden, dir}), _) => {
-      let arrow = switch dir {
-      | Up => "↑"
-      | Down => "↓"
-      | Both => "↕"
-      }
-      <div className="cell-hunk" onClick={_ => onExpand()}>
-        {React.string(arrow ++ " " ++ Int.toString(hidden) ++ " more lines — expand")}
+  | (Expander({hidden, dir, gap}), _) => {
+      // One control per direction the gap can open in, so the mouse can
+      // say what `z u`/`z d` say. A `Both` gap opens from either end.
+      let arrow = (d: Render.ExpandDir.t) =>
+        switch d {
+        | Up => "↑"
+        | Down => "↓"
+        | Both => "↕"
+        }
+      // Tooltips come from the keymap: these arrows are the mouse alias
+      // of `z u`/`z d` and must say so even after a rebinding.
+      let button = (d: Render.ExpandDir.t) =>
+        <button
+          type_="button"
+          className="btn btn-ghost expander-arrow"
+          title=?{Chrome.tip(
+            chrome,
+            switch d {
+            | Up => ExpandUp
+            | Down | Both => ExpandDown
+            },
+          )}
+          onClick={ev => {
+            ReactEvent.Mouse.stopPropagation(ev)
+            onExpand(gap, d)
+          }}
+        >
+          {React.string(arrow(d))}
+        </button>
+      <div className="cell-hunk" onClick={_ => onExpand(gap, dir)}>
+        {switch dir {
+        | Both =>
+          <>
+            {button(Up)}
+            {button(Down)}
+          </>
+        | Up => button(Up)
+        | Down => button(Down)
+        }}
+        {React.string(" " ++ Int.toString(hidden) ++ " more lines — expand")}
       </div>
     }
   | (Context({right}), Unified) => cell(~cell=right, ~side=Head)

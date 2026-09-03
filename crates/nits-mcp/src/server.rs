@@ -300,6 +300,7 @@ impl Server {
                     context_lines: p
                         .context_lines
                         .unwrap_or(RenderOpts::default().context_lines),
+                    ..RenderOpts::default()
                 };
                 let (file, header, chunks) = ops
                     .diff(p.review_id, p.repo_id, &p.path, render_opts)

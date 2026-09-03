@@ -61,7 +61,8 @@ pub use explorer::{
     viewed_state,
 };
 pub use focus::{
-    Focus, FocusKind, NoTarget, PAGE_ROWS, VisualAnchor, clamp as clamp_focus, visible_nodes,
+    Focus, FocusKind, NoTarget, PAGE_ROWS, Realign, VisualAnchor, clamp as clamp_focus,
+    visible_nodes,
 };
 pub use ids::IdSeed;
 pub use keymap::{
@@ -290,6 +291,14 @@ pub enum Action {
     },
     /// Re-render one file with more context (UI-DESIGN §Diff rendering:
     /// expanders): +20 lines per step, or the whole file when `full`.
+    /// Reveal a step more of one hidden run, in one direction — `enter`
+    /// on an expander row, `z u`/`z d`, or clicking an expander. Only that
+    /// gap moves.
+    ExpandGap {
+        file: FileRef,
+        gap: nits_protocol::Gap,
+        dir: nits_protocol::ExpandDir,
+    },
     ExpandContext {
         file: FileRef,
         full: bool,
@@ -562,6 +571,11 @@ pub struct ClientCore {
     /// Visual mode (UI-DESIGN: modal keys): the diff row and side `V` was
     /// pressed on; the other end of the selection is the focused row.
     visual_anchor: Option<VisualAnchor>,
+    /// A re-render is in flight that will renumber the rows (opening a
+    /// gap inserts lines above the ones below it). The line the cursor
+    /// was on is remembered so the focus and the viewport can follow the
+    /// content rather than the row index (§6.5).
+    realign: Option<Realign>,
 }
 
 /// Browsing one repo at an arbitrary ref.
@@ -589,7 +603,7 @@ impl ClientCore {
     #[must_use]
     pub fn new(config: Config) -> Self {
         let ids = ids::IdGen::new(config.id_seed);
-        let content = content::Content::new(config.cache);
+        let content = content::Content::new(config.cache.clone());
         Self {
             config,
             connection: Connection::Disconnected { last_seq: None },
@@ -615,6 +629,7 @@ impl ClientCore {
             file_collapse: std::collections::BTreeMap::new(),
             browse: None,
             visual_anchor: None,
+            realign: None,
         }
     }
 
@@ -808,6 +823,11 @@ impl ClientCore {
         if progress != self.view.progress {
             self.view.progress = progress;
             sections.push(ViewSection::Progress);
+        }
+        // Before the diff is built, so the window this pass serves is
+        // the shifted one.
+        if self.realign.is_some() {
+            self.apply_realign(&mut sections);
         }
         let (diff, threads) = match &self.view.review {
             Some(open) => {
@@ -1207,7 +1227,7 @@ impl ClientCore {
             repo_id,
             path,
             target: RenderTarget::Diff { change },
-            opts: self.content.config.render_opts,
+            opts: self.content.config.render_opts.clone(),
         };
         if let Some(open) = &mut self.view.review {
             open.original = Some(key.clone());
@@ -1224,12 +1244,16 @@ impl ClientCore {
         Ok(effects)
     }
 
-    /// Re-key one file's render with more context and refetch it. The
+    /// Re-key one file's render under new options and refetch it. The
     /// expansion is per-file and transient: a scope or render-option
     /// change rebuilds the file list at the default context.
-    fn expand_context(&mut self, file: &FileRef, full: bool) -> Result<Vec<Effect>, CoreError> {
+    fn re_render(
+        &mut self,
+        file: &FileRef,
+        opts: impl FnOnce(&nits_protocol::RenderOpts) -> nits_protocol::RenderOpts,
+    ) -> Result<Vec<Effect>, CoreError> {
         self.require_subscribed()?;
-        let Some(open) = &mut self.view.review else {
+        let Some(open) = &self.view.review else {
             return Err(CoreError::NoOpenReview);
         };
         let review_id = open.snapshot.review.id;
@@ -1241,20 +1265,18 @@ impl ClientCore {
             return Err(CoreError::UnknownFile(file.clone()));
         };
         let old = open.files[i].clone();
-        let context_lines = if full {
-            FULL_CONTEXT
-        } else {
-            old.opts.context_lines.saturating_add(EXPAND_STEP)
+        let key = RenderKey {
+            opts: opts(&old.opts),
+            ..old.clone()
         };
-        if context_lines == old.opts.context_lines {
+        if key == old {
             return Ok(Vec::new());
         }
-        let key = RenderKey {
-            opts: nits_protocol::RenderOpts {
-                context_lines,
-                ..old.opts
-            },
-            ..old.clone()
+        // Remember the cursor's line, not its row index: the row numbers
+        // below an opened gap all shift by however much it revealed.
+        self.realign = self.focused_line(&old, &key);
+        let Some(open) = &mut self.view.review else {
+            return Err(CoreError::NoOpenReview);
         };
         open.files[i] = key.clone();
         // Keep viewing the file over the same rows; the render's row count
@@ -1268,6 +1290,112 @@ impl ClientCore {
         self.want_open_render(review_id, &key, &mut effects);
         effects.push(render(&[ViewSection::Diff]));
         Ok(effects)
+    }
+
+    /// Widen the whole file's context (`x`, or the header's expand-file
+    /// button). Opening one hidden run is [`Self::expand_gap`].
+    fn expand_context(&mut self, file: &FileRef, full: bool) -> Result<Vec<Effect>, CoreError> {
+        self.re_render(file, |opts| nits_protocol::RenderOpts {
+            context_lines: if full {
+                FULL_CONTEXT
+            } else {
+                opts.context_lines.saturating_add(EXPAND_STEP)
+            },
+            // Gap numbers come from the grouping that `context_lines`
+            // produces, so widening it can merge two groups and renumber
+            // every gap after them: the recorded expansions would then
+            // open runs nobody asked for. Widening subsumes them anyway.
+            expanded: nits_protocol::Expansions::default(),
+            ..opts.clone()
+        })
+    }
+
+    /// Open one hidden run by a step, in one direction: `enter` on an
+    /// expander row, `z u`/`z d`, or clicking an expander. Only that gap
+    /// moves — widening `context_lines` would push every other hunk of the
+    /// file around under the reader's cursor.
+    fn expand_gap(
+        &mut self,
+        file: &FileRef,
+        gap: nits_protocol::Gap,
+        dir: nits_protocol::ExpandDir,
+    ) -> Result<Vec<Effect>, CoreError> {
+        self.re_render(file, |opts| nits_protocol::RenderOpts {
+            expanded: opts.expanded.opened(gap, dir, EXPAND_STEP),
+            ..opts.clone()
+        })
+    }
+
+    /// The line the cursor is on in `render`, if that is the open file.
+    fn focused_line(&self, render: &RenderKey, waiting_for: &RenderKey) -> Option<Realign> {
+        let Focus::Diff { row, .. } = self.view.focus else {
+            return None;
+        };
+        let open = self.view.review.as_ref()?;
+        if open.open_file.as_ref().map(|f| &f.render) != Some(render) {
+            return None;
+        }
+        let diff = self.view.diff.as_ref()?;
+        let r = diff.rows.iter().find(|r| r.index == row)?;
+        // A row with cells on both sides is followed by its head line.
+        let (side, line) = [nits_protocol::Side::Head, nits_protocol::Side::Base]
+            .into_iter()
+            .find_map(|side| diff::line_on(&r.row, side).map(|line| (side, line)))?;
+        Some(Realign {
+            render: waiting_for.clone(),
+            side,
+            line,
+            row,
+        })
+    }
+
+    /// After a re-render lands: put the cursor back on the line it was on
+    /// and shift the viewport by the same amount, so the reader keeps
+    /// looking at what they were looking at.
+    fn apply_realign(&mut self, sections: &mut Vec<ViewSection>) {
+        let Some(want) = self.realign.clone() else {
+            return;
+        };
+        let Some(open) = &self.view.review else {
+            return;
+        };
+        let Some(render) = open.open_file.as_ref().map(|f| f.render.clone()) else {
+            return;
+        };
+        // Only the render this was recorded for: opening another file
+        // before the response lands must not move that file's cursor.
+        if render != want.render {
+            return;
+        }
+        let rows = diff::all_rows(&self.content.cache, &open.snapshot, &render);
+        let Some(now) = rows
+            .iter()
+            .find(|r| diff::line_on(&r.row, want.side) == Some(want.line))
+        else {
+            // The rows for that line have not arrived yet; keep waiting.
+            return;
+        };
+        self.realign = None;
+        let delta = i64::from(now.index) - i64::from(want.row);
+        if delta == 0 {
+            return;
+        }
+        // The focus is settled before this pass compares it, so the patch
+        // has to be asked for here.
+        sections.push(ViewSection::Focus);
+        let shift = |n: u32| u32::try_from((i64::from(n) + delta).max(0)).unwrap_or(0);
+        if let Focus::Diff { row, side } = self.view.focus {
+            self.view.focus = Focus::Diff {
+                row: shift(row),
+                side,
+            };
+        }
+        if let Some(open) = &mut self.view.review
+            && let Some(f) = &mut open.open_file
+        {
+            f.first_row = shift(f.first_row);
+            f.last_row = shift(f.last_row);
+        }
     }
 
     /// The Browse tab's tree root for `repo_id`, when picked and loaded.
@@ -1364,7 +1492,7 @@ impl ClientCore {
             }
             Action::OpenReview { review_id } => {
                 self.require_subscribed()?;
-                let opts = self.content.config.render_opts;
+                let opts = self.content.config.render_opts.clone();
                 let (request, waiting) = match self.content.config.disk {
                     DiskTier::Disabled => (
                         Request::OpenReview { review_id, opts },
@@ -1749,6 +1877,7 @@ impl ClientCore {
             }
             Action::OpenOriginalDiff { thread_id } => self.open_original(thread_id),
             Action::ExpandContext { file, full } => self.expand_context(&file, full),
+            Action::ExpandGap { file, gap, dir } => self.expand_gap(&file, gap, dir),
             Action::ContentSearch { query, all_files } => {
                 let Some(open) = &self.view.review else {
                     return Err(CoreError::NoOpenReview);

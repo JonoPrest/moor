@@ -1067,6 +1067,7 @@ async fn content(ops: &Ops, cmd: Cmd, json: bool) -> anyhow::Result<()> {
             let render_opts = RenderOpts {
                 ignore_whitespace,
                 context_lines,
+                ..RenderOpts::default()
             };
             let (file, header, chunks) = ops.diff(review, repo, &path, render_opts).await?;
             emit(json, &(&file, &header, &chunks), || {

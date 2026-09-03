@@ -33,6 +33,8 @@ pub enum FixtureError {
     ZeroLine,
     #[error("fixture does not serialise: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("invalid gap table in fixture: {0}")]
+    GapTable(#[from] nits_protocol::GapTableError),
 }
 
 /// A named example value of a protocol type.
@@ -171,6 +173,8 @@ registry!(
     Thread,
     ViewedMark,
     RenderOpts,
+    GapExpansion,
+    GapRow,
     ChangeKind,
     DiffScope,
     ContentHit,
@@ -621,6 +625,10 @@ fn render_header() -> Result<FileRenderHeader, FixtureError> {
             highlighted: true,
             additions: 12,
             deletions: 4,
+            gaps: GapTable::try_from(vec![GapRow {
+                gap: Gap::new(1),
+                row: 40,
+            }])?,
         },
     })
 }
@@ -652,6 +660,7 @@ fn render_chunk() -> Result<RenderChunk, FixtureError> {
             Row::Expander {
                 hidden: 40,
                 dir: ExpandDir::Down,
+                gap: Gap::new(1),
             },
         ],
     })
@@ -790,11 +799,30 @@ enum_fixture!(
 struct_fixture!(Thread, "Thread", thread());
 struct_fixture!(ViewedMark, "ViewedMark", viewed_mark()?);
 struct_fixture!(
+    GapRow,
+    "GapRow",
+    GapRow {
+        gap: Gap::new(1),
+        row: 40
+    }
+);
+struct_fixture!(
+    GapExpansion,
+    "GapExpansion",
+    GapExpansion {
+        gap: Gap::new(1),
+        up: 20,
+        down: 0
+    }
+);
+struct_fixture!(
     RenderOpts,
     "RenderOpts",
     RenderOpts {
         ignore_whitespace: true,
-        context_lines: 5
+        context_lines: 5,
+        // One opened gap, so the boundary proves the shape both ways.
+        expanded: Expansions::default().opened(Gap::new(1), ExpandDir::Up, 20)
     }
 );
 enum_fixture!(
@@ -1019,7 +1047,8 @@ enum_fixture!(
         },
         Row::Expander {
             hidden: 40,
-            dir: ExpandDir::Both
+            dir: ExpandDir::Both,
+            gap: Gap::new(1)
         },
         Row::WhitespaceOnly,
     ]
@@ -1045,7 +1074,11 @@ enum_fixture!(
             chunk_count: 3,
             highlighted: true,
             additions: 12,
-            deletions: 4
+            deletions: 4,
+            gaps: GapTable::try_from(vec![GapRow {
+                gap: Gap::new(1),
+                row: 40,
+            }])?
         },
     ]
 );

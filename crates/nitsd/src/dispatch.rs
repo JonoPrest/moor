@@ -262,6 +262,7 @@ pub async fn open_review(
     let files = daemon.read(move |c| c.files(review_id)).await?;
     let mut first_chunks = Vec::with_capacity(files.len());
     for f in files {
+        let opts = opts.clone();
         let (header, rendered) = daemon
             .read(move |c| c.render_change(f.repo_id, &f.path, f.kind, opts))
             .await?;

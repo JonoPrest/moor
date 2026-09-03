@@ -105,6 +105,7 @@ fn header(p: &str, change: ChangeKind, chunk_count: u32) -> FileRenderHeader {
             highlighted: true,
             additions: 2,
             deletions: 1,
+            gaps: nits_protocol::GapTable::default(),
         },
     }
 }

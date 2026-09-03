@@ -1,4 +1,11 @@
 {
   "context_lines": 5,
+  "expanded": [
+    {
+      "down": 0,
+      "gap": 1,
+      "up": 20
+    }
+  ],
   "ignore_whitespace": true
 }

@@ -560,13 +560,13 @@ impl Core {
         let sample = new.as_deref().or(old.as_deref()).unwrap_or_default();
         let lang = self.hl.detect(path.as_str(), first_line(sample));
         let target = RenderTarget::Diff { change: kind };
-        let rendered = self.cached_render(&target, opts, lang.as_deref(), || {
+        let rendered = self.cached_render(&target, &opts, lang.as_deref(), || {
             render_file(
                 &self.hl,
                 old.as_deref(),
                 new.as_deref(),
                 lang.as_deref(),
-                opts,
+                &opts,
             )
         })?;
         Ok((
@@ -594,7 +594,7 @@ impl Core {
         let lang = self.hl.detect(path.as_str(), first_line(&bytes));
         let target = RenderTarget::Blob { oid: blob };
         let opts = RenderOpts::default();
-        let rendered = self.cached_render(&target, opts, lang.as_deref(), || {
+        let rendered = self.cached_render(&target, &opts, lang.as_deref(), || {
             render_blob(&self.hl, &bytes, lang.as_deref())
         })?;
         Ok((
@@ -614,7 +614,7 @@ impl Core {
     fn cached_render(
         &self,
         target: &RenderTarget,
-        opts: RenderOpts,
+        opts: &RenderOpts,
         lang: Option<&str>,
         render: impl FnOnce() -> Rendered,
     ) -> Result<Rendered, CoreError> {

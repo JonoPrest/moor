@@ -251,9 +251,21 @@ module ViewedMark = {
   }
 }
 
+/// How far one hidden run has been pushed apart: `up` from the hunk
+/// below it, `down` from the hunk above it.
+module GapExpansion = {
+  @schema
+  type t = {gap: int, up: int, down: int}
+}
+
 module RenderOpts = {
   @schema
-  type t = {@as("ignore_whitespace") ignoreWhitespace: bool, @as("context_lines") contextLines: int}
+  type t = {
+    @as("ignore_whitespace") ignoreWhitespace: bool,
+    @as("context_lines") contextLines: int,
+    /// The gaps the reader has opened, one at a time.
+    expanded: array<GapExpansion.t>,
+  }
 }
 
 module FileChange = {
