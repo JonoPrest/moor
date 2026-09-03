@@ -818,7 +818,7 @@ describe("Scroll.plan", () => {
     // in the DOM to scroll to, and consuming the intent here would lose
     // the reposition for good.
     let (step, seen) = Scroll.plan(
-      ~focus=Diff({row: 120}),
+      ~focus=Diff({row: 120, side: Head}),
       ~scroll=Some(intent(4)),
       ~present=false,
       ~seen=None,
@@ -827,7 +827,7 @@ describe("Scroll.plan", () => {
     expect(seen)->toEqual(None)
     // The chunk lands: same intent, now performable.
     let (step, seen) = Scroll.plan(
-      ~focus=Diff({row: 120}),
+      ~focus=Diff({row: 120, side: Head}),
       ~scroll=Some(intent(4)),
       ~present=true,
       ~seen,
@@ -838,7 +838,7 @@ describe("Scroll.plan", () => {
 
   test("an intent is performed once; motions after it only follow", () => {
     let (step, seen) = Scroll.plan(
-      ~focus=Diff({row: 121}),
+      ~focus=Diff({row: 121, side: Head}),
       ~scroll=Some(intent(4)),
       ~present=true,
       ~seen=Some(4),
@@ -847,7 +847,7 @@ describe("Scroll.plan", () => {
     expect(seen)->toEqual(Some(4))
     // Pressing the chord again is a new instruction.
     let (step, _) = Scroll.plan(
-      ~focus=Diff({row: 121}),
+      ~focus=Diff({row: 121, side: Head}),
       ~scroll=Some(intent(5)),
       ~present=true,
       ~seen,
@@ -860,7 +860,7 @@ describe("Scroll.plan", () => {
     // watermark at the current intent is what keeps the old `z z` from
     // yanking the view back to where the cursor used to be.
     let (step, _) = Scroll.plan(
-      ~focus=Diff({row: 121}),
+      ~focus=Diff({row: 121, side: Head}),
       ~scroll=Some(intent(4)),
       ~present=true,
       ~seen=Some(4),
