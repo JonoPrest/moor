@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::process::Stdio;
 use std::task::{Context as TaskContext, Poll};
+use std::time::Duration;
 
 use nits_config::Context;
 use nits_protocol::{Author, BuildInfo, ProtocolVersion, Request, Response, RpcError};
@@ -17,6 +18,9 @@ use tokio_util::sync::CancellationToken;
 use crate::client::{Client, ClientError, Identity};
 use crate::launch::{self, DaemonSpec};
 use crate::transport::FramedConnection;
+
+const STOP_TIMEOUT: Duration = Duration::from_secs(15);
+const STOP_POLL_INTERVAL: Duration = Duration::from_millis(30);
 
 #[derive(Debug, thiserror::Error)]
 pub enum ContextError {
@@ -32,6 +36,8 @@ pub enum ContextError {
     NotManaged,
     #[error("daemon is not running")]
     NotRunning,
+    #[error("daemon did not stop within {after:?}")]
+    StopTimedOut { after: Duration },
     #[error("this context names a `nitsd` binary on {host} ({nitsd}), which cannot serve: {help}")]
     LegacyNitsd {
         host: String,
@@ -446,8 +452,54 @@ pub async fn stop(ctx: &Context) -> Result<bool, ContextError> {
         Err(e) => return Err(e),
     };
     match client.request(Request::Shutdown).await? {
-        Response::ShuttingDown => Ok(true),
+        Response::ShuttingDown => {
+            drop(client);
+            wait_until_stopped(&endpoint).await?;
+            Ok(true)
+        }
         _ => Err(ContextError::Shape),
+    }
+}
+
+/// Wait until a managed endpoint no longer accepts connections.
+///
+/// The shutdown response is sent before the daemon cancels its accept loop,
+/// so returning immediately would let a following `daemon start` reconnect to
+/// the process that is still exiting. The timeout keeps a broken remote
+/// lifecycle from hanging its caller indefinitely.
+async fn wait_until_stopped(endpoint: &DaemonEndpoint) -> Result<(), ContextError> {
+    let wait = async {
+        loop {
+            match endpoint {
+                DaemonEndpoint::Local { spec, .. } => {
+                    if !launch::is_listening(&spec.socket).await {
+                        return Ok(());
+                    }
+                }
+                DaemonEndpoint::Ssh { .. } => {
+                    match connect_endpoint(endpoint, probe_identity(), ProtocolVersion::CURRENT)
+                        .await
+                    {
+                        Err(ContextError::NotRunning) => return Ok(()),
+                        Ok(client) => drop(client),
+                        Err(ContextError::Client(error))
+                            if matches!(
+                                &*error,
+                                ClientError::Rejected(RpcError::UnsupportedProtocol { .. })
+                            ) => {}
+                        Err(error) => return Err(error),
+                    }
+                }
+                DaemonEndpoint::WebSocket { .. } => return Err(ContextError::NotManaged),
+            }
+            tokio::time::sleep(STOP_POLL_INTERVAL).await;
+        }
+    };
+    match tokio::time::timeout(STOP_TIMEOUT, wait).await {
+        Ok(result) => result,
+        Err(_) => Err(ContextError::StopTimedOut {
+            after: STOP_TIMEOUT,
+        }),
     }
 }
 

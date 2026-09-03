@@ -143,7 +143,9 @@ async fn serve_older_protocol_until_shutdown(
     )
     .await
     .unwrap();
-    drop((read, write, listener));
+    drop((read, write));
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    drop(listener);
     std::fs::remove_file(socket).unwrap();
     [ProtocolVersion::CURRENT, older]
 }
@@ -402,11 +404,16 @@ fn upgraded_cli_stops_an_older_protocol_before_starting_its_daemon() {
         command
     };
 
+    let stopping = std::time::Instant::now();
     nits()
         .args(["daemon", "stop"])
         .assert()
         .success()
         .stdout("stopping\n");
+    assert!(
+        stopping.elapsed() >= std::time::Duration::from_millis(100),
+        "stop returned before the older daemon released its listener"
+    );
     let attempts = rt.block_on(older).unwrap();
     assert_eq!(attempts[0], ProtocolVersion::CURRENT);
     assert!(ProtocolVersion::CURRENT.can_serve(attempts[1]));
