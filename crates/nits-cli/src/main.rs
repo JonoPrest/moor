@@ -426,10 +426,18 @@ fn identity(cli: &Cli) -> Identity {
 }
 
 async fn connect(cli: &Cli, ctx: &Context) -> anyhow::Result<Ops> {
-    let client = contexts::connect(ctx, identity(cli), !cli.no_autostart)
+    let client = contexts::connect(ctx, identity(cli), start_policy(cli.no_autostart))
         .await
         .with_context(|| format!("connecting to {}", ctx.describe()))?;
     Ok(Ops::new(client))
+}
+
+fn start_policy(no_autostart: bool) -> contexts::StartPolicy {
+    if no_autostart {
+        contexts::StartPolicy::RequireRunning
+    } else {
+        contexts::StartPolicy::StartIfNeeded
+    }
 }
 
 /// The daemon's own logs go to stderr, which `spawn_detached` points at
@@ -469,7 +477,7 @@ async fn mcp(ctx: &Context, no_autostart: bool) -> anyhow::Result<()> {
     nits_mcp::serve_stdio(
         nits_mcp::Endpoint {
             context: ctx.clone(),
-            autostart: !no_autostart,
+            start: start_policy(no_autostart),
         },
         nits_mcp::server::AgentIdentity::from_env(),
         BuildInfo {
@@ -666,10 +674,11 @@ async fn main() -> anyhow::Result<()> {
     if let Some(Cmd::Mcp) = cli.cmd {
         return mcp(&ctx, cli.no_autostart).await;
     }
-    let mut ops = connect(&cli, &ctx).await?;
+    let ops = connect(&cli, &ctx).await?;
     let Some(cmd) = cli.cmd else {
-        return open_ui(&cli, &ctx, &mut ops).await;
+        return open_ui(&cli, &ctx, ops).await;
     };
+    let mut ops = ops;
     match cmd {
         Cmd::Context(_) | Cmd::Daemon(_) | Cmd::Keys(_) | Cmd::Mcp => {
             unreachable!("handled above")
@@ -692,9 +701,9 @@ async fn main() -> anyhow::Result<()> {
 /// review (head = working tree); then serve the browser UI in the
 /// foreground on a free port and print the URL (deep-linked when a
 /// review was resolved). Without a path: the workspace menu.
-async fn open_ui(cli: &Cli, ctx: &Context, ops: &mut Ops) -> anyhow::Result<()> {
+async fn open_ui(cli: &Cli, ctx: &Context, mut ops: Ops) -> anyhow::Result<()> {
     let review_id = if let Some(path) = &cli.path {
-        Some(directory_review(ops, ctx, path).await?)
+        Some(directory_review(&mut ops, ctx, path).await?)
     } else {
         anyhow::ensure!(
             !cli.headless && cli.ui != Ui::Headless,
@@ -720,26 +729,20 @@ async fn open_ui(cli: &Cli, ctx: &Context, ops: &mut Ops) -> anyhow::Result<()> 
             if let Some(c) = &cli.context {
                 child.arg(c);
             }
+            if let Some(config) = &cli.config {
+                child.env("NITS_CONFIG", config);
+            }
             child.spawn().context("launching nits-desktop")?;
             return Ok(());
         }
         (Ui::Web, _) => {}
     }
-    // The bridge runs its own host, so it needs the daemon socket, not
-    // our already-open client.
-    let socket = match ctx {
-        Context::Local { data_dir, socket } => {
-            nitsd::contexts::local_spec(data_dir.as_ref(), socket.as_ref())?.socket
-        }
-        Context::Ssh { .. } | Context::Ws { .. } => {
-            anyhow::bail!(
-                "the web UI needs a local context so far (remote viewing: PLAN 4.6); \
-                 `--headless` works on remote contexts"
-            )
-        }
-    };
-    let host = nits_client_host::local_config(
-        &socket,
+    // The bridge owns a ClientCore and therefore its own daemon connection.
+    // Release the command client's SSH proxy before the host dials another.
+    drop(ops);
+    let endpoint = contexts::DaemonEndpoint::resolve(ctx, start_policy(cli.no_autostart))?;
+    let host = nits_client_host::host_config(
+        endpoint,
         web_identity(cli),
         nits_client_core::IdSeed(nitsd::ids::fresh_parts().1),
         nits_client_host::KvConfig::Memory,

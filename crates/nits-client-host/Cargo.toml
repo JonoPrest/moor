@@ -9,7 +9,7 @@ categories.workspace = true
 keywords.workspace = true
 authors.workspace = true
 homepage.workspace = true
-description = "Host loop around nits-client-core: unix-socket transport, host KV (redb or memory), clock ticks, and ViewPatch output. Host-agnostic; Tauri and the TUI wrap it."
+description = "Host loop around nits-client-core: context-aware transport, host KV, clock ticks, and ViewPatch output."
 
 [dependencies]
 nits-client-core = { workspace = true }

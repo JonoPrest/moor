@@ -3,13 +3,13 @@
 //! to this bridge (default `ws://127.0.0.1:9777`, override with `?ws=`).
 
 use std::net::{Ipv4Addr, SocketAddr};
-use std::path::Path;
 
 use clap::Parser;
 use nits_client_core::IdSeed;
-use nits_client_host::{Identity, KvConfig, local_config};
-use nits_config::{Config, Context};
+use nits_client_host::{Identity, KvConfig, host_config};
+use nits_config::Config;
 use nits_protocol_shim::{Author, BuildInfo, ClientId};
+use nitsd::contexts::{DaemonEndpoint, StartPolicy};
 
 // The wire types come through nits-client-core's re-export so the bin
 // needs no direct nits-protocol dependency.
@@ -49,33 +49,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let cfg = Config::load(&Config::default_path()?)?;
     let (name, ctx) = cfg.resolve(args.context.as_deref())?;
-    let socket = match ctx {
-        Context::Local { data_dir, socket } => {
-            let spec = nitsd::contexts::local_spec(data_dir.as_ref(), socket.as_ref())?;
-            nitsd::launch::ensure_daemon(&spec).await?;
-            spec.socket
-        }
-        Context::Ssh { .. } | Context::Ws { .. } => {
-            return Err(format!(
-                "context `{name}` is not local; nits-web only speaks unix sockets yet"
-            )
-            .into());
-        }
-    };
+    let endpoint = DaemonEndpoint::resolve(&ctx, StartPolicy::StartIfNeeded)?;
     // Dev tool: memory KV is enough (prefs reset per run).
-    let config = local_config(
-        &socket,
+    let config = host_config(
+        endpoint,
         identity(),
         IdSeed(fastrand::u128(..)),
         KvConfig::Memory,
     );
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, args.port));
     let server = nits_client_web::serve(addr, config).await?;
-    let _ = Path::new("/");
     eprintln!(
-        "nits-web: ws://{} (daemon {})",
+        "nits-web: ws://{} (context {name}: {})",
         server.addr(),
-        socket.display()
+        ctx.describe()
     );
     tokio::signal::ctrl_c().await?;
     server.stop();

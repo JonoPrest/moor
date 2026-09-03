@@ -8,9 +8,10 @@
 use std::path::{Path, PathBuf};
 
 use nits_client_core::{Action, IdSeed, KeyChord, ViewPatch};
-use nits_client_host::{Handle, HostConfig, Identity, KvConfig, local_config};
-use nits_config::{Config, Context};
+use nits_client_host::{Handle, HostConfig, Identity, KvConfig};
+use nits_config::Config;
 use nits_protocol::{Author, BuildInfo, ClientId};
+use nitsd::contexts::{ContextError, DaemonEndpoint, StartPolicy};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio_util::sync::CancellationToken;
 
@@ -29,10 +30,8 @@ pub enum SetupError {
     },
     #[error("host: {0}")]
     Host(#[from] nits_client_host::HostError),
-    #[error(
-        "the `{0}` context is not a local daemon; the desktop app only speaks unix sockets yet"
-    )]
-    NotLocal(String),
+    #[error("context: {0}")]
+    Context(#[from] ContextError),
     #[error("host task exited during setup")]
     HostGone,
 }
@@ -95,37 +94,23 @@ pub fn identity() -> Identity {
     }
 }
 
-/// Resolve the daemon socket for `context` (default context when `None`),
-/// starting a local daemon if needed. Remote contexts are not wired yet
-/// (PLAN 4.6).
-pub async fn socket_for(context: Option<&str>) -> Result<PathBuf, SetupError> {
-    let cfg = Config::load(&Config::default_path()?)?;
-    let (name, ctx) = cfg.resolve(context)?;
-    match ctx {
-        Context::Local { data_dir, socket } => {
-            let spec = nitsd::contexts::local_spec(data_dir.as_ref(), socket.as_ref()).map_err(
-                |source| SetupError::Io {
-                    what: "data dir",
-                    source,
-                },
-            )?;
-            nitsd::launch::ensure_daemon(&spec)
-                .await
-                .map_err(|source| SetupError::Io {
-                    what: "starting the daemon",
-                    source,
-                })?;
-            Ok(spec.socket)
-        }
-        Context::Ssh { .. } | Context::Ws { .. } => Err(SetupError::NotLocal(name)),
-    }
+/// Resolve `context` (the default when `None`) into the endpoint every host
+/// connection attempt will dial.
+pub fn endpoint_for(context: Option<&str>) -> Result<DaemonEndpoint, SetupError> {
+    let config_path = match std::env::var_os("NITS_CONFIG") {
+        Some(path) => PathBuf::from(path),
+        None => Config::default_path()?,
+    };
+    let cfg = Config::load(&config_path)?;
+    let (_, ctx) = cfg.resolve(context)?;
+    Ok(DaemonEndpoint::resolve(&ctx, StartPolicy::StartIfNeeded)?)
 }
 
 /// Host config for the desktop: redb KV under `app_data_dir`, random seed.
 #[must_use]
-pub fn host_config(socket: &Path, app_data_dir: &Path) -> HostConfig {
-    local_config(
-        socket,
+pub fn host_config(endpoint: DaemonEndpoint, app_data_dir: &Path) -> HostConfig {
+    nits_client_host::host_config(
+        endpoint,
         identity(),
         IdSeed(fastrand::u128(..)),
         KvConfig::Redb(app_data_dir.join("kv.redb")),
@@ -174,8 +159,8 @@ pub fn run(context: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
     tauri::Builder::default()
         .setup(move |app| {
             let data_dir = app.path().app_data_dir()?;
-            let socket = tauri::async_runtime::block_on(socket_for(context.as_deref()))?;
-            let host = start_host(app.handle(), host_config(&socket, &data_dir))?;
+            let endpoint = endpoint_for(context.as_deref())?;
+            let host = start_host(app.handle(), host_config(endpoint, &data_dir))?;
             app.manage(host);
             Ok(())
         })
@@ -206,8 +191,11 @@ mod tests {
 
     #[test]
     fn host_config_puts_kv_under_app_data_dir() {
-        let cfg = host_config(Path::new("/tmp/nitsd.sock"), Path::new("/data"));
-        assert_eq!(cfg.socket, Path::new("/tmp/nitsd.sock"));
+        let endpoint = DaemonEndpoint::WebSocket {
+            url: "ws://review.example:7677".into(),
+        };
+        let cfg = host_config(endpoint.clone(), Path::new("/data"));
+        assert_eq!(cfg.endpoint, endpoint);
         assert!(matches!(&cfg.kv, KvConfig::Redb(p) if p == Path::new("/data/kv.redb")));
     }
 

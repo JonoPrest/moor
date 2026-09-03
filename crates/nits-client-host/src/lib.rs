@@ -1,5 +1,5 @@
 //! Host loop around [`ClientCore`] (plan 4.3, ARCHITECTURE §5): owns the
-//! transport (unix socket, length-prefixed frames), the host KV store
+//! transport (local socket, SSH stdio, or WebSocket), the host KV store
 //! (redb file or memory), the clock, and turns every `Effect::Render` into
 //! [`ViewPatch`]es for a UI. Host-agnostic: the Tauri app and the TUI wrap
 //! it; the integration test drives it against a real daemon.
@@ -11,7 +11,7 @@
 pub mod keys_file;
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 
 use nits_client_core::{
@@ -19,9 +19,9 @@ use nits_client_core::{
     TransportEvent, ViewPatch,
 };
 use nits_protocol::{Author, BuildInfo, ClientId, ClientMsg, Envelope, ServerMsg};
-use nitsd::codec;
+use nitsd::contexts::DaemonEndpoint;
+use nitsd::transport::{self, FrameRead, FrameWrite};
 use redb::ReadableDatabase;
-use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -44,7 +44,7 @@ pub enum KvConfig {
 
 #[derive(Debug, Clone)]
 pub struct HostConfig {
-    pub socket: PathBuf,
+    pub endpoint: DaemonEndpoint,
     pub kv: KvConfig,
     pub identity: Identity,
     pub cache: CacheConfig,
@@ -191,7 +191,7 @@ pub fn spawn(
     shutdown: CancellationToken,
 ) -> Result<(Handle, mpsc::UnboundedReceiver<Vec<ViewPatch>>), HostError> {
     let HostConfig {
-        socket,
+        endpoint,
         kv,
         identity,
         cache,
@@ -210,7 +210,7 @@ pub fn spawn(
             id_seed,
             cache,
         }),
-        socket,
+        endpoint,
         kv,
         tick,
         keys_file,
@@ -228,7 +228,7 @@ pub fn spawn(
 
 struct Host {
     core: ClientCore,
-    socket: PathBuf,
+    endpoint: DaemonEndpoint,
     kv: Kv,
     tick: Duration,
     keys_file: Option<PathBuf>,
@@ -301,11 +301,11 @@ impl Host {
     fn effect(&mut self, effect: Effect, incoming: &mpsc::UnboundedSender<Incoming>) {
         match effect {
             Effect::Connect => {
-                tokio::spawn(connect(self.socket.clone(), incoming.clone()));
+                tokio::spawn(connect(self.endpoint.clone(), incoming.clone()));
             }
             Effect::Disconnect => {
                 // Dropping the sender ends the writer task, which closes the
-                // socket; the reader then reports `Disconnected`.
+                // framed transport; the reader then reports `Disconnected`.
                 self.writer = None;
             }
             Effect::Send(msg) => {
@@ -379,39 +379,41 @@ impl Host {
 
 /// Dial the daemon; on success run reader and writer tasks until either
 /// side closes. Every outcome reaches the host as an `Incoming`.
-async fn connect(socket: PathBuf, incoming: mpsc::UnboundedSender<Incoming>) {
-    match tokio::net::UnixStream::connect(&socket).await {
-        Ok(stream) => serve_stream(stream, incoming).await,
+async fn connect(endpoint: DaemonEndpoint, incoming: mpsc::UnboundedSender<Incoming>) {
+    match nitsd::contexts::dial(&endpoint).await {
+        Ok(connection) => {
+            let (read, write) = connection.into_parts();
+            serve_framed(read, write, incoming).await;
+        }
         Err(err) => {
-            tracing::warn!(%err, socket = %socket.display(), "connect failed");
+            tracing::warn!(%err, ?endpoint, "connect failed");
             let _ = incoming.send(Incoming::Disconnected);
         }
     }
 }
 
-async fn serve_stream<S>(stream: S, incoming: mpsc::UnboundedSender<Incoming>)
+async fn serve_framed<R, W>(mut read: R, mut write: W, incoming: mpsc::UnboundedSender<Incoming>)
 where
-    S: AsyncRead + AsyncWrite + Send + 'static,
+    R: FrameRead + 'static,
+    W: FrameWrite + 'static,
 {
-    let (mut rd, mut wr) = nitsd::transport::byte_stream(stream);
     let (out_tx, mut out_rx) = mpsc::unbounded_channel::<ClientMsg>();
     if incoming.send(Incoming::Connected(out_tx)).is_err() {
         return;
     }
     let writer = tokio::spawn(async move {
         while let Some(msg) = out_rx.recv().await {
-            if codec::write_msg(&mut wr, &Envelope::current(msg))
+            if transport::send_msg(&mut write, &Envelope::current(msg))
                 .await
                 .is_err()
             {
                 break;
             }
         }
-        // Sender dropped or write failed: close our side.
-        let _ = tokio::io::AsyncWriteExt::shutdown(&mut wr).await;
+        let _ = write.close().await;
     });
     loop {
-        match codec::read_msg::<_, ServerMsg>(&mut rd).await {
+        match transport::recv_msg::<_, ServerMsg>(&mut read).await {
             Ok(Some(env)) => {
                 if incoming.send(Incoming::Msg(env.msg)).is_err() {
                     break;
@@ -428,17 +430,17 @@ where
     let _ = incoming.send(Incoming::Disconnected);
 }
 
-/// Sensible defaults for a local daemon: memory-only cache tier, 100 ms
-/// ticks.
+/// Sensible defaults for a native UI host: 100 ms ticks and the user's key
+/// overrides. The caller chooses the KV tier independently of the endpoint.
 #[must_use]
-pub fn local_config(
-    socket: &Path,
+pub fn host_config(
+    endpoint: DaemonEndpoint,
     identity: Identity,
     id_seed: IdSeed,
     kv: KvConfig,
 ) -> HostConfig {
     HostConfig {
-        socket: socket.to_path_buf(),
+        endpoint,
         kv,
         identity,
         cache: CacheConfig::default(),

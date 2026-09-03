@@ -4,13 +4,19 @@
 //! daemon is managed one way.
 
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::process::Stdio;
+use std::task::{Context as TaskContext, Poll};
 
 use nits_config::Context;
 use nits_protocol::{Author, BuildInfo, Request, Response};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::process::{ChildStdin, ChildStdout};
+use tokio_util::sync::CancellationToken;
 
 use crate::client::{Client, ClientError, Identity};
 use crate::launch::{self, DaemonSpec};
+use crate::transport::FramedConnection;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ContextError {
@@ -62,6 +68,85 @@ pub enum Status {
     },
 }
 
+/// Whether a managed local or SSH endpoint may start its daemon while
+/// connecting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StartPolicy {
+    /// Start the daemon when nothing is listening yet.
+    StartIfNeeded,
+    /// Connect only when the daemon is already running.
+    RequireRunning,
+}
+
+/// A runnable SSH target after the legacy config spelling has been rejected.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SshTarget {
+    host: String,
+    nits: String,
+    args: Vec<String>,
+    ssh: Option<String>,
+}
+
+/// A context resolved into exactly the information needed for every dial.
+///
+/// Local defaults and the runnable SSH binary are resolved once. WebSocket
+/// endpoints carry no start policy because their daemon is managed elsewhere.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DaemonEndpoint {
+    Local {
+        spec: DaemonSpec,
+        start: StartPolicy,
+    },
+    Ssh {
+        target: SshTarget,
+        start: StartPolicy,
+    },
+    WebSocket {
+        url: String,
+    },
+}
+
+impl DaemonEndpoint {
+    /// Resolve a configured context for repeated connection attempts.
+    pub fn resolve(ctx: &Context, start: StartPolicy) -> Result<Self, ContextError> {
+        match ctx {
+            Context::Local { data_dir, socket } => {
+                let spec =
+                    local_spec(data_dir.as_ref(), socket.as_ref()).map_err(io("data dir"))?;
+                Ok(Self::Local { spec, start })
+            }
+            Context::Ssh {
+                host,
+                bin,
+                args,
+                ssh,
+            } => {
+                let nits = match bin {
+                    nits_config::RemoteBin::Legacy(nitsd) => {
+                        return Err(ContextError::LegacyNitsd {
+                            host: host.clone(),
+                            nitsd: nitsd.clone(),
+                            help: Context::LEGACY_NITSD_HELP,
+                        });
+                    }
+                    nits_config::RemoteBin::Default => "nits".to_owned(),
+                    nits_config::RemoteBin::Nits(bin) => bin.clone(),
+                };
+                Ok(Self::Ssh {
+                    target: SshTarget {
+                        host: host.clone(),
+                        nits,
+                        args: args.clone(),
+                        ssh: ssh.clone(),
+                    },
+                    start,
+                })
+            }
+            Context::Ws { url } => Ok(Self::WebSocket { url: url.clone() }),
+        }
+    }
+}
+
 /// `$XDG_DATA_HOME/nits` or `~/.local/share/nits`.
 pub fn default_data_dir() -> std::io::Result<PathBuf> {
     if let Ok(x) = std::env::var("XDG_DATA_HOME") {
@@ -90,89 +175,177 @@ pub fn local_spec(
 
 /// `ssh <host> <bin> daemon stdio <args...>`: the remote `nits` proxies to
 /// (and starts) the daemon on its own machine.
-fn ssh_command(
-    host: &str,
-    nits: &str,
-    args: &[String],
-    ssh: Option<&str>,
-) -> tokio::process::Command {
-    let mut cmd = tokio::process::Command::new(ssh.unwrap_or("ssh"));
-    cmd.arg(host).arg(nits).args(["daemon", "stdio"]).args(args);
+fn ssh_command(target: &SshTarget) -> tokio::process::Command {
+    let mut cmd = tokio::process::Command::new(target.ssh.as_deref().unwrap_or("ssh"));
+    cmd.arg(&target.host)
+        .arg(&target.nits)
+        .args(["daemon", "stdio"])
+        .args(&target.args);
     cmd
 }
 
-/// Connect through `ctx`. `autostart` starts the daemon if nothing answers
-/// (local and ssh contexts only); without it a stopped daemon is
+/// The two SSH pipes and a signal to the task which owns and reaps the child.
+#[derive(Debug)]
+struct SshStream {
+    stdout: ChildStdout,
+    stdin: ChildStdin,
+    child_done: CancellationToken,
+}
+
+impl AsyncRead for SshStream {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut TaskContext<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.stdout).poll_read(cx, buf)
+    }
+}
+
+impl AsyncWrite for SshStream {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut TaskContext<'_>,
+        buf: &[u8],
+    ) -> Poll<Result<usize, std::io::Error>> {
+        Pin::new(&mut self.stdin).poll_write(cx, buf)
+    }
+
+    fn poll_flush(
+        mut self: Pin<&mut Self>,
+        cx: &mut TaskContext<'_>,
+    ) -> Poll<Result<(), std::io::Error>> {
+        Pin::new(&mut self.stdin).poll_flush(cx)
+    }
+
+    fn poll_shutdown(
+        mut self: Pin<&mut Self>,
+        cx: &mut TaskContext<'_>,
+    ) -> Poll<Result<(), std::io::Error>> {
+        let result = Pin::new(&mut self.stdin).poll_shutdown(cx);
+        if matches!(result, Poll::Ready(Ok(()))) {
+            self.child_done.cancel();
+        }
+        result
+    }
+}
+
+impl Drop for SshStream {
+    fn drop(&mut self) {
+        self.child_done.cancel();
+    }
+}
+
+fn dial_ssh(target: &SshTarget, start: StartPolicy) -> Result<FramedConnection, ContextError> {
+    let mut cmd = ssh_command(target);
+    if start == StartPolicy::RequireRunning {
+        // Exits 3 rather than waking a daemon, so a client can probe or stop
+        // a remote without starting one.
+        cmd.arg("--no-autostart");
+    }
+    cmd.kill_on_drop(true);
+    let mut child = cmd
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .map_err(io(format!("running ssh {}", target.host)))?;
+    let stdin = child.stdin.take().ok_or_else(|| ContextError::Io {
+        what: "ssh stdin".into(),
+        source: std::io::Error::other("not piped"),
+    })?;
+    let stdout = child.stdout.take().ok_or_else(|| ContextError::Io {
+        what: "ssh stdout".into(),
+        source: std::io::Error::other("not piped"),
+    })?;
+    let child_done = CancellationToken::new();
+    let reap = child_done.clone();
+    tokio::spawn(async move {
+        tokio::select! {
+            result = child.wait() => {
+                if let Err(err) = result {
+                    tracing::debug!(%err, "waiting for ssh child failed");
+                }
+            }
+            () = reap.cancelled() => {
+                if let Err(err) = child.kill().await {
+                    tracing::debug!(%err, "stopping ssh child failed");
+                }
+            }
+        }
+    });
+    Ok(FramedConnection::byte(SshStream {
+        stdout,
+        stdin,
+        child_done,
+    }))
+}
+
+/// Dial an endpoint without performing the Nits protocol handshake.
+///
+/// `nits-client-core` owns that handshake in UI hosts, while the CLI/MCP
+/// client feeds these same framed halves to [`Client::handshake_framed`].
+pub async fn dial(endpoint: &DaemonEndpoint) -> Result<FramedConnection, ContextError> {
+    match endpoint {
+        DaemonEndpoint::Local { spec, start } => {
+            match start {
+                StartPolicy::StartIfNeeded => {
+                    launch::ensure_daemon(spec)
+                        .await
+                        .map_err(io("starting the daemon"))?;
+                }
+                StartPolicy::RequireRunning => {
+                    if !launch::is_listening(&spec.socket).await {
+                        return Err(ContextError::NotRunning);
+                    }
+                }
+            }
+            let stream = tokio::net::UnixStream::connect(&spec.socket)
+                .await
+                .map_err(io(format!("connecting to {}", spec.socket.display())))?;
+            Ok(FramedConnection::byte(stream))
+        }
+        DaemonEndpoint::Ssh { target, start } => dial_ssh(target, *start),
+        DaemonEndpoint::WebSocket { url } => {
+            let (socket, _) = tokio_tungstenite::connect_async(url)
+                .await
+                .map_err(|source| ContextError::Io {
+                    what: format!("connecting to {url}"),
+                    source: std::io::Error::other(source),
+                })?;
+            Ok(FramedConnection::web_socket(socket))
+        }
+    }
+}
+
+/// Connect through `ctx`. [`StartPolicy::StartIfNeeded`] starts the daemon if
+/// nothing answers (local and SSH contexts only); otherwise a stopped daemon is
 /// [`ContextError::NotRunning`].
 pub async fn connect(
     ctx: &Context,
     identity: Identity,
-    autostart: bool,
+    start: StartPolicy,
 ) -> Result<Client, ContextError> {
-    match ctx {
-        Context::Local { data_dir, socket } => {
-            let spec = local_spec(data_dir.as_ref(), socket.as_ref()).map_err(io("data dir"))?;
-            if autostart {
-                launch::ensure_daemon(&spec)
-                    .await
-                    .map_err(io("starting the daemon"))?;
-            } else if !launch::is_listening(&spec.socket).await {
-                return Err(ContextError::NotRunning);
-            }
-            Ok(Client::connect_unix(&spec.socket, identity).await?)
+    let endpoint = DaemonEndpoint::resolve(ctx, start)?;
+    let ssh_requires_running = matches!(
+        endpoint,
+        DaemonEndpoint::Ssh {
+            start: StartPolicy::RequireRunning,
+            ..
         }
-        Context::Ssh {
-            host,
-            bin,
-            args,
-            ssh,
-        } => {
-            // A context naming the old `nitsd` is refused rather than run:
-            // `<path>/nitsd daemon stdio` is not a command that binary
-            // understands, so proceeding would report the host as
-            // unreachable for a reason the user cannot see.
-            let nits = match bin {
-                nits_config::RemoteBin::Legacy(nitsd) => {
-                    return Err(ContextError::LegacyNitsd {
-                        host: host.clone(),
-                        nitsd: nitsd.clone(),
-                        help: Context::LEGACY_NITSD_HELP,
-                    });
-                }
-                nits_config::RemoteBin::Default => "nits",
-                nits_config::RemoteBin::Nits(bin) => bin,
-            };
-            let mut cmd = ssh_command(host, nits, args, ssh.as_deref());
-            if !autostart {
-                // Exits 3 rather than waking a daemon, so a client can
-                // probe or stop a remote without starting one.
-                cmd.arg("--no-autostart");
-            }
-            let mut child = cmd
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::inherit())
-                .spawn()
-                .map_err(io(format!("running ssh {host}")))?;
-            let stdin = child.stdin.take().ok_or_else(|| ContextError::Io {
-                what: "ssh stdin".into(),
-                source: std::io::Error::other("not piped"),
-            })?;
-            let stdout = child.stdout.take().ok_or_else(|| ContextError::Io {
-                what: "ssh stdout".into(),
-                source: std::io::Error::other("not piped"),
-            })?;
-            // The child lives as long as its pipes; dropping the handle
-            // does not kill it.
-            let stream = tokio::io::join(stdout, stdin);
-            match Client::handshake(stream, identity, nits_protocol::ProtocolVersion::CURRENT).await
-            {
-                Ok(c) => Ok(c),
-                Err(ClientError::Closed) if !autostart => Err(ContextError::NotRunning),
-                Err(e) => Err(e.into()),
-            }
-        }
-        Context::Ws { url } => Ok(Client::connect_ws(url, identity).await?),
+    );
+    let (read, write) = dial(&endpoint).await?.into_parts();
+    match Client::handshake_framed(
+        read,
+        write,
+        identity,
+        nits_protocol::ProtocolVersion::CURRENT,
+    )
+    .await
+    {
+        Ok(client) => Ok(client),
+        Err(ClientError::Closed) if ssh_requires_running => Err(ContextError::NotRunning),
+        Err(err) => Err(err.into()),
     }
 }
 
@@ -200,15 +373,17 @@ pub async fn status(ctx: &Context) -> Status {
                 },
             }
         }
-        Context::Ssh { .. } => match connect(ctx, probe_identity(), false).await {
-            Ok(c) => Status::Running {
-                daemon: c.welcome.daemon.clone(),
-            },
-            Err(ContextError::NotRunning) => Status::Stopped,
-            Err(e) => Status::Unreachable {
-                reason: e.to_string(),
-            },
-        },
+        Context::Ssh { .. } => {
+            match connect(ctx, probe_identity(), StartPolicy::RequireRunning).await {
+                Ok(c) => Status::Running {
+                    daemon: c.welcome.daemon.clone(),
+                },
+                Err(ContextError::NotRunning) => Status::Stopped,
+                Err(e) => Status::Unreachable {
+                    reason: e.to_string(),
+                },
+            }
+        }
         Context::Ws { url } => match Client::connect_ws(url, probe_identity()).await {
             Ok(c) => Status::Running {
                 daemon: c.welcome.daemon.clone(),
@@ -232,7 +407,7 @@ pub async fn start(ctx: &Context) -> Result<bool, ContextError> {
         }
         Context::Ssh { .. } => {
             let was_running = matches!(status(ctx).await, Status::Running { .. });
-            drop(connect(ctx, probe_identity(), true).await?);
+            drop(connect(ctx, probe_identity(), StartPolicy::StartIfNeeded).await?);
             Ok(!was_running)
         }
         Context::Ws { .. } => Err(ContextError::NotManaged),
@@ -244,7 +419,7 @@ pub async fn stop(ctx: &Context) -> Result<bool, ContextError> {
     if matches!(ctx, Context::Ws { .. }) {
         return Err(ContextError::NotManaged);
     }
-    let client = match connect(ctx, probe_identity(), false).await {
+    let client = match connect(ctx, probe_identity(), StartPolicy::RequireRunning).await {
         Ok(c) => c,
         Err(ContextError::NotRunning) => return Ok(false),
         Err(e) => return Err(e),
@@ -266,5 +441,73 @@ fn probe_identity() -> Identity {
         author: Author::Daemon {
             machine: gethostname::gethostname().to_string_lossy().into_owned(),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn endpoint_resolution_makes_lifecycle_states_explicit() {
+        let local = Context::Local {
+            data_dir: Some(PathBuf::from("/tmp/nits-data")),
+            socket: Some(PathBuf::from("/tmp/nits.sock")),
+        };
+        let endpoint = DaemonEndpoint::resolve(&local, StartPolicy::RequireRunning).unwrap();
+        assert!(matches!(
+            endpoint,
+            DaemonEndpoint::Local {
+                spec,
+                start: StartPolicy::RequireRunning,
+            } if spec.socket == Path::new("/tmp/nits.sock")
+                && spec.data_dir == Path::new("/tmp/nits-data")
+        ));
+
+        let ws = Context::Ws {
+            url: "ws://review.example:7677".into(),
+        };
+        let starts = [StartPolicy::StartIfNeeded, StartPolicy::RequireRunning]
+            .map(|start| DaemonEndpoint::resolve(&ws, start).unwrap());
+        assert_eq!(starts[0], starts[1], "WebSocket contexts are unmanaged");
+        assert!(matches!(starts[0], DaemonEndpoint::WebSocket { .. }));
+    }
+
+    #[test]
+    fn ssh_endpoint_contains_one_runnable_command_or_is_rejected() {
+        let ssh = Context::Ssh {
+            host: "review-box".into(),
+            bin: nits_config::RemoteBin::Nits("/opt/nits".into()),
+            args: vec!["--data-dir".into(), "/srv/nits".into()],
+            ssh: Some("test-ssh".into()),
+        };
+        let endpoint = DaemonEndpoint::resolve(&ssh, StartPolicy::StartIfNeeded).unwrap();
+        assert!(matches!(
+            endpoint,
+            DaemonEndpoint::Ssh {
+                target: SshTarget {
+                    host,
+                    nits,
+                    args,
+                    ssh: Some(client),
+                },
+                start: StartPolicy::StartIfNeeded,
+            } if host == "review-box"
+                && nits == "/opt/nits"
+                && args == ["--data-dir", "/srv/nits"]
+                && client == "test-ssh"
+        ));
+
+        let legacy = Context::Ssh {
+            host: "review-box".into(),
+            bin: nits_config::RemoteBin::Legacy("/opt/nitsd".into()),
+            args: Vec::new(),
+            ssh: None,
+        };
+        assert!(matches!(
+            DaemonEndpoint::resolve(&legacy, StartPolicy::StartIfNeeded),
+            Err(ContextError::LegacyNitsd { .. })
+        ));
     }
 }
