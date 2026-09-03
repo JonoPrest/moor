@@ -518,31 +518,42 @@ where
     if incoming.send(Incoming::Connected(out_tx)).is_err() {
         return;
     }
-    loop {
-        tokio::select! {
-            outbound = out_rx.recv() => match outbound {
-                Some(msg) => {
-                    if transport::send_msg(&mut write, &Envelope::current(msg)).await.is_err() {
-                        break;
-                    }
-                }
-                None => break,
-            },
-            inbound = transport::recv_msg::<_, ServerMsg>(&mut read) => match inbound {
+    // A byte-frame read is not cancellation-safe: dropping `recv_msg` after
+    // it consumed part of a length or payload would desynchronise the next
+    // read. Keep each direction in its own task. `JoinSet` aborts both tasks
+    // if this owning connection future is itself cancelled.
+    let mut sides = tokio::task::JoinSet::new();
+    sides.spawn(async move {
+        while let Some(msg) = out_rx.recv().await {
+            if transport::send_msg(&mut write, &Envelope::current(msg))
+                .await
+                .is_err()
+            {
+                return;
+            }
+        }
+        let _ = write.close().await;
+    });
+    let reader_incoming = incoming.clone();
+    sides.spawn(async move {
+        loop {
+            match transport::recv_msg::<_, ServerMsg>(&mut read).await {
                 Ok(Some(env)) => {
-                    if incoming.send(Incoming::Msg(env.msg)).is_err() {
-                        break;
+                    if reader_incoming.send(Incoming::Msg(env.msg)).is_err() {
+                        return;
                     }
                 }
-                Ok(None) => break,
+                Ok(None) => return,
                 Err(err) => {
                     tracing::debug!(%err, "read failed");
-                    break;
+                    return;
                 }
-            },
+            }
         }
-    }
-    let _ = write.close().await;
+    });
+    let _ = sides.join_next().await;
+    sides.abort_all();
+    while sides.join_next().await.is_some() {}
     let _ = incoming.send(Incoming::Disconnected);
 }
 
@@ -584,6 +595,7 @@ pub fn host_config(
 mod tests {
     use super::*;
     use nitsd::contexts::{StartPolicy, local_spec};
+    use tokio::io::AsyncWriteExt as _;
 
     fn identity() -> Identity {
         Identity {
@@ -642,5 +654,46 @@ mod tests {
         );
         assert_eq!(local.cache.disk, DiskTier::Disabled);
         assert_eq!(memory_remote.cache.disk, DiskTier::Disabled);
+    }
+
+    #[tokio::test]
+    async fn outbound_work_does_not_cancel_a_fragmented_inbound_frame() {
+        let (host, mut peer) = tokio::io::duplex(4096);
+        let (read, write) = transport::byte_stream(host);
+        let (incoming, mut received) = mpsc::unbounded_channel();
+        let connection = tokio::spawn(serve_framed(read, write, incoming));
+        let out = match received.recv().await.unwrap() {
+            Incoming::Connected(out) => out,
+            Incoming::Msg(_) | Incoming::Disconnected => panic!("connection did not start"),
+        };
+
+        let payload = serde_json::to_vec(&Envelope::current(ServerMsg::Rejected {
+            error: nits_protocol::RpcError::Cancelled,
+        }))
+        .unwrap();
+        let mut frame = u32::try_from(payload.len()).unwrap().to_be_bytes().to_vec();
+        frame.extend(payload);
+        peer.write_all(&frame[..2]).await.unwrap();
+        tokio::task::yield_now().await;
+        out.send(ClientMsg::Request {
+            id: nits_protocol::RequestId::new(1),
+            request: nits_protocol::Request::Shutdown,
+        })
+        .unwrap();
+        tokio::task::yield_now().await;
+        peer.write_all(&frame[2..]).await.unwrap();
+
+        let inbound = tokio::time::timeout(Duration::from_secs(1), received.recv())
+            .await
+            .expect("fragmented frame timed out")
+            .expect("connection ended during fragmented frame");
+        assert!(matches!(
+            inbound,
+            Incoming::Msg(ServerMsg::Rejected {
+                error: nits_protocol::RpcError::Cancelled
+            })
+        ));
+        drop(peer);
+        connection.await.unwrap();
     }
 }
