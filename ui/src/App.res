@@ -209,14 +209,14 @@ module Shell = {
             // is its answer to the previous key, a round trip behind) and
             // from the bindings that actually apply where the focus is.
             let outcome = Pending.step(pending.current, bindingsFor(m), chord)
-            // Only keys the core acts on are counted, on both sides: an
-            // unbound key is an error there and adds nothing to its
-            // count, so adding one here would stall this one for ever.
+            // Every chord this shell hands to the core is counted, and
+            // the core counts every one it is handed — whatever it makes
+            // of them. Counting only the keys that resolve would need
+            // this shell to predict which ones do, which is the thing it
+            // cannot do: an unbound key, or one whose command has no
+            // target here, is rejected there and counted all the same.
             let before = sent.current
-            switch outcome {
-            | Runs(_) | Prefix => sent.current = sent.current + 1
-            | Unbound => ()
-            }
+            sent.current = before + 1
             switch outcome {
             | Runs(CopyPath) =>
               if seqOf(m) >= before {

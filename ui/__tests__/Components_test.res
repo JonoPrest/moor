@@ -1231,10 +1231,16 @@ describe("Copying from the keyboard, through the shell", () => {
     pressKey("g")
     pressKey("t")
     pressKey("y")
+    pressKey("j")
     await flush()
-    act(() => push.contents(model(~target="before.rs", ~lastKey=after(2, Some(FocusThreads)))))
-    // The core acted on the `y` and made nothing of it.
-    act(() => push.contents(model(~target="before.rs", ~lastKey=after(3, None))))
+    act(() => push.contents(model(~target="threads.rs", ~lastKey=after(2, Some(FocusThreads)))))
+    await flush()
+    expect(copiedPaths())->toEqual([])
+    // The core rejected the `y` (seq 3), which carries no patch, so the
+    // next verdict is the `j` that followed it: the shell reads that as
+    // its answer — the key it was holding is behind the core now — and
+    // drops the copy rather than taking the file it was looking at.
+    act(() => push.contents(model(~target="threads.rs", ~lastKey=after(4, Some(MoveDown)))))
     await flush()
     expect(copiedPaths())->toEqual([])
     cleanup()
@@ -1252,6 +1258,45 @@ describe("Copying from the keyboard, through the shell", () => {
     act(() => push.contents(model(~target="after-two.rs", ~lastKey=after(4, Some(CopyPath)))))
     await flush()
     expect(copiedPaths())->toEqual(["after-one.rs", "after-two.rs"])
+    cleanup()
+  })
+
+  testAsync("an unbound key still counts, on both sides", async () => {
+    // The core counts every key it is handed, rejected ones included, so
+    // this shell counts every chord it sends. `q` is bound to nothing
+    // here; if it went uncounted, the `j` verdict would be mistaken for
+    // the `y` one and the copy would be dropped.
+    installClipboard("ok")
+    let (_, push) = mount(model(~target="before.rs", ~lastKey=None))
+    pressKey("q")
+    pressKey("j")
+    pressKey("y")
+    await flush()
+    // `q` was seq 1 and carried no patch of its own; `j` is seq 2.
+    act(() => push.contents(model(~target="after.rs", ~lastKey=after(2, Some(MoveDown)))))
+    await flush()
+    expect(copiedPaths())->toEqual([])
+    act(() => push.contents(model(~target="after.rs", ~lastKey=after(3, Some(CopyPath)))))
+    await flush()
+    expect(copiedPaths())->toEqual(["after.rs"])
+    cleanup()
+  })
+
+  testAsync("attaching after a rejected key adopts the sequence the core is at", async () => {
+    // A rejection derives no patch, but the view it attaches to records
+    // it, so this shell starts from 11 rather than the 10 that was last
+    // broadcast.
+    installClipboard("ok")
+    let (_, push) = mount(model(~target="before.rs", ~lastKey=after(11, None)))
+    pressKey("j")
+    pressKey("y")
+    await flush()
+    act(() => push.contents(model(~target="after.rs", ~lastKey=after(12, Some(MoveDown)))))
+    await flush()
+    expect(copiedPaths())->toEqual([])
+    act(() => push.contents(model(~target="after.rs", ~lastKey=after(13, Some(CopyPath)))))
+    await flush()
+    expect(copiedPaths())->toEqual(["after.rs"])
     cleanup()
   })
 

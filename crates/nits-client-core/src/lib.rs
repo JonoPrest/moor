@@ -716,15 +716,17 @@ impl ClientCore {
                 self.keys_handled = self.keys_handled.wrapping_add(1);
                 let seq = self.keys_handled;
                 let resolved = self.key(chord);
-                self.last_key = Some(crate::view::LastKey {
-                    seq,
-                    command: match &resolved {
-                        Ok((_, command)) => *command,
-                        // A rejected key returns before the view is
-                        // derived; the verdict rides out on the next one.
-                        Err(_) => None,
-                    },
-                });
+                let command = resolved.as_ref().ok().and_then(|(_, c)| *c);
+                self.last_key = Some(crate::view::LastKey { seq, command });
+                if resolved.is_err() {
+                    // A rejection returns before the view is derived, so
+                    // there is no patch to carry the verdict. The view
+                    // records it anyway: which key the core has acted on
+                    // is a fact about the view a host attaches to, and a
+                    // host reading the last sequence that produced a
+                    // patch would count from behind the core.
+                    self.view.last_key = self.last_key;
+                }
                 resolved?.0
             }
         };

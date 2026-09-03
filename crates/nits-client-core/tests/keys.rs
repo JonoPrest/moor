@@ -1982,16 +1982,49 @@ fn every_key_the_core_acts_on_is_counted_with_what_it_meant() {
         })
     );
 
-    // An unbound key stays an error, and is still counted: the host
-    // counts the keys it sends, and it sent this one. The rejection
-    // returns before the view is derived, so the verdict rides out with
-    // the next key.
+    // An unbound key stays an error, and is still counted and recorded:
+    // the host counts the keys it sends, and it sent this one. There is
+    // no patch — the rejection returns before the view is derived — but
+    // the view carries the verdict, so a host attaching now reads the
+    // sequence the core is actually at.
     assert!(core.handle(Input::Key(KeyChord::char('q'))).is_err());
-    press(&mut core, "j").ok();
     assert_eq!(
-        core.view().last_key.map(|k| k.seq),
-        Some(start + 5),
-        "the rejected key was counted too"
+        core.view().last_key,
+        Some(LastKey {
+            seq: start + 4,
+            command: None,
+        }),
+        "a rejected key is counted, and the view says where the core is"
+    );
+}
+
+#[test]
+fn a_shell_attaching_after_a_rejected_key_reads_the_sequence_the_core_is_at() {
+    // The attach re-emits the view as it stands, without deriving, so a
+    // key the core rejected has to be in the view already: a host that
+    // adopted the last broadcast sequence would count from behind, and
+    // mistake the next key's verdict for its own.
+    let mut core = ready();
+    press(&mut core, "j").unwrap();
+    assert!(core.handle(Input::Key(KeyChord::char('q'))).is_err());
+
+    let attached = core
+        .view()
+        .full_patches()
+        .into_iter()
+        .find_map(|p| {
+            if let nits_client_core::ViewPatch::Hints { last_key, .. } = p {
+                Some(last_key)
+            } else {
+                None
+            }
+        })
+        .expect("the attach carries the hints section");
+    assert_eq!(attached, core.view().last_key);
+    assert_eq!(
+        attached.map(|k| k.seq),
+        Some(2),
+        "both keys counted, the rejected one included"
     );
 }
 
@@ -2025,14 +2058,14 @@ fn a_key_that_lands_where_it_is_unbound_reports_no_command() {
         "y is not bound in the thread list"
     );
 
-    // The rejection carries no view, so a host waiting on this key's
-    // verdict never sees one: the next verdict is for a later key, which
-    // is how it learns to drop what it was holding rather than copy the
-    // file it happened to be looking at.
-    press(&mut core, "j").ok();
-    let last = core.view().last_key.expect("a later key was published");
-    assert!(
-        last.seq > waiting,
-        "the verdict for the rejected key is never published as a command"
+    // The verdict on that key is what stops a host copying the file it
+    // happened to be looking at: the key was acted on, and it meant
+    // nothing.
+    assert_eq!(
+        core.view().last_key,
+        Some(LastKey {
+            seq: waiting,
+            command: None,
+        })
     );
 }
