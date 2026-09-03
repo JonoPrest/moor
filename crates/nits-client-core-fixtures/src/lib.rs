@@ -526,7 +526,7 @@ struct_fixture!(
     CommitStepper {
         repo_id: repo_id()?,
         commits: vec![local::<StepperCommit>()?],
-        selected: Some(0),
+        has_worktree: true,
     }
 );
 enum_fixture!(

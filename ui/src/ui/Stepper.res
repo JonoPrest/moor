@@ -1,5 +1,6 @@
-// Commit stepper with the commit panel for the selected commit: subject,
-// body, author and committer with relative and absolute times, parents.
+// The commit list is the diff-scope picker: aggregate first, then commits,
+// then the optional working-tree step. DiffScope is the single source of
+// truth shared by shortcuts and pointer selection.
 
 open View
 
@@ -50,32 +51,76 @@ module CommitPanel = {
     </div>
 }
 
+type row = AllChanges | CommitRow(StepperCommit.t) | WorkingTree
+
 @react.component
-let make = (~stepper: CommitStepper.t, ~focus: Focus.t, ~dispatch: Action.t => unit) => {
+let make = (
+  ~stepper: CommitStepper.t,
+  ~scope: Domain.DiffScope.t,
+  ~focus: Focus.t,
+  ~dispatch: Action.t => unit,
+) => {
   let focusedIndex = switch focus {
   | CommitStepper({index}) => Some(index)
   | _ => None
   }
-  let selected = stepper.selected->Option.flatMap(i => stepper.commits[i])
+  let rows = Array.concat(
+    [AllChanges],
+    Array.concat(
+      stepper.commits->Array.map(commit => CommitRow(commit)),
+      stepper.hasWorktree ? [WorkingTree] : [],
+    ),
+  )
+  let selected = switch scope {
+  | Commit({repoId, oid}) if repoId == stepper.repoId =>
+    stepper.commits->Array.find(commit => commit.oid == oid)
+  | All(_) | Committed(_) | Commit(_) | Worktree(_) => None
+  }
   <UI.Panel title="Commits">
     <ol role="list">
-      {stepper.commits
-      ->Array.mapWithIndex((c, i) => {
-        let isSelected = stepper.selected == Some(i)
+      {rows
+      ->Array.mapWithIndex((row, i) => {
+        let isSelected = switch (row, scope) {
+        | (AllChanges, All(_) | Committed(_)) => true
+        | (CommitRow(commit), Commit({repoId, oid})) =>
+          repoId == stepper.repoId && oid == commit.oid
+        | (WorkingTree, Worktree({repoId})) => repoId == stepper.repoId
+        | (AllChanges, Commit(_) | Worktree(_))
+        | (CommitRow(_), All(_) | Committed(_) | Worktree(_))
+        | (WorkingTree, All(_) | Committed(_) | Commit(_)) => false
+        }
+        let choice = switch row {
+        | AllChanges => Action.ScopeChoice.All({})
+        | CommitRow(commit) => Action.ScopeChoice.Commit({repoId: stepper.repoId, oid: commit.oid})
+        | WorkingTree => Action.ScopeChoice.Worktree({repoId: stepper.repoId})
+        }
+        let key = switch row {
+        | AllChanges => "all-changes"
+        | CommitRow(commit) => commit.oid
+        | WorkingTree => "working-tree"
+        }
         Attrs.focused(
           <li
-            key=c.oid
+            key
             className={"stepper-commit" ++ (isSelected ? " stepper-selected" : "")}
             onClick={_ => {
               dispatch(SetFocus({focus: Focus.CommitStepper({index: i})}))
-              dispatch(SetScope({scope: Commit({repoId: stepper.repoId, oid: c.oid})}))
+              dispatch(SetScope({scope: choice}))
             }}
           >
-            <span className="commit-oid">
-              {React.string(String.slice(c.oid, ~start=0, ~end=8))}
-            </span>
-            <span className="commit-subject"> {React.string(c.subject)} </span>
-            <span className="commit-author"> {React.string(c.author)} </span>
+            {switch row {
+            | AllChanges => <span className="commit-subject"> {React.string("All changes")} </span>
+            | CommitRow(commit) =>
+              <>
+                <span className="commit-oid">
+                  {React.string(String.slice(commit.oid, ~start=0, ~end=8))}
+                </span>
+                <span className="commit-subject"> {React.string(commit.subject)} </span>
+                <span className="commit-author"> {React.string(commit.author)} </span>
+              </>
+            | WorkingTree =>
+              <span className="commit-subject"> {React.string("Working tree")} </span>
+            }}
           </li>,
           focusedIndex == Some(i),
         )

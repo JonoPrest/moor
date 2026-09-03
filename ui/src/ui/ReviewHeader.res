@@ -1,6 +1,6 @@
 // What the open review diffs, laid out exactly as the design canvas'
-// Main artboard (UI-DESIGN §Layout): title · scope segmented control ·
-// `base → head` chips · `+ working tree` check · (right) Unified|Split ·
+// Main artboard (UI-DESIGN §Layout): title · `base → head` chips ·
+// `+ working tree` check · (right) Unified|Split ·
 // hide-whitespace check · totals · connection dot. A working-tree head
 // shows the checked-out branch from the resolved targets. Every
 // control's tooltip comes from the keymap chrome, never hand-written.
@@ -36,53 +36,6 @@ module Check = {
   }
 }
 
-// The scope control (UI-DESIGN §Diff scope): All changes vs By commit,
-// with the step position while stepping.
-module ScopeControl = {
-  @react.component
-  let make = (
-    ~scope: Domain.DiffScope.t,
-    ~stepper: option<View.CommitStepper.t>,
-    ~chrome: array<View.Hint.t>,
-    ~dispatch: Action.t => unit,
-  ) => {
-    let allish = switch scope {
-    | All(_) | Committed(_) => true
-    | Commit(_) | Worktree(_) => false
-    }
-    let position = switch (scope, stepper) {
-    | (Worktree(_), _) => Some("worktree")
-    | (Commit({oid}), Some(s)) =>
-      s.commits
-      ->Array.findIndexOpt(c => c.oid == oid)
-      ->Option.map(i =>
-        Int.toString(Array.length(s.commits) - i) ++ " of " ++ Int.toString(Array.length(s.commits))
-      )
-    | (Commit(_), None) | (All(_), _) | (Committed(_), _) => None
-    }
-    <>
-      <span className="segmented" role="group" ariaLabel="diff scope">
-        <Seg
-          label="All changes"
-          active=allish
-          title={Chrome.tip(chrome, ScopeAll)}
-          onClick={() => dispatch(SetScope({scope: All({})}))}
-        />
-        <Seg
-          label="By commit"
-          active={!allish}
-          title={Chrome.tip(chrome, ScopeByCommit)}
-          onClick={() => dispatch(SetScope({scope: ByCommit({})}))}
-        />
-      </span>
-      {switch position {
-      | Some(text) => <span className="scope-position"> {React.string(text)} </span>
-      | None => React.null
-      }}
-    </>
-  }
-}
-
 @react.component
 let make = (
   ~reviews: array<Domain.Review.t>,
@@ -91,7 +44,6 @@ let make = (
   ~openReview: option<Ids.reviewId>,
   ~prefs: View.ViewPrefs.t,
   ~scope: Domain.DiffScope.t=Domain.DiffScope.All({}),
-  ~stepper: option<View.CommitStepper.t>=?,
   ~chrome: array<View.Hint.t>=[],
   ~connection: View.ConnectionView.t=View.ConnectionView.Disconnected({}),
   ~progress: View.Progress.t=View.ViewModel.empty.progress,
@@ -126,7 +78,6 @@ let make = (
       }
       <header className="review-header" ariaLabel="review targets">
         <span className="review-header-title"> {React.string(review.title)} </span>
-        <ScopeControl scope stepper chrome dispatch />
         {review.targets
         ->Array.map(t =>
           <span key=t.repoId className="review-header-target">

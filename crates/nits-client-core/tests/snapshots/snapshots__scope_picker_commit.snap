@@ -1,0 +1,41 @@
+---
+source: crates/nits-client-core/tests/snapshots.rs
+expression: "serde_json::json!({\n    \"scope\": core.view().scope, \"focus\": core.view().focus, \"stepper\":\n    core.view().stepper,\n})"
+---
+{
+  "focus": {
+    "index": 1,
+    "type": "CommitStepper"
+  },
+  "scope": {
+    "oid": "0202020202020202020202020202020202020202",
+    "repo_id": "00000000020000000000000002",
+    "type": "Commit"
+  },
+  "stepper": {
+    "commits": [
+      {
+        "author": "ada",
+        "body": "",
+        "committer": "ada",
+        "committer_time": 900,
+        "oid": "0202020202020202020202020202020202020202",
+        "parents": [],
+        "subject": "Finish parser",
+        "time": 900
+      },
+      {
+        "author": "ada",
+        "body": "",
+        "committer": "ada",
+        "committer_time": 900,
+        "oid": "0101010101010101010101010101010101010101",
+        "parents": [],
+        "subject": "Start parser",
+        "time": 900
+      }
+    ],
+    "has_worktree": true,
+    "repo_id": "00000000020000000000000002"
+  }
+}

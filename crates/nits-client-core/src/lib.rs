@@ -275,8 +275,7 @@ pub enum Action {
     ListCommits {
         repo_id: RepoId,
     },
-    /// Move the stepper cursor; `None` shows the whole range (in by-commit
-    /// scope: the worktree step).
+    /// Step the by-commit diff; `None` is the working-tree step.
     StepCommit {
         selected: Option<usize>,
     },
@@ -1210,18 +1209,6 @@ impl ClientCore {
         open.files.clear();
         open.open_file = None;
         open.original = None;
-        // The stepper cursor mirrors the scope.
-        if let Some(stepper) = &mut self.stepper {
-            stepper.selected = match scope {
-                DiffScope::Commit { repo_id, oid } if repo_id == stepper.repo_id => {
-                    stepper.commits.iter().position(|c| c.oid == oid)
-                }
-                DiffScope::All
-                | DiffScope::Committed
-                | DiffScope::Commit { .. }
-                | DiffScope::Worktree { .. } => None,
-            };
-        }
         let mut effects = Vec::new();
         self.rebase();
         if let Connection::Subscribed { .. } = self.connection {
@@ -1881,7 +1868,7 @@ impl ClientCore {
                 )])
             }
             Action::StepCommit { selected } => {
-                let Some(stepper) = &mut self.stepper else {
+                let Some(stepper) = &self.stepper else {
                     return Err(CoreError::NoStepper);
                 };
                 if let Some(i) = selected
@@ -1889,7 +1876,6 @@ impl ClientCore {
                 {
                     return Err(CoreError::CommitOutOfRange(i));
                 }
-                stepper.selected = selected;
                 // In by-commit scope the cursor *is* the diff: stepping
                 // re-targets the file list (worktree = the final step).
                 let by_commit = self.view.review.as_ref().is_some_and(|open| {
@@ -2978,8 +2964,13 @@ impl ClientCore {
             }
             (InFlight::ListCommits { repo_id }, Response::Commits { commits }) => {
                 let mut effects = Vec::new();
-                if self.view.review.is_some() {
-                    self.stepper = Some(CommitStepper::from_commits(repo_id, &commits));
+                if let Some(open) = &self.view.review {
+                    let has_worktree = open.snapshot.review.targets.iter().any(|target| {
+                        target.repo_id == repo_id
+                            && matches!(target.head, nits_protocol::RefSpec::WorkingTree)
+                    });
+                    self.stepper =
+                        Some(CommitStepper::from_commits(repo_id, &commits, has_worktree));
                     if self.by_commit_pending {
                         self.by_commit_pending = false;
                         if let Some(scope) = self.default_by_commit_scope(repo_id) {

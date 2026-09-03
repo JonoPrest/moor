@@ -13,12 +13,12 @@ use nits_client_core::{
 };
 use nits_protocol::{
     Anchor, Author, BuildInfo, ChangeKind, ChunkIndex, ClientId, ClientMsg, ClientSeq, Comment,
-    CommentId, CommentKind, CommentState, ContextHash, Event, EventBody, FileRenderHeader, LineNo,
-    LineRange, NonEmpty, Oid, ProtocolVersion, RefSpec, RenderChunk, RenderContent, RenderOpts,
-    RenderTarget, RepoId, RepoPath, Request, RequestId, ResolvedRef, ResolvedSource,
-    ResolvedTarget, Response, Review, ReviewId, ReviewSnapshot, ReviewStatus, ReviewTarget, Row,
-    SchemaVersion, Seq, ServerMsg, Side, StreamItem, Timestamp, TreeEntry, TreeEntryKind, TreeOid,
-    TreeSnapshot, WorkspaceId,
+    CommentId, CommentKind, CommentState, CommitInfo, CommitOid, ContextHash, Event, EventBody,
+    FileRenderHeader, LineNo, LineRange, NonEmpty, Oid, ProtocolVersion, RefSpec, RenderChunk,
+    RenderContent, RenderOpts, RenderTarget, RepoId, RepoPath, Request, RequestId, ResolvedRef,
+    ResolvedSource, ResolvedTarget, Response, Review, ReviewId, ReviewSnapshot, ReviewStatus,
+    ReviewTarget, Row, SchemaVersion, Seq, ServerMsg, Side, StreamItem, Timestamp, TreeEntry,
+    TreeEntryKind, TreeOid, TreeSnapshot, WorkspaceId,
 };
 
 fn repo_id() -> RepoId {
@@ -334,6 +334,84 @@ fn settings() -> insta::Settings {
     let mut s = insta::Settings::clone_current();
     s.set_sort_maps(true);
     s
+}
+
+fn install_commits(core: &mut ClientCore) -> CommitOid {
+    let effects = core
+        .handle(Input::User(Action::ListCommits { repo_id: repo_id() }))
+        .unwrap();
+    let id = request_id(&effects);
+    let sig = nits_protocol::Sig {
+        name: "ada".into(),
+        email: "ada@example.com".into(),
+        time: Timestamp::from_millis(900),
+        offset_minutes: 0,
+    };
+    let commits = [(2, "Finish parser"), (1, "Start parser")]
+        .into_iter()
+        .map(|(fill, subject)| CommitInfo {
+            oid: CommitOid::from_bytes([fill; 20]),
+            parents: Vec::new(),
+            tree: TreeOid::from_bytes([fill; 20]),
+            author: sig.clone(),
+            committer: sig.clone(),
+            subject: subject.into(),
+            body: String::new(),
+        })
+        .collect();
+    core.handle(Input::Server(ServerMsg::Response {
+        id,
+        response: Response::Commits { commits },
+    }))
+    .unwrap();
+    CommitOid::from_bytes([2; 20])
+}
+
+#[test]
+fn scope_picker_all_changes() {
+    let mut core = opened();
+    install_commits(&mut core);
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::CommitStepper { index: 0 },
+    }))
+    .unwrap();
+    settings().bind(|| {
+        insta::assert_json_snapshot!(
+            "scope_picker_all_changes",
+            serde_json::json!({
+                "scope": core.view().scope,
+                "focus": core.view().focus,
+                "stepper": core.view().stepper,
+            })
+        );
+    });
+}
+
+#[test]
+fn scope_picker_commit() {
+    let mut core = opened();
+    let oid = install_commits(&mut core);
+    core.handle(Input::User(Action::SetScope {
+        scope: nits_client_core::ScopeChoice::Commit {
+            repo_id: repo_id(),
+            oid,
+        },
+    }))
+    .unwrap();
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::CommitStepper { index: 1 },
+    }))
+    .unwrap();
+    settings().bind(|| {
+        insta::assert_json_snapshot!(
+            "scope_picker_commit",
+            serde_json::json!({
+                "scope": core.view().scope,
+                "focus": core.view().focus,
+                "stepper": core.view().stepper,
+            })
+        );
+    });
 }
 
 #[test]

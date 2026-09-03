@@ -612,8 +612,8 @@
         "time": 1700000000000
       }
     ],
-    "repo_id": "01HF7YAT000000000000000002",
-    "selected": 0
+    "has_worktree": true,
+    "repo_id": "01HF7YAT000000000000000002"
   },
   "tab": "FilesChanged",
   "threads": [
