@@ -69,7 +69,7 @@ let make = (
               ? <span className="tree-badge"> {React.string(Int.toString(changedBelow))} </span>
               : React.null}
           </li>
-        | File({name, repoId, path, viewed, open_, additions, deletions, threads}) =>
+        | File({name, viewed, open_, additions, deletions, threads}) =>
           <li
             key={Int.toString(i)}
             className={"tree-file" ++
@@ -78,7 +78,9 @@ let make = (
             style
             onClick={ev => {
               onSelect(ev)
-              dispatch(Viewport({file: {repoId, path}, firstRow: 0, lastRow: 59}))
+              // The mouse alias of `enter`: the same command, so the two
+              // cannot drift (an already-open file keeps its window).
+              dispatch(RunCommand({command: Open}))
             }}
           >
             <span className="tree-glyph" />

@@ -21,7 +21,6 @@ let lineOn = (row: Render.Row.t, side: Domain.Side.t): option<int> =>
   }
 
 @val @scope(("navigator", "clipboard")) external writeText: string => unit = "writeText"
-@send external scrollIntoView: (Dom.element, {"block": string}) => unit = "scrollIntoView"
 
 type drag = {side: Domain.Side.t, start: int, current: int}
 
@@ -77,19 +76,6 @@ let make = (
     </span>
   | Binary(_) => React.null
   }
-  // Clicking a file in the tree opens it; scroll its section into view.
-  let sectionRef = React.useRef(Nullable.null)
-  let wasOpen = React.useRef(false)
-  React.useEffect1(() => {
-    if isOpen && !wasOpen.current {
-      switch sectionRef.current->Nullable.toOption {
-      | Some(el) => el->scrollIntoView({"block": "start"})
-      | None => ()
-      }
-    }
-    wasOpen.current = isOpen
-    None
-  }, [isOpen])
   // Visual-mode selection (core-owned): only the open file's rows.
   // Visual-mode and drag selections both live on one side, and a row is
   // selected only on that side (a modified row's other half is not).
@@ -109,7 +95,7 @@ let make = (
       }
     | None => None
     }
-  <section className="file-diff" ariaLabel=diff.file.path ref={ReactDOM.Ref.domRef(sectionRef)}>
+  <section className="file-diff" ariaLabel=diff.file.path>
     {Attrs.focused(
       <header className="file-diff-header">
         <button

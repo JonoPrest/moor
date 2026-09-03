@@ -13,7 +13,7 @@ use crate::content::FileRef;
 use crate::diff::ThreadPlace;
 use crate::explorer::{TreeNode, ViewedState};
 use crate::keymap::{Command, Context};
-use crate::view::{Layout, Tab, ViewModel};
+use crate::view::{Landing, Layout, Tab, ViewModel};
 use crate::{Action, ClientCore, ScopeChoice};
 
 /// Rows a file opens with, and a page for `PageDown`/`PageUp`.
@@ -291,11 +291,15 @@ fn target_file(view: &ViewModel, focus: Focus) -> Option<FileRef> {
     }
 }
 
-fn open_file(file: FileRef, around_row: u32, side: Side) -> Action {
+/// Open `file` at `around_row`. `landing` says whether the reader jumped
+/// here on purpose (pin the file to the top) or a motion carried them
+/// over the boundary (scroll as little as possible).
+fn open_file(file: FileRef, around_row: u32, side: Side, landing: Landing) -> Action {
     Action::OpenFileAt {
         file,
         row: around_row,
         side,
+        landing,
     }
 }
 
@@ -307,9 +311,11 @@ fn collapsed_of(view: &ViewModel, render: &crate::cache::RenderKey) -> bool {
         .is_some_and(|d| d.collapsed)
 }
 
-/// The next/previous file relative to the open one. A folded file is
-/// still landed on (its header takes focus; `enter` unfolds); an open
-/// one lands at its start (forward) or last cached-total row (backward).
+/// The next/previous file relative to the open one, as `j`/`k` walking
+/// off the end of one reaches it: a continuous motion, so the view
+/// follows rather than re-anchoring. A folded file is still landed on
+/// (its header takes focus; `enter` unfolds); an open one lands at its
+/// start (forward) or last cached-total row (backward).
 fn adjacent_file(core: &ClientCore, forward: bool) -> Result<Action, NoTarget> {
     let view = core.view();
     let open = view.review.as_ref().ok_or(NoTarget::NoOpenReview)?;
@@ -341,6 +347,7 @@ fn adjacent_file(core: &ClientCore, forward: bool) -> Result<Action, NoTarget> {
         },
         row,
         side_of(view.focus),
+        Landing::Follow,
     ))
 }
 
@@ -594,6 +601,7 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                         },
                         0,
                         side_of(focus),
+                        Landing::Follow,
                     ));
                 }
                 let rows = crate::diff::all_rows(core.cache(), &open.snapshot, k);
@@ -611,6 +619,7 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                         },
                         row,
                         side_of(focus),
+                        Landing::Follow,
                     ));
                 }
             }
@@ -646,6 +655,7 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 },
                 0,
                 side_of(focus),
+                Landing::Pin,
             ))
         }
         Command::Open => match focus {
@@ -660,16 +670,14 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                         repo_id: *repo_id,
                         path: path.clone(),
                     };
-                    // Already open: just move into it.
+                    // Already open: move into it, and still pin it — the
+                    // reader picked it out of the tree on purpose, and it
+                    // may be scrolled far off screen.
                     match &view.diff {
-                        Some(d) if d.file == file => Ok(set_focus(
-                            view,
-                            Focus::Diff {
-                                row: d.first_row,
-                                side: side_of(focus),
-                            },
-                        )),
-                        Some(_) | None => Ok(open_file(file, 0, side_of(focus))),
+                        Some(d) if d.file == file => {
+                            Ok(open_file(file, d.first_row, side_of(focus), Landing::Pin))
+                        }
+                        Some(_) | None => Ok(open_file(file, 0, side_of(focus), Landing::Pin)),
                     }
                 }
                 Some(TreeNode::Dir { repo_id, path, .. }) => Ok(Action::ToggleDir {
@@ -737,7 +745,7 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 if view.diff.as_ref().is_some_and(|d| d.file == *file) {
                     Ok(set_focus(view, Focus::Diff { row, side }))
                 } else {
-                    Ok(open_file(file.clone(), row, side))
+                    Ok(open_file(file.clone(), row, side, Landing::Follow))
                 }
             }
             Focus::CommitStepper { index } => Ok(Action::StepCommit {

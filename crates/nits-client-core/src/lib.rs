@@ -71,8 +71,9 @@ pub use keymap::{
 };
 pub use patch::{ViewPatch, ViewPatchKind};
 pub use view::{
-    ConnectionView, ConnectionViewKind, ContentSearchView, Draft, Layout, OpenFile, OpenReview,
-    PendingEvent, ScrollAlign, ScrollIntent, Tab, ViewDelta, ViewModel, ViewPrefs, VisualView,
+    ConnectionView, ConnectionViewKind, ContentSearchView, Draft, Landing, Layout, OpenFile,
+    OpenReview, PendingEvent, ScrollAlign, ScrollIntent, Tab, ViewDelta, ViewModel, ViewPrefs,
+    VisualView,
 };
 
 pub use nits_protocol as protocol;
@@ -196,10 +197,13 @@ pub enum Action {
     /// jump-to-a-location transition (a thread in another file, the next
     /// file, a file picked in the tree). The target is known before the
     /// file's rows are, so the focus cannot be set by the host afterwards.
+    /// `landing` says whether this was a deliberate jump (pin the file to
+    /// the top) or a motion that walked over the boundary (just follow).
     OpenFileAt {
         file: FileRef,
         row: u32,
         side: nits_protocol::Side,
+        landing: crate::view::Landing,
     },
     CloseFile,
     /// Expand or collapse a directory of the explorer (`None` = repo root).
@@ -1281,6 +1285,13 @@ impl ClientCore {
         }
     }
 
+    /// Record where the view should sit around `row`. Counting the
+    /// instructions is what makes the same reposition twice two of them.
+    fn scroll_to(&mut self, row: u32, align: crate::view::ScrollAlign) {
+        let seq = self.view.scroll.map_or(0, |s| s.seq).wrapping_add(1);
+        self.view.scroll = Some(crate::view::ScrollIntent { row, align, seq });
+    }
+
     // One arm per variant; splitting would hide the exhaustive match.
     #[allow(clippy::too_many_lines)]
     fn user(&mut self, action: Action) -> Result<Vec<Effect>, CoreError> {
@@ -1381,12 +1392,20 @@ impl ClientCore {
                 first_row,
                 last_row,
             } => self.viewport(file, first_row, last_row),
-            Action::OpenFileAt { file, row, side } => {
+            Action::OpenFileAt {
+                file,
+                row,
+                side,
+                landing,
+            } => {
                 let first_row = row.saturating_sub(PAGE_ROWS / 2);
                 let mut effects = self.viewport(file, first_row, first_row + PAGE_ROWS - 1)?;
                 // Opening set the focus to the top of the window; the
                 // caller knows the row and side it opened the file for.
                 self.view.focus = Focus::Diff { row, side };
+                if landing == crate::view::Landing::Pin {
+                    self.scroll_to(row, crate::view::ScrollAlign::Top);
+                }
                 effects.push(render(&[ViewSection::Focus]));
                 Ok(effects)
             }
@@ -1652,8 +1671,7 @@ impl ClientCore {
                         Command::CenterView,
                     )));
                 };
-                let seq = self.view.scroll.map_or(0, |s| s.seq).wrapping_add(1);
-                self.view.scroll = Some(crate::view::ScrollIntent { row, align, seq });
+                self.scroll_to(row, align);
                 Ok(vec![render(&[ViewSection::Focus])])
             }
             Action::MarkViewed { file } => self.mark_viewed(file, true),

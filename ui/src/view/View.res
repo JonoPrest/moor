@@ -174,6 +174,13 @@ module ScrollAlign = {
   type t = Center | Top | Bottom
 }
 
+/// How the view should land on a file being opened: a motion that walked
+/// over the boundary follows, a deliberate jump pins.
+module Landing = {
+  @schema
+  type t = Follow | Pin
+}
+
 /// A reposition the host has not performed yet; `seq` counts the
 /// instructions so the same chord twice is two of them.
 module ScrollIntent = {

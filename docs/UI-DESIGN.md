@@ -246,6 +246,12 @@ Everything explicitly asked for, so no shell or rewrite loses them.
   cursor past the edge scrolls by as little as it can, keeping 3 rows of
   context (vim's `scrolloff`) and clearing the sticky file header. This
   holds for every motion, in the stacked view and on Browse.
+- ✓ Crossing a file boundary with `j`/`k` is a motion, not a jump: the
+  next file opens and the view scrolls by a row, keeping the lines the
+  reader was just on. Only a deliberate jump — the tree (click or
+  `enter`), `] f`/`[ f` — pins the file's header to the top. The core
+  says which (`Landing::Follow | Pin` on `OpenFileAt`); the host no
+  longer scrolls on its own when a section becomes the open one.
 - ✓ `z z`/`z t`/`z b` reposition the view around the cursor (centre, top,
   bottom) without moving it. Only the host knows the viewport's height,
   so the core records the intent — row, alignment and a counter, so the

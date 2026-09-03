@@ -126,6 +126,7 @@ registry!(
     VisualView,
     ScrollIntent,
     ScrollAlign,
+    Landing,
     ContentSearchView,
     ViewPrefs,
     Layout,
@@ -676,6 +677,7 @@ enum_fixture!(
             file: file_ref()?,
             row: 121,
             side: Side::Base,
+            landing: Landing::Pin,
         },
         Action::CloseFile,
         Action::ToggleDir {
@@ -887,6 +889,7 @@ struct_fixture!(
     }
 );
 unit_enum_fixture!(ScrollAlign, "ScrollAlign");
+unit_enum_fixture!(Landing, "Landing");
 struct_fixture!(
     ViewModel,
     "ViewModel",

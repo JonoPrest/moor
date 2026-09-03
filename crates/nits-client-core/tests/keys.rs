@@ -1370,3 +1370,83 @@ fn the_scroll_family_means_nothing_off_the_diff() {
     );
     assert_eq!(core.view().scroll, None);
 }
+
+#[test]
+fn stepping_over_a_file_boundary_follows_but_a_jump_pins() {
+    // `j` off the end of a file is a continuous motion: the next file
+    // opens with no reposition, so the view scrolls by one row.
+    let mut core = on_row(4, Side::Head);
+    core.handle(Input::User(Action::RunCommand {
+        command: nits_client_core::Command::GoBottom,
+    }))
+    .unwrap();
+    let before = core.view().scroll;
+    press(&mut core, "j").unwrap();
+    assert_eq!(
+        core.view().diff.as_ref().map(|d| d.file.path.clone()),
+        Some(path("b.rs")),
+        "the motion carried into the next file"
+    );
+    assert_eq!(
+        core.view().scroll,
+        before,
+        "a motion over the boundary records no reposition"
+    );
+
+    // `] f` is a deliberate jump to a distant file: its header goes to
+    // the top of the viewport.
+    let mut core = on_row(4, Side::Head);
+    press(&mut core, "] f").unwrap();
+    let pinned = core.view().scroll.expect("a jump pins the file");
+    assert_eq!(
+        (pinned.row, pinned.align),
+        (0, nits_client_core::ScrollAlign::Top)
+    );
+
+    // So is opening a file from the tree.
+    let mut core = ready();
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::Tree { index: 0 },
+    }))
+    .unwrap();
+    press(&mut core, "j j").unwrap(); // into src/a.rs
+    press(&mut core, "enter").unwrap();
+    assert_eq!(
+        core.view().scroll.map(|s| s.align),
+        Some(nits_client_core::ScrollAlign::Top),
+        "a file picked out of the tree is pinned"
+    );
+}
+
+#[test]
+fn re_opening_the_file_already_open_keeps_its_window_and_pins_it() {
+    // `enter` on the tree item for the open file (and its mouse alias,
+    // the tree click, which runs the same command) must not throw the
+    // reader back to row 0 — it lands on the window they are looking at,
+    // pinned so a file scrolled off screen comes back.
+    let mut core = on_row(120, Side::Head);
+    let first_row = core.view().diff.as_ref().expect("a file is open").first_row;
+    assert!(first_row > 0, "the viewport has moved off the start");
+    let want = path("src/a.rs");
+    let index = nits_client_core::visible_nodes(core.view())
+        .iter()
+        .position(|n| matches!(n, nits_client_core::TreeNode::File { path, .. } if *path == want))
+        .expect("a.rs is in the tree");
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::Tree { index },
+    }))
+    .unwrap();
+    press(&mut core, "enter").unwrap();
+    assert_eq!(
+        core.view().focus,
+        Focus::Diff {
+            row: first_row,
+            side: Side::Head
+        }
+    );
+    assert_eq!(
+        core.view().scroll.map(|s| s.align),
+        Some(nits_client_core::ScrollAlign::Top),
+        "picking a file out of the tree pins it, open or not"
+    );
+}
