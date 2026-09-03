@@ -7,9 +7,10 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::process::Stdio;
 use std::task::{Context as TaskContext, Poll};
+use std::time::Duration;
 
 use nits_config::Context;
-use nits_protocol::{Author, BuildInfo, Request, Response};
+use nits_protocol::{Author, BuildInfo, ProtocolVersion, Request, Response, RpcError};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::process::{ChildStdin, ChildStdout};
 use tokio_util::sync::CancellationToken;
@@ -17,6 +18,9 @@ use tokio_util::sync::CancellationToken;
 use crate::client::{Client, ClientError, Identity};
 use crate::launch::{self, DaemonSpec};
 use crate::transport::FramedConnection;
+
+const STOP_TIMEOUT: Duration = Duration::from_secs(15);
+const STOP_POLL_INTERVAL: Duration = Duration::from_millis(30);
 
 #[derive(Debug, thiserror::Error)]
 pub enum ContextError {
@@ -32,6 +36,8 @@ pub enum ContextError {
     NotManaged,
     #[error("daemon is not running")]
     NotRunning,
+    #[error("daemon did not stop within {after:?}")]
+    StopTimedOut { after: Duration },
     #[error("this context names a `nitsd` binary on {host} ({nitsd}), which cannot serve: {help}")]
     LegacyNitsd {
         host: String,
@@ -327,6 +333,14 @@ pub async fn connect(
     start: StartPolicy,
 ) -> Result<Client, ContextError> {
     let endpoint = DaemonEndpoint::resolve(ctx, start)?;
+    connect_endpoint(&endpoint, identity, ProtocolVersion::CURRENT).await
+}
+
+async fn connect_endpoint(
+    endpoint: &DaemonEndpoint,
+    identity: Identity,
+    protocol: ProtocolVersion,
+) -> Result<Client, ContextError> {
     let ssh_requires_running = matches!(
         endpoint,
         DaemonEndpoint::Ssh {
@@ -334,15 +348,8 @@ pub async fn connect(
             ..
         }
     );
-    let (read, write) = dial(&endpoint).await?.into_parts();
-    match Client::handshake_framed(
-        read,
-        write,
-        identity,
-        nits_protocol::ProtocolVersion::CURRENT,
-    )
-    .await
-    {
+    let (read, write) = dial(endpoint).await?.into_parts();
+    match Client::handshake_framed(read, write, identity, protocol).await {
         Ok(client) => Ok(client),
         Err(ClientError::Closed) if ssh_requires_running => Err(ContextError::NotRunning),
         Err(err) => Err(err.into()),
@@ -419,15 +426,95 @@ pub async fn stop(ctx: &Context) -> Result<bool, ContextError> {
     if matches!(ctx, Context::Ws { .. }) {
         return Err(ContextError::NotManaged);
     }
-    let client = match connect(ctx, probe_identity(), StartPolicy::RequireRunning).await {
+    let endpoint = DaemonEndpoint::resolve(ctx, StartPolicy::RequireRunning)?;
+    let client = match connect_endpoint(&endpoint, probe_identity(), ProtocolVersion::CURRENT).await
+    {
         Ok(c) => c,
         Err(ContextError::NotRunning) => return Ok(false),
+        Err(ContextError::Client(error)) => {
+            let (requested, supported) = match *error {
+                ClientError::Rejected(RpcError::UnsupportedProtocol {
+                    requested,
+                    supported,
+                }) => (requested, supported),
+                other => return Err(ContextError::Client(Box::new(other))),
+            };
+            let Some(protocol) = shutdown_protocol(&supported) else {
+                return Err(ContextError::Client(Box::new(ClientError::Rejected(
+                    RpcError::UnsupportedProtocol {
+                        requested,
+                        supported,
+                    },
+                ))));
+            };
+            connect_endpoint(&endpoint, probe_identity(), protocol).await?
+        }
         Err(e) => return Err(e),
     };
     match client.request(Request::Shutdown).await? {
-        Response::ShuttingDown => Ok(true),
+        Response::ShuttingDown => {
+            drop(client);
+            wait_until_stopped(&endpoint).await?;
+            Ok(true)
+        }
         _ => Err(ContextError::Shape),
     }
+}
+
+/// Wait until a managed endpoint no longer accepts connections.
+///
+/// The shutdown response is sent before the daemon cancels its accept loop,
+/// so returning immediately would let a following `daemon start` reconnect to
+/// the process that is still exiting. The timeout keeps a broken remote
+/// lifecycle from hanging its caller indefinitely.
+async fn wait_until_stopped(endpoint: &DaemonEndpoint) -> Result<(), ContextError> {
+    let wait = async {
+        loop {
+            match endpoint {
+                DaemonEndpoint::Local { spec, .. } => {
+                    if !launch::is_listening(&spec.socket).await {
+                        return Ok(());
+                    }
+                }
+                DaemonEndpoint::Ssh { .. } => {
+                    match connect_endpoint(endpoint, probe_identity(), ProtocolVersion::CURRENT)
+                        .await
+                    {
+                        Err(ContextError::NotRunning) => return Ok(()),
+                        Ok(client) => drop(client),
+                        Err(ContextError::Client(error))
+                            if matches!(
+                                &*error,
+                                ClientError::Rejected(RpcError::UnsupportedProtocol { .. })
+                            ) => {}
+                        Err(error) => return Err(error),
+                    }
+                }
+                DaemonEndpoint::WebSocket { .. } => return Err(ContextError::NotManaged),
+            }
+            tokio::time::sleep(STOP_POLL_INTERVAL).await;
+        }
+    };
+    match tokio::time::timeout(STOP_TIMEOUT, wait).await {
+        Ok(result) => result,
+        Err(_) => Err(ContextError::StopTimedOut {
+            after: STOP_TIMEOUT,
+        }),
+    }
+}
+
+/// Pick the newest protocol whose wire shape this build can still emit.
+///
+/// Shutdown is deliberately the only RPC allowed to retry after negotiation
+/// rejects the current version: its request and response are lifecycle
+/// control messages, not application data. An incompatible major is never
+/// guessed at.
+fn shutdown_protocol(supported: &[ProtocolVersion]) -> Option<ProtocolVersion> {
+    supported
+        .iter()
+        .copied()
+        .filter(|candidate| ProtocolVersion::CURRENT.can_serve(*candidate))
+        .max()
 }
 
 fn probe_identity() -> Identity {
@@ -509,5 +596,22 @@ mod tests {
             DaemonEndpoint::resolve(&legacy, StartPolicy::StartIfNeeded),
             Err(ContextError::LegacyNitsd { .. })
         ));
+    }
+
+    #[test]
+    fn shutdown_uses_the_newest_compatible_advertised_protocol() {
+        let older = ProtocolVersion::new(
+            ProtocolVersion::CURRENT.major,
+            ProtocolVersion::CURRENT.minor.saturating_sub(1),
+            0,
+        );
+        let oldest = ProtocolVersion::new(ProtocolVersion::CURRENT.major, 0, 0);
+        let other_major = ProtocolVersion::new(ProtocolVersion::CURRENT.major + 1, 0, 0);
+        assert_eq!(
+            shutdown_protocol(&[oldest, other_major, older]),
+            Some(older)
+        );
+        assert_eq!(shutdown_protocol(&[other_major]), None);
+        assert_eq!(shutdown_protocol(&[]), None);
     }
 }
