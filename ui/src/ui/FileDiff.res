@@ -5,12 +5,19 @@
 
 open View
 
-/// The commentable side+line of a row, mirroring the core's line_anchor.
-let lineOf = (row: Render.Row.t): option<(Domain.Side.t, int)> =>
-  switch row {
-  | Context({right}) | Modified({right}) | Added({right}) => Some((Head, right.lineNo))
-  | Removed({left}) => Some((Base, left.lineNo))
-  | HunkHeader(_) | Expander(_) | WhitespaceOnly(_) => None
+/// The line `side` of `row` carries, mirroring the core's `line_on`: a
+/// modified row has one on each side, an added row only on head, a
+/// removed row only on base.
+let lineOn = (row: Render.Row.t, side: Domain.Side.t): option<int> =>
+  switch (row, side) {
+  | (Context({left}) | Modified({left}) | Removed({left}), Base) => Some(left.lineNo)
+  | (Context({right}) | Modified({right}) | Added({right}), Head) => Some(right.lineNo)
+  | (Added(_), Base)
+  | (Removed(_), Head)
+  | (HunkHeader(_), _)
+  | (Expander(_), _)
+  | (WhitespaceOnly(_), _) =>
+    None
   }
 
 @val @scope(("navigator", "clipboard")) external writeText: string => unit = "writeText"
@@ -53,6 +60,10 @@ let make = (
   | Diff({row}) if isOpen => Some(row)
   | _ => None
   }
+  let focusedSide = switch focus {
+  | Diff({side}) => side
+  | _ => Domain.Side.Head
+  }
   let replyTo = draft->Option.flatMap(d => d.replyTo)
   let total = switch diff.content {
   | Text({totalRows}) => totalRows
@@ -80,16 +91,23 @@ let make = (
     None
   }, [isOpen])
   // Visual-mode selection (core-owned): only the open file's rows.
-  let inVisual = (index: int) =>
+  // Visual-mode and drag selections both live on one side, and a row is
+  // selected only on that side (a modified row's other half is not).
+  let inVisual = (index: int): option<Domain.Side.t> =>
     switch visual {
-    | Some({start, end_}) if isOpen => index >= start && index <= end_
-    | _ => false
+    | Some({start, end_, side}) if isOpen && index >= start && index <= end_ => Some(side)
+    | _ => None
     }
-  let inDrag = (row: Render.Row.t) =>
-    switch (drag, lineOf(row)) {
-    | (Some({side, start, current}), Some((s, line))) if s == side =>
-      line >= Math.Int.min(start, current) && line <= Math.Int.max(start, current)
-    | _ => false
+  let inDrag = (row: Render.Row.t): option<Domain.Side.t> =>
+    switch drag {
+    | Some({side, start, current}) =>
+      switch lineOn(row, side) {
+      | Some(line)
+        if line >= Math.Int.min(start, current) && line <= Math.Int.max(start, current) =>
+        Some(side)
+      | Some(_) | None => None
+      }
+    | None => None
     }
   <section className="file-diff" ariaLabel=diff.file.path ref={ReactDOM.Ref.domRef(sectionRef)}>
     {Attrs.focused(
@@ -160,34 +178,38 @@ let make = (
           {rows
           ->Array.map(r => {
             let focused = focusedRow == Some(r.index)
-            let selected = inDrag(r.row) || inVisual(r.index)
+            let selectedSide = switch inDrag(r.row) {
+            | Some(side) => Some(side)
+            | None => inVisual(r.index)
+            }
             let rowEl =
               <Row
                 row=r.row
                 layout
                 index=r.index
                 focused
-                threads={Array.length(r.threads)}
-                onClick={() => {
+                focusedSide
+                ?selectedSide
+                threads=r.threads
+                onClick={side => {
                   dispatch(Viewport({file: diff.file, firstRow: r.index, lastRow: r.index + 59}))
-                  dispatch(SetFocus({focus: Focus.Diff({row: r.index})}))
+                  dispatch(SetFocus({focus: Focus.Diff({row: r.index, side})}))
                 }}
+                onMouseDown={side =>
+                  switch lineOn(r.row, side) {
+                  | Some(line) => setDrag(_ => Some({side, start: line, current: line}))
+                  | None => ()
+                  }}
+                onMouseEnter={side =>
+                  switch (drag, lineOn(r.row, side)) {
+                  | (Some(d), Some(line)) if side == d.side =>
+                    setDrag(_ => Some({...d, current: line}))
+                  | (Some(_), Some(_) | None) | (None, _) => ()
+                  }}
                 onExpand={() => dispatch(ExpandContext({file: diff.file, full: false}))}
               />
             <div
               key={Int.toString(r.index)}
-              className={selected ? "row-drag-selected" : ""}
-              onMouseDown={_ =>
-                switch lineOf(r.row) {
-                | Some((side, line)) => setDrag(_ => Some({side, start: line, current: line}))
-                | None => ()
-                }}
-              onMouseEnter={_ =>
-                switch (drag, lineOf(r.row)) {
-                | (Some(d), Some((side, line))) if side == d.side =>
-                  setDrag(_ => Some({...d, current: line}))
-                | _ => ()
-                }}
               onMouseUp={_ =>
                 switch drag {
                 | Some({side, start, current}) => {
@@ -208,6 +230,7 @@ let make = (
             >
               rowEl
               {r.threads
+              ->Array.map((t: View.RowThread.t) => t.thread)
               ->Array.filterMap(threadOf)
               ->Array.map(ti => {
                 let thread = threads->Array.getUnsafe(ti)

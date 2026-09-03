@@ -42,6 +42,9 @@
     "type": "Modified"
   },
   "threads": [
-    "01HF7YAVYG0000000000000005"
+    {
+      "side": "Base",
+      "thread": "01HF7YAVYG0000000000000005"
+    }
   ]
 }

@@ -327,7 +327,10 @@ async fn scripted_session_keeps_every_patch_small() {
         last_row: 59,
     }));
     assert!(handle.dispatch(Action::SetFocus {
-        focus: nits_client_core::Focus::Diff { row: 1 }
+        focus: nits_client_core::Focus::Diff {
+            row: 1,
+            side: nits_protocol::Side::Head
+        }
     }));
     assert!(handle.dispatch(Action::DraftOpened {
         anchor: nits_protocol::Anchor::Review

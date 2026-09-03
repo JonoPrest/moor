@@ -69,7 +69,10 @@
           "type": "Modified"
         },
         "threads": [
-          "01HF7YAVYG0000000000000005"
+          {
+            "side": "Base",
+            "thread": "01HF7YAVYG0000000000000005"
+          }
         ]
       }
     ],
@@ -146,7 +149,10 @@
             "type": "Modified"
           },
           "threads": [
-            "01HF7YAVYG0000000000000005"
+            {
+              "side": "Base",
+              "thread": "01HF7YAVYG0000000000000005"
+            }
           ]
         }
       ],
@@ -162,6 +168,7 @@
   "type": "Diff",
   "visual": {
     "end": 6,
+    "side": "Head",
     "start": 4
   }
 }

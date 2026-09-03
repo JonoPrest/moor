@@ -1,5 +1,6 @@
 ---
 source: crates/nits-client-core/tests/snapshots.rs
+assertion_line: 356
 expression: core.view()
 ---
 {
@@ -141,7 +142,10 @@ expression: core.view()
           }
         },
         "threads": [
-          "00000001YH0000000000000001"
+          {
+            "thread": "00000001YH0000000000000001",
+            "side": "Head"
+          }
         ]
       },
       {
@@ -294,7 +298,10 @@ expression: core.view()
             }
           },
           "threads": [
-            "00000001YH0000000000000001"
+            {
+              "thread": "00000001YH0000000000000001",
+              "side": "Head"
+            }
           ]
         },
         {
@@ -637,7 +644,8 @@ expression: core.view()
   "stepper": null,
   "focus": {
     "type": "Diff",
-    "row": 3
+    "row": 3,
+    "side": "Head"
   },
   "tab": "FilesChanged",
   "mode": "Normal",
@@ -931,6 +939,16 @@ expression: core.view()
       "keys": "z c",
       "command": "CommentOnFile",
       "label": "comment on file"
+    },
+    {
+      "keys": "h",
+      "command": "SideBase",
+      "label": "target removed side"
+    },
+    {
+      "keys": "l",
+      "command": "SideHead",
+      "label": "target added side"
     },
     {
       "keys": "r",

@@ -912,7 +912,10 @@ impl ClientCore {
             // A newly opened file takes the keys, unless a modal panel has
             // them (a host scroll of the same file never moves focus).
             if !matches!(self.view.focus, crate::Focus::Composer | crate::Focus::Help) {
-                self.view.focus = crate::Focus::Diff { row: first_row };
+                self.view.focus = crate::Focus::Diff {
+                    row: first_row,
+                    side: nits_protocol::Side::Head,
+                };
             }
             let evicted = self.retain_review_pins();
             self.content.write_through(evicted, &mut effects);

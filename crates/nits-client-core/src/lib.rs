@@ -50,8 +50,8 @@ pub use cache::{Bytes, CacheKey, CacheValue, ContentCache, Evicted, RenderKey};
 pub use connection::{Connection, ConnectionKind};
 pub use content::{CacheConfig, DiskTier, DiskTierKind, FileRef, PREFETCH_RADIUS};
 pub use diff::{
-    CommentView, CommitStepper, DiffRow, DiffView, PendingIds, StepperCommit, ThreadPlace,
-    ThreadPlaceKind, ThreadView, conversation, threads,
+    CommentView, CommitStepper, DiffRow, DiffView, PendingIds, RowThread, StepperCommit,
+    ThreadPlace, ThreadPlaceKind, ThreadView, conversation, threads,
 };
 pub use events::{
     EventMeta, MutationError, MutationErrorKind, apply_body, local_event, thread_id_of,
@@ -60,7 +60,9 @@ pub use explorer::{
     MAX_HITS, Progress, SearchHit, SearchView, TreeNode, TreeNodeKind, TreeView, ViewedState,
     viewed_state,
 };
-pub use focus::{Focus, FocusKind, NoTarget, PAGE_ROWS, clamp as clamp_focus, visible_nodes};
+pub use focus::{
+    Focus, FocusKind, NoTarget, PAGE_ROWS, VisualAnchor, clamp as clamp_focus, visible_nodes,
+};
 pub use ids::IdSeed;
 pub use keymap::{
     Binding, Command, Conflict, Context, HelpEntry, HelpGroup, HelpView, Hint, KeyChord, KeyCode,
@@ -189,6 +191,15 @@ pub enum Action {
         file: FileRef,
         first_row: u32,
         last_row: u32,
+    },
+    /// Open `file` around `row` and focus that half of it — the
+    /// jump-to-a-location transition (a thread in another file, the next
+    /// file, a file picked in the tree). The target is known before the
+    /// file's rows are, so the focus cannot be set by the host afterwards.
+    OpenFileAt {
+        file: FileRef,
+        row: u32,
+        side: nits_protocol::Side,
     },
     CloseFile,
     /// Expand or collapse a directory of the explorer (`None` = repo root).
@@ -538,9 +549,9 @@ pub struct ClientCore {
     file_collapse: std::collections::BTreeMap<(RepoId, RepoPath), bool>,
     /// The Browse tab's custom ref, when one is picked (UI-DESIGN §Browse).
     browse: Option<Browse>,
-    /// Visual mode (UI-DESIGN: modal keys): the diff row `V` was pressed
-    /// on; the other end of the selection is the focused row.
-    visual_anchor: Option<u32>,
+    /// Visual mode (UI-DESIGN: modal keys): the diff row and side `V` was
+    /// pressed on; the other end of the selection is the focused row.
+    visual_anchor: Option<VisualAnchor>,
 }
 
 /// Browsing one repo at an arbitrary ref.
@@ -618,9 +629,9 @@ impl ClientCore {
         &self.chords
     }
 
-    /// The Visual-mode anchor row (where `V` was pressed), while it is on.
+    /// Where `V` was pressed, while Visual mode is on.
     #[must_use]
-    pub fn visual_anchor(&self) -> Option<u32> {
+    pub fn visual_anchor(&self) -> Option<VisualAnchor> {
         self.visual_anchor
     }
 
@@ -894,9 +905,10 @@ impl ClientCore {
         }
         // The Visual selection spans the anchor and the focused row.
         let visual = match (self.visual_anchor, focus) {
-            (Some(anchor), Focus::Diff { row }) => Some(crate::view::VisualView {
-                start: anchor.min(row),
-                end: anchor.max(row),
+            (Some(anchor), Focus::Diff { row, .. }) => Some(crate::view::VisualView {
+                start: anchor.row.min(row),
+                end: anchor.row.max(row),
+                side: anchor.side,
             }),
             _ => None,
         };
@@ -1176,6 +1188,11 @@ impl ClientCore {
             }
             Anchor::Review => return Err(CoreError::NoOriginalDiff(thread_id)),
         };
+        // A comment's original diff opens on the side it was made on.
+        let side = match &root.anchor {
+            Anchor::Lines { side, .. } => *side,
+            Anchor::File { .. } | Anchor::Review => nits_protocol::Side::Head,
+        };
         let key = RenderKey {
             repo_id,
             path,
@@ -1190,7 +1207,7 @@ impl ClientCore {
                 last_row: PAGE_ROWS - 1,
             });
         }
-        self.view.focus = Focus::Diff { row: 0 };
+        self.view.focus = Focus::Diff { row: 0, side };
         let mut effects = Vec::new();
         self.want_open_render(review_id, &key, &mut effects);
         effects.push(render(&[ViewSection::Focus, ViewSection::Diff]));
@@ -1358,6 +1375,15 @@ impl ClientCore {
                 first_row,
                 last_row,
             } => self.viewport(file, first_row, last_row),
+            Action::OpenFileAt { file, row, side } => {
+                let first_row = row.saturating_sub(PAGE_ROWS / 2);
+                let mut effects = self.viewport(file, first_row, first_row + PAGE_ROWS - 1)?;
+                // Opening set the focus to the top of the window; the
+                // caller knows the row and side it opened the file for.
+                self.view.focus = Focus::Diff { row, side };
+                effects.push(render(&[ViewSection::Focus]));
+                Ok(effects)
+            }
             Action::CloseFile => {
                 self.visual_anchor = None;
                 self.close_file()
@@ -1745,12 +1771,12 @@ impl ClientCore {
                 if self.view.review.is_none() {
                     return Err(CoreError::NoOpenReview);
                 }
-                let Focus::Diff { row } = self.view.focus else {
+                let Focus::Diff { row, side } = self.view.focus else {
                     return Err(CoreError::NoTarget(focus::NoTarget::Nothing(
                         Command::VisualMode,
                     )));
                 };
-                self.visual_anchor = Some(row);
+                self.visual_anchor = Some(VisualAnchor { row, side });
                 // The selection and mode are derived after this returns.
                 Ok(Vec::new())
             }
@@ -1856,7 +1882,7 @@ impl ClientCore {
                 self.view.focus = focus;
                 let mut effects = Vec::new();
                 // A focused row outside the viewport scrolls the viewport.
-                if let Focus::Diff { row } = focus
+                if let Focus::Diff { row, .. } = focus
                     && let Some(open) = &self.view.review
                     && let Some(f) = &open.open_file
                     && (row < f.first_row || row > f.last_row)

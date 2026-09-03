@@ -97,7 +97,10 @@
           "type": "Modified"
         },
         "threads": [
-          "01HF7YAVYG0000000000000005"
+          {
+            "side": "Base",
+            "thread": "01HF7YAVYG0000000000000005"
+          }
         ]
       }
     ],
@@ -174,7 +177,10 @@
             "type": "Modified"
           },
           "threads": [
-            "01HF7YAVYG0000000000000005"
+            {
+              "side": "Base",
+              "thread": "01HF7YAVYG0000000000000005"
+            }
           ]
         }
       ],
@@ -198,6 +204,7 @@
   },
   "focus": {
     "row": 121,
+    "side": "Head",
     "type": "Diff"
   },
   "help": null,
@@ -687,6 +694,7 @@
   },
   "visual": {
     "end": 6,
+    "side": "Head",
     "start": 4
   },
   "workspaces": [

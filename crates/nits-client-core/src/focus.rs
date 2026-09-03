@@ -25,12 +25,26 @@ pub const PAGE_ROWS: u32 = 60;
 #[strum_discriminants(name(FocusKind), derive(Hash, strum::EnumIter))]
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum Focus {
-    ReviewList { index: usize },
-    Tree { index: usize },
-    Diff { row: u32 },
-    Thread { index: usize },
+    ReviewList {
+        index: usize,
+    },
+    Tree {
+        index: usize,
+    },
+    /// A row of the open diff, and which half of it is the target: a
+    /// modified row is two commentable cells, so the side is part of
+    /// where the user is, not something inferred when they comment.
+    Diff {
+        row: u32,
+        side: Side,
+    },
+    Thread {
+        index: usize,
+    },
     Composer,
-    CommitStepper { index: usize },
+    CommitStepper {
+        index: usize,
+    },
     Help,
 }
 
@@ -53,6 +67,16 @@ impl Focus {
             Focus::Help => Context::Help,
         }
     }
+}
+
+/// Where a Visual selection started: the row `V` was pressed on and the
+/// half of it that was targeted. The side is held for the whole selection
+/// — what `c` anchors to must not depend on which rows it happens to span.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VisualAnchor {
+    pub row: u32,
+    pub side: Side,
 }
 
 /// Why a command means nothing right now.
@@ -110,8 +134,9 @@ fn with_index(focus: Focus, index: usize) -> Focus {
         Focus::Tree { .. } => Focus::Tree { index },
         Focus::Thread { .. } => Focus::Thread { index },
         Focus::CommitStepper { .. } => Focus::CommitStepper { index },
-        Focus::Diff { .. } => Focus::Diff {
+        Focus::Diff { side, .. } => Focus::Diff {
             row: u32::try_from(index).unwrap_or(u32::MAX),
+            side,
         },
         Focus::Composer | Focus::Help => focus,
     }
@@ -123,7 +148,7 @@ fn index_of(focus: Focus) -> Option<usize> {
         | Focus::Tree { index }
         | Focus::Thread { index }
         | Focus::CommitStepper { index } => Some(index),
-        Focus::Diff { row } => Some(row as usize),
+        Focus::Diff { row, .. } => Some(row as usize),
         Focus::Composer | Focus::Help => None,
     }
 }
@@ -131,6 +156,52 @@ fn index_of(focus: Focus) -> Option<usize> {
 /// Clamp a focus to the lists it indexes; a focus over an empty list or a
 /// closed panel falls back to the tree or the review list.
 #[must_use]
+/// The side a new diff focus keeps: the one the focus is already on, so
+/// stepping down the red half of a hunk stays on the red half.
+fn side_of(focus: Focus) -> Side {
+    match focus {
+        Focus::Diff { side, .. } => side,
+        Focus::ReviewList { .. }
+        | Focus::Tree { .. }
+        | Focus::Thread { .. }
+        | Focus::Composer
+        | Focus::CommitStepper { .. }
+        | Focus::Help => Side::Head,
+    }
+}
+
+/// Whether the open file is a plain blob (Browse) rather than a diff.
+fn blob_render(view: &ViewModel) -> bool {
+    view.review
+        .as_ref()
+        .and_then(|o| o.open_file.as_ref())
+        .is_some_and(|f| matches!(f.render.target, RenderTarget::Blob { .. }))
+}
+
+/// The side a diff focus settles on for `row`: the asked-for side when
+/// that row has a cell there, else the only side it does have. A row
+/// that is not cached (or has no cell at all, like a hunk header) keeps
+/// the asked-for side.
+fn settled_side(view: &ViewModel, diff: &crate::diff::DiffView, row: u32, side: Side) -> Side {
+    // A blob render (Browse) duplicates one file into both cells and has
+    // no base tree behind it — see `line_anchor`.
+    if blob_render(view) {
+        return Side::Head;
+    }
+    let Some(r) = diff.rows.iter().find(|r| r.index == row) else {
+        return side;
+    };
+    if crate::diff::line_on(&r.row, side).is_some() {
+        return side;
+    }
+    let other = side.other();
+    if crate::diff::line_on(&r.row, other).is_some() {
+        other
+    } else {
+        side
+    }
+}
+
 pub fn clamp(view: &ViewModel, focus: Focus) -> Focus {
     let fallback = if view.review.is_some() {
         Focus::Tree { index: 0 }
@@ -146,21 +217,23 @@ pub fn clamp(view: &ViewModel, focus: Focus) -> Focus {
             }
         }
         Focus::Help => focus,
-        Focus::Diff { row } => match &view.diff {
-            Some(_) => {
+        Focus::Diff { row, side } => match &view.diff {
+            Some(diff) => {
                 let n = extent(view, Context::Diff);
-                if n == 0 {
-                    Focus::Diff { row: 0 }
+                let row = if n == 0 {
+                    0
                 } else {
-                    Focus::Diff {
-                        row: row.min(u32::try_from(n - 1).unwrap_or(u32::MAX)),
-                    }
+                    row.min(u32::try_from(n - 1).unwrap_or(u32::MAX))
+                };
+                Focus::Diff {
+                    row,
+                    side: settled_side(view, diff, row, side),
                 }
             }
             // A file is open but its header has not landed: the diff pane
             // is still the place to be (jump-to-context opens this way).
             None if view.review.as_ref().is_some_and(|r| r.open_file.is_some()) => {
-                Focus::Diff { row }
+                Focus::Diff { row, side }
             }
             None => fallback,
         },
@@ -218,12 +291,11 @@ fn target_file(view: &ViewModel, focus: Focus) -> Option<FileRef> {
     }
 }
 
-fn open_file(file: FileRef, around_row: u32) -> Action {
-    let first_row = around_row.saturating_sub(PAGE_ROWS / 2);
-    Action::Viewport {
+fn open_file(file: FileRef, around_row: u32, side: Side) -> Action {
+    Action::OpenFileAt {
         file,
-        first_row,
-        last_row: first_row + PAGE_ROWS - 1,
+        row: around_row,
+        side,
     }
 }
 
@@ -268,6 +340,7 @@ fn adjacent_file(core: &ClientCore, forward: bool) -> Result<Action, NoTarget> {
             path: k.path.clone(),
         },
         row,
+        side_of(view.focus),
     ))
 }
 
@@ -278,6 +351,14 @@ fn open_file_collapsed(core: &ClientCore) -> bool {
         .as_ref()
         .and_then(|o| o.open_file.as_ref())
         .is_some_and(|f| collapsed_of(view, &f.render))
+}
+
+/// A `SetFocus` on a settled focus: a motion onto a row that has no cell
+/// on the side being followed lands on the side it does have.
+fn set_focus(view: &ViewModel, focus: Focus) -> Action {
+    Action::SetFocus {
+        focus: clamp(view, focus),
+    }
 }
 
 /// The action `command` means with the core in its current state.
@@ -300,9 +381,10 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
         if next == i64::try_from(i).unwrap_or(i64::MAX) {
             return Err(NoTarget::AtEdge);
         }
-        Ok(Action::SetFocus {
-            focus: with_index(focus, usize::try_from(next).unwrap_or(0)),
-        })
+        Ok(set_focus(
+            view,
+            with_index(focus, usize::try_from(next).unwrap_or(0)),
+        ))
     };
     let jump = |to_end: bool| -> Result<Action, NoTarget> {
         let n = extent(view, focus.context());
@@ -313,9 +395,7 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
         if index_of(focus) == Some(target) {
             return Err(NoTarget::AtEdge);
         }
-        Ok(Action::SetFocus {
-            focus: with_index(focus, target),
-        })
+        Ok(set_focus(view, with_index(focus, target)))
     };
     let in_visual = core.visual_anchor().is_some() && matches!(focus, Focus::Diff { .. });
     match command {
@@ -396,7 +476,7 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 };
                 return Ok(Action::StepCommit { selected: next });
             }
-            let Focus::Diff { row } = focus else {
+            let Focus::Diff { row, .. } = focus else {
                 return Err(nothing());
             };
             let Some(diff) = &view.diff else {
@@ -463,7 +543,9 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 | Command::VisualMode
                 | Command::ExpandUp
                 | Command::ExpandDown
-                | Command::CommentOnFile => false,
+                | Command::CommentOnFile
+                | Command::SideBase
+                | Command::SideHead => false,
             };
             // A folded open file contributes no in-file stops.
             let found = if collapsed_of(view, render) {
@@ -474,9 +556,13 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 rows.iter().rev().find(|r| r.index < row && wanted(r))
             };
             if let Some(r) = found {
-                return Ok(Action::SetFocus {
-                    focus: Focus::Diff { row: r.index },
-                });
+                return Ok(set_focus(
+                    view,
+                    Focus::Diff {
+                        row: r.index,
+                        side: side_of(focus),
+                    },
+                ));
             }
             // No further match in this file: scan onward through the
             // stacked files (skipping folded ones) for the next one.
@@ -504,6 +590,7 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                             path: k.path.clone(),
                         },
                         0,
+                        side_of(focus),
                     ));
                 }
                 let rows = crate::diff::all_rows(core.cache(), &open.snapshot, k);
@@ -520,6 +607,7 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                             path: k.path.clone(),
                         },
                         row,
+                        side_of(focus),
                     ));
                 }
             }
@@ -554,6 +642,7 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                     path: k.path.clone(),
                 },
                 0,
+                side_of(focus),
             ))
         }
         Command::Open => match focus {
@@ -570,10 +659,14 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                     };
                     // Already open: just move into it.
                     match &view.diff {
-                        Some(d) if d.file == file => Ok(Action::SetFocus {
-                            focus: Focus::Diff { row: d.first_row },
-                        }),
-                        Some(_) | None => Ok(open_file(file, 0)),
+                        Some(d) if d.file == file => Ok(set_focus(
+                            view,
+                            Focus::Diff {
+                                row: d.first_row,
+                                side: side_of(focus),
+                            },
+                        )),
+                        Some(_) | None => Ok(open_file(file, 0, side_of(focus))),
                     }
                 }
                 Some(TreeNode::Dir { repo_id, path, .. }) => Ok(Action::ToggleDir {
@@ -582,7 +675,7 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 }),
                 None => Err(nothing()),
             },
-            Focus::Diff { row } => {
+            Focus::Diff { row, side } => {
                 let diff = view.diff.as_ref().ok_or(NoTarget::NoOpenFile)?;
                 // On a folded file, enter unfolds (C folds it back).
                 if collapsed_of(
@@ -596,16 +689,23 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                         file: diff.file.clone(),
                     });
                 }
+                // The focused half's thread first: on a modified row the
+                // red and the green cell can each carry one.
                 let thread = diff
                     .rows
                     .iter()
                     .find(|r| r.index == row)
-                    .and_then(|r| r.threads.first())
+                    .and_then(|r| {
+                        r.threads
+                            .iter()
+                            .find(|t| t.side == side)
+                            .or_else(|| r.threads.first())
+                    })
                     .ok_or_else(nothing)?;
                 let index = view
                     .threads
                     .iter()
-                    .position(|t| t.id == *thread)
+                    .position(|t| t.id == thread.thread)
                     .ok_or_else(nothing)?;
                 Ok(Action::SetFocus {
                     focus: Focus::Thread { index },
@@ -619,19 +719,22 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 if t.outdated && t.context.is_some() {
                     return Ok(Action::OpenOriginalDiff { thread_id: t.id });
                 }
-                let (file, row) = match &t.place {
-                    ThreadPlace::Lines { file, end, .. } => (file, end - 1),
-                    ThreadPlace::File { file } => (file, 0),
+                // A line thread is shown against the side it is anchored
+                // to, so stepping to it lands on that side — whether the
+                // file is already open or has to be opened first.
+                let (file, row, side) = match &t.place {
+                    ThreadPlace::Lines {
+                        file, end, side, ..
+                    } => (file, end - 1, *side),
+                    ThreadPlace::File { file } => (file, 0, Side::Head),
                     ThreadPlace::Review => return Err(nothing()),
                 };
                 // Already looking at that file: jump to the row (the
                 // viewport follows); otherwise open it around the row.
                 if view.diff.as_ref().is_some_and(|d| d.file == *file) {
-                    Ok(Action::SetFocus {
-                        focus: Focus::Diff { row },
-                    })
+                    Ok(set_focus(view, Focus::Diff { row, side }))
                 } else {
-                    Ok(open_file(file.clone(), row))
+                    Ok(open_file(file.clone(), row, side))
                 }
             }
             Focus::CommitStepper { index } => Ok(Action::StepCommit {
@@ -670,7 +773,10 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
             let next = match focus {
                 Focus::Tree { .. } => {
                     if view.diff.is_some() {
-                        Focus::Diff { row: 0 }
+                        Focus::Diff {
+                            row: 0,
+                            side: Side::Head,
+                        }
                     } else if !view.threads.is_empty() {
                         Focus::Thread { index: 0 }
                     } else {
@@ -690,7 +796,7 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 | Focus::Composer
                 | Focus::Help => Focus::Tree { index: 0 },
             };
-            Ok(Action::SetFocus { focus: next })
+            Ok(set_focus(view, next))
         }
         Command::ToggleViewed => {
             let file = target_file(view, focus).ok_or_else(nothing)?;
@@ -718,7 +824,7 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
             })
         }
         Command::Comment if in_visual => {
-            let (Some(anchor_row), Focus::Diff { row }) = (core.visual_anchor(), focus) else {
+            let (Some(anchor), Focus::Diff { row, .. }) = (core.visual_anchor(), focus) else {
                 return Err(nothing());
             };
             let diff = view.diff.as_ref().ok_or(NoTarget::NoOpenFile)?;
@@ -728,27 +834,16 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 .as_ref()
                 .map(|f| &f.render)
                 .ok_or(NoTarget::NoOpenFile)?;
-            let (lo, hi) = (anchor_row.min(row), anchor_row.max(row));
-            // The selection's lines on one side: head when any selected row
-            // has one, else base; rows with no line (headers) are skipped.
+            let (lo, hi) = (anchor.row.min(row), anchor.row.max(row));
+            // The side is the one the selection started on, held for its
+            // duration; a row with no cell there contributes no line.
+            let side = anchor.side;
             let rows = crate::diff::all_rows(core.cache(), &open.snapshot, render);
-            let mut head: Vec<u32> = Vec::new();
-            let mut base: Vec<u32> = Vec::new();
-            for r in rows.iter().filter(|r| r.index >= lo && r.index <= hi) {
-                match &r.row {
-                    Row::Context { right, .. } | Row::Modified { right, .. } => {
-                        head.push(right.line_no.get());
-                    }
-                    Row::Added { right } => head.push(right.line_no.get()),
-                    Row::Removed { left } => base.push(left.line_no.get()),
-                    Row::HunkHeader { .. } | Row::Expander { .. } | Row::WhitespaceOnly => {}
-                }
-            }
-            let (side, lines) = if head.is_empty() {
-                (Side::Base, base)
-            } else {
-                (Side::Head, head)
-            };
+            let lines: Vec<u32> = rows
+                .iter()
+                .filter(|r| r.index >= lo && r.index <= hi)
+                .filter_map(|r| crate::diff::line_on(&r.row, side))
+                .collect();
             let (Some(start), Some(end)) = (lines.iter().min(), lines.iter().max()) else {
                 return Err(nothing());
             };
@@ -762,7 +857,7 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
         Command::Comment => {
             let open = view.review.as_ref().ok_or(NoTarget::NoOpenReview)?;
             let anchor = match focus {
-                Focus::Diff { row } => {
+                Focus::Diff { row, side } => {
                     let diff = view.diff.as_ref().ok_or(NoTarget::NoOpenFile)?;
                     let target = open
                         .files
@@ -775,7 +870,7 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                         .iter()
                         .find(|r| r.index == row)
                         .ok_or_else(nothing)?;
-                    line_anchor(&diff.file, target, &r.row).ok_or_else(nothing)?
+                    line_anchor(&diff.file, target, &r.row, side).ok_or_else(nothing)?
                 }
                 Focus::Tree { .. } => {
                     let file = target_file(view, focus).ok_or_else(nothing)?;
@@ -903,9 +998,13 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
             }
         }
         Command::FocusDiff => match &view.diff {
-            Some(d) => Ok(Action::SetFocus {
-                focus: Focus::Diff { row: d.first_row },
-            }),
+            Some(d) => Ok(set_focus(
+                view,
+                Focus::Diff {
+                    row: d.first_row,
+                    side: side_of(focus),
+                },
+            )),
             None => Err(NoTarget::NoOpenFile),
         },
         Command::FocusThreads => {
@@ -955,6 +1054,40 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
             Ok(Action::ExpandContext {
                 file: diff.file.clone(),
                 full: false,
+            })
+        }
+        Command::SideBase | Command::SideHead => {
+            // The visual selection's side is fixed at its start, so
+            // flipping half-way would lie about what `c` will anchor to.
+            if in_visual {
+                return Err(nothing());
+            }
+            let want = if command == Command::SideBase {
+                Side::Base
+            } else {
+                Side::Head
+            };
+            let Focus::Diff { row, side } = focus else {
+                return Err(nothing());
+            };
+            // A blob render has only a head side to be on.
+            if blob_render(view) {
+                return Err(NoTarget::AtEdge);
+            }
+            if side == want {
+                return Err(NoTarget::AtEdge);
+            }
+            let diff = view.diff.as_ref().ok_or(NoTarget::NoOpenFile)?;
+            let r = diff
+                .rows
+                .iter()
+                .find(|r| r.index == row)
+                .ok_or_else(nothing)?;
+            if crate::diff::line_on(&r.row, want).is_none() {
+                return Err(NoTarget::AtEdge);
+            }
+            Ok(Action::SetFocus {
+                focus: Focus::Diff { row, side: want },
             })
         }
         Command::CommentOnFile => {
@@ -1010,7 +1143,7 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
             if in_visual {
                 return Ok(Action::LeaveVisual);
             }
-            let Focus::Diff { row } = focus else {
+            let Focus::Diff { row, side } = focus else {
                 return Err(nothing());
             };
             let diff = view.diff.as_ref().ok_or(NoTarget::NoOpenFile)?;
@@ -1027,27 +1160,27 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 .iter()
                 .find(|r| r.index == row)
                 .ok_or_else(nothing)?;
-            line_anchor(&diff.file, target, &r.row).ok_or_else(nothing)?;
+            line_anchor(&diff.file, target, &r.row, side).ok_or_else(nothing)?;
             Ok(Action::EnterVisual)
         }
     }
 }
 
-/// A `Lines` anchor for `row` of `file`: the head side when the row has
-/// one, else the base side. The context hash is a placeholder the daemon
-/// replaces (it hashes the surrounding lines itself).
-fn line_anchor(file: &FileRef, target: &RenderTarget, row: &Row) -> Option<Anchor> {
-    let (side, line): (Side, LineNo) = match row {
-        Row::Context { right, .. } | Row::Modified { right, .. } | Row::Added { right } => {
-            (Side::Head, right.line_no)
-        }
-        Row::Removed { left } => (Side::Base, left.line_no),
-        Row::HunkHeader { .. } | Row::Expander { .. } | Row::WhitespaceOnly => return None,
-    };
+/// A `Lines` anchor for `side` of `row` of `file`, or `None` when that half
+/// of the row has no line: an added row has no base cell, a removed row no
+/// head cell, a hunk header neither. The context hash is a placeholder the
+/// daemon replaces (it hashes the surrounding lines itself).
+fn line_anchor(file: &FileRef, target: &RenderTarget, row: &Row, side: Side) -> Option<Anchor> {
+    let line = LineNo::new(crate::diff::line_on(row, side)?)?;
     let blob: BlobOid = match (target, side) {
         (RenderTarget::Diff { change }, Side::Head) => change.new_blob()?,
         (RenderTarget::Diff { change }, Side::Base) => change.old_blob()?,
-        (RenderTarget::Blob { oid }, Side::Head | Side::Base) => *oid,
+        // A blob render (Browse) is one file at one ref, duplicated into
+        // both cells. There is no base tree behind it, so a `Base` anchor
+        // here would be followed through an unrelated tree when the review
+        // targets move: blob views are head-only.
+        (RenderTarget::Blob { .. }, Side::Base) => return None,
+        (RenderTarget::Blob { oid }, Side::Head) => *oid,
     };
     Some(Anchor::Lines {
         repo_id: file.repo_id,
@@ -1057,4 +1190,80 @@ fn line_anchor(file: &FileRef, target: &RenderTarget, row: &Row) -> Option<Ancho
         lines: LineRange::single(line),
         context_hash: ContextHash::new(0),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use nits_protocol::{BlobOid, Cell, ChangeKind, LineNo, RepoId, RepoPath};
+
+    use super::*;
+
+    fn cell(n: u32) -> Cell {
+        Cell {
+            line_no: LineNo::new(n).unwrap(),
+            text: format!("l{n}"),
+            spans: Vec::new(),
+            changed: Vec::new(),
+        }
+    }
+
+    fn file() -> FileRef {
+        FileRef {
+            repo_id: RepoId::from_parts(1, 1),
+            path: RepoPath::new("src/a.rs").unwrap(),
+        }
+    }
+
+    fn blob(n: u8) -> BlobOid {
+        BlobOid::from_bytes([n; 20])
+    }
+
+    #[test]
+    fn a_blob_render_has_no_base_side_to_anchor_to() {
+        // Browse renders one file at one ref and duplicates each line into
+        // both cells. A `Base` anchor there would name the blob as the
+        // review's base side and be followed through an unrelated tree
+        // when the targets move, so it must not be constructible.
+        let target = RenderTarget::Blob { oid: blob(11) };
+        let row = Row::Context {
+            left: cell(9),
+            right: cell(9),
+        };
+        assert_eq!(line_anchor(&file(), &target, &row, Side::Base), None);
+        let Some(Anchor::Lines { side, blob_oid, .. }) =
+            line_anchor(&file(), &target, &row, Side::Head)
+        else {
+            panic!("the head side of a blob row is commentable");
+        };
+        assert_eq!((side, blob_oid), (Side::Head, blob(11)));
+    }
+
+    #[test]
+    fn each_side_of_a_modified_row_anchors_to_its_own_blob() {
+        let target = RenderTarget::Diff {
+            change: ChangeKind::Modified {
+                old: blob(10),
+                new: blob(11),
+            },
+        };
+        let row = Row::Modified {
+            left: cell(9),
+            right: cell(12),
+        };
+        for (side, oid, line) in [(Side::Base, blob(10), 9), (Side::Head, blob(11), 12)] {
+            let Some(Anchor::Lines {
+                side: got,
+                blob_oid,
+                lines,
+                ..
+            }) = line_anchor(&file(), &target, &row, side)
+            else {
+                panic!("both halves of a modified row are commentable");
+            };
+            assert_eq!((got, blob_oid, lines.start().get()), (side, oid, line));
+        }
+        // An added row has no base half at all.
+        let added = Row::Added { right: cell(12) };
+        assert_eq!(line_anchor(&file(), &target, &added, Side::Base), None);
+    }
 }

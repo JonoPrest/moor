@@ -145,6 +145,7 @@ registry!(
     ChangeKindKind,
     DiffView,
     DiffRow,
+    RowThread,
     CommentView,
     ThreadView,
     ThreadPlace,
@@ -427,7 +428,15 @@ struct_fixture!(
     DiffRow {
         index: 121,
         row: proto_named::<Row>("Modified")?,
-        threads: vec![thread_id()?],
+        threads: vec![local::<RowThread>()?],
+    }
+);
+struct_fixture!(
+    RowThread,
+    "RowThread",
+    RowThread {
+        thread: thread_id()?,
+        side: Side::Base,
     }
 );
 struct_fixture!(
@@ -520,7 +529,10 @@ enum_fixture!(
     [
         Focus::ReviewList { index: 0 },
         Focus::Tree { index: 2 },
-        Focus::Diff { row: 121 },
+        Focus::Diff {
+            row: 121,
+            side: Side::Head,
+        },
         Focus::Thread { index: 0 },
         Focus::Composer,
         Focus::CommitStepper { index: 0 },
@@ -627,7 +639,10 @@ enum_fixture!(
             thread_id: thread_id()?,
         },
         Action::SetFocus {
-            focus: Focus::Diff { row: 121 },
+            focus: Focus::Diff {
+                row: 121,
+                side: Side::Head,
+            },
         },
         Action::ToggleHelp,
         Action::Reply {
@@ -654,6 +669,11 @@ enum_fixture!(
             file: file_ref()?,
             first_row: 120,
             last_row: 179,
+        },
+        Action::OpenFileAt {
+            file: file_ref()?,
+            row: 121,
+            side: Side::Base,
         },
         Action::CloseFile,
         Action::ToggleDir {
@@ -819,7 +839,10 @@ enum_fixture!(
             progress: local::<Progress>()?,
         },
         ViewPatch::Focus {
-            focus: Focus::Diff { row: 121 },
+            focus: Focus::Diff {
+                row: 121,
+                side: Side::Head,
+            },
             tab: Tab::FilesChanged,
         },
         ViewPatch::Hints {
@@ -839,7 +862,15 @@ enum_fixture!(
         },
     ]
 );
-struct_fixture!(VisualView, "VisualView", VisualView { start: 4, end: 6 });
+struct_fixture!(
+    VisualView,
+    "VisualView",
+    VisualView {
+        start: 4,
+        end: 6,
+        side: Side::Head,
+    }
+);
 struct_fixture!(
     ViewModel,
     "ViewModel",
@@ -852,7 +883,10 @@ struct_fixture!(
         threads: vec![local::<ThreadView>()?],
         conversation: Vec::new(),
         stepper: Some(local::<CommitStepper>()?),
-        focus: Focus::Diff { row: 121 },
+        focus: Focus::Diff {
+            row: 121,
+            side: Side::Head,
+        },
         tab: Tab::FilesChanged,
         mode: Mode::Normal,
         hints: vec![local::<Hint>()?],

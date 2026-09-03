@@ -28,6 +28,12 @@ module FireEvent = {
   external keyDown: (element, {"key": string, "ctrlKey": bool}) => unit = "keyDown"
   @module("@testing-library/react") @scope("fireEvent")
   external change: (element, {"target": {"value": string}}) => unit = "change"
+  @module("@testing-library/react") @scope("fireEvent")
+  external mouseDown: element => unit = "mouseDown"
+  @module("@testing-library/react") @scope("fireEvent")
+  external mouseEnter: element => unit = "mouseEnter"
+  @module("@testing-library/react") @scope("fireEvent")
+  external mouseUp: element => unit = "mouseUp"
 }
 
 module Element = {
