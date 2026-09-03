@@ -33,6 +33,10 @@ pub async fn single(
             let reviews = daemon.read(move |c| c.reviews(workspace_id)).await?;
             Ok(Response::Reviews { reviews })
         }
+        Request::DefaultBase { repo_id } => {
+            let base = daemon.read(move |c| c.default_base(repo_id)).await?;
+            Ok(Response::DefaultBase { base })
+        }
         Request::GetReview { review_id } => {
             let review = daemon.read(move |c| c.review(review_id)).await?.review;
             Ok(Response::Review { review })

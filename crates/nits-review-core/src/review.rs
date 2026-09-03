@@ -143,6 +143,11 @@ impl Core {
             .collect())
     }
 
+    /// Detect the base branch for a working-tree review in `repo_id`.
+    pub fn default_base(&self, repo_id: RepoId) -> Result<RefSpec, CoreError> {
+        Ok(self.repo(repo_id)?.default_base()?)
+    }
+
     /// A live review's record (review + resolved targets).
     pub fn review(&self, id: ReviewId) -> Result<ReviewRecord, CoreError> {
         let rec = self

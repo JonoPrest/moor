@@ -218,6 +218,33 @@ fn agent_flag_attributes_to_an_agent() {
 }
 
 #[test]
+fn directory_review_uses_and_reports_the_daemons_detected_base() {
+    let h = start();
+    h.repo.git(&["checkout", "-q", "main"]).unwrap();
+    h.repo.git(&["branch", "-D", "feature"]).unwrap();
+    h.repo.git(&["branch", "-m", "master"]).unwrap();
+    h.repo.git(&["checkout", "-q", "-b", "topic"]).unwrap();
+    h.repo
+        .git(&["commit", "-q", "--allow-empty", "-m", "topic"])
+        .unwrap();
+
+    let created = h
+        .nits()
+        .args(["--headless", h.repo.path().to_str().unwrap()])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("(created, base: master)"));
+    let review = String::from_utf8_lossy(&created.get_output().stdout)
+        .trim()
+        .to_owned();
+    h.nits()
+        .args(["review", "show", &review])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("name: \"master\""));
+}
+
+#[test]
 fn errors_are_reported_not_panicked() {
     let h = start();
     h.nits()
@@ -349,6 +376,27 @@ fn contexts_and_daemon_lifecycle() {
     std::fs::write(&cfg, text).unwrap();
     assert!(out(&["-c", "remote", "daemon", "status"]).ends_with("running (nitsd 0.1.0)"));
     assert!(out(&["-c", "remote", "workspace", "list"]).contains(&ws));
+
+    // Directory-review base detection happens on the daemon side. The SSH
+    // client sends only the remote path and gets the same result as local.
+    let remote_repo = RepoBuilder::new()
+        .commit("base", files!["remote.txt" => "base\n"])
+        .build()
+        .unwrap();
+    remote_repo.git(&["branch", "-m", "release"]).unwrap();
+    remote_repo
+        .git(&["config", "init.defaultBranch", "release"])
+        .unwrap();
+    remote_repo.git(&["checkout", "-q", "-b", "topic"]).unwrap();
+    remote_repo
+        .git(&["commit", "-q", "--allow-empty", "-m", "topic"])
+        .unwrap();
+    nits()
+        .args(["-c", "remote", "--headless"])
+        .arg(remote_repo.path())
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("(created, base: release)"));
 
     // Stop through the ssh context; the local context sees it stopped;
     // start through ssh brings it back (remote side auto-starts).

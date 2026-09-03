@@ -32,12 +32,39 @@ pub enum GitError {
     Command { args: Vec<String>, stderr: String },
     #[error("cannot resolve {rev}: {reason}")]
     Resolve { rev: String, reason: String },
+    #[error(
+        "cannot determine a default review base for {path}: tried the branch reflog, closest ancestor branches, origin/HEAD, init.defaultBranch, main/master/trunk/develop, and the sole local branch; pass --base explicitly"
+    )]
+    DefaultBase { path: PathBuf },
     #[error("object {oid} not found or unreadable: {reason}")]
     Object { oid: Oid, reason: String },
     #[error("unexpected git output: {0}")]
     Parse(String),
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
+}
+
+/// A local branch name read from git's ref database.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct LocalBranch(String);
+
+impl LocalBranch {
+    fn new(name: impl Into<String>) -> Option<Self> {
+        let name = name.into();
+        (!name.is_empty()).then_some(Self(name))
+    }
+
+    fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    fn qualified(&self) -> String {
+        format!("refs/heads/{}", self.0)
+    }
+
+    fn into_ref_spec(self) -> RefSpec {
+        RefSpec::Branch { name: self.0 }
+    }
 }
 
 /// A git repository, safe to share across threads.
@@ -117,7 +144,175 @@ impl Repo {
         }
     }
 
+    /// Run a git command whose non-zero status means "not present" rather
+    /// than an exceptional failure. Process-spawn errors remain errors.
+    fn git_probe(&self, args: &[&str]) -> Result<Option<Vec<u8>>, GitError> {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(&self.workdir)
+            .output()?;
+        Ok(out.status.success().then_some(out.stdout))
+    }
+
     // ---- refs -------------------------------------------------------------
+
+    /// Choose the branch a working-tree review should be based on.
+    ///
+    /// Git does not retain a durable parent-branch relationship, so this
+    /// follows a deterministic ladder: a named reflog creation source, the
+    /// closest local branch by merge-base distance, then a detected trunk.
+    /// The checked-out trunk is handled before ancestor ranking so a feature
+    /// branch created from it cannot be mistaken for its parent.
+    pub fn default_base(&self) -> Result<RefSpec, GitError> {
+        let branches = self.local_branches()?;
+        let current = self.current_branch()?;
+        let trunk = self.trunk_branch(&branches)?;
+
+        if let Some(trunk_branch) = trunk.as_ref()
+            && current.as_ref() == Some(trunk_branch)
+        {
+            return Ok(trunk_branch.clone().into_ref_spec());
+        }
+
+        if let Some(branch) = current.as_ref()
+            && let Some(parent) = self.reflog_parent(branch, &branches)?
+        {
+            return Ok(parent.into_ref_spec());
+        }
+
+        if let Some(parent) = self.closest_branch(current.as_ref(), trunk.as_ref(), &branches)? {
+            return Ok(parent.into_ref_spec());
+        }
+
+        trunk
+            .map(LocalBranch::into_ref_spec)
+            .ok_or_else(|| GitError::DefaultBase {
+                path: self.workdir.clone(),
+            })
+    }
+
+    fn current_branch(&self) -> Result<Option<LocalBranch>, GitError> {
+        Ok(self
+            .git_probe(&["symbolic-ref", "--quiet", "--short", "HEAD"])?
+            .and_then(|out| LocalBranch::new(String::from_utf8_lossy(&out).trim().to_owned())))
+    }
+
+    fn local_branches(&self) -> Result<Vec<LocalBranch>, GitError> {
+        let out = self.git(&["for-each-ref", "--format=%(refname)", "refs/heads/"], &[])?;
+        let mut branches: Vec<LocalBranch> = String::from_utf8_lossy(&out)
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix("refs/heads/"))
+            .filter_map(|name| LocalBranch::new(name.to_owned()))
+            .collect();
+        branches.sort();
+        Ok(branches)
+    }
+
+    fn reflog_parent(
+        &self,
+        current: &LocalBranch,
+        branches: &[LocalBranch],
+    ) -> Result<Option<LocalBranch>, GitError> {
+        let reference = current.qualified();
+        let Some(out) = self.git_probe(&["reflog", "show", "--format=%gs", &reference])? else {
+            return Ok(None);
+        };
+        let source = String::from_utf8_lossy(&out).lines().find_map(|line| {
+            line.strip_prefix("branch: Created from ")
+                .filter(|source| *source != "HEAD")
+                .map(str::to_owned)
+        });
+        let Some(source) = source else {
+            return Ok(None);
+        };
+        let source = source
+            .strip_prefix("refs/heads/")
+            .or_else(|| source.strip_prefix("origin/"))
+            .unwrap_or(&source);
+        Ok(branches
+            .iter()
+            .find(|branch| branch.as_str() == source && *branch != current)
+            .cloned())
+    }
+
+    fn closest_branch(
+        &self,
+        current: Option<&LocalBranch>,
+        trunk: Option<&LocalBranch>,
+        branches: &[LocalBranch],
+    ) -> Result<Option<LocalBranch>, GitError> {
+        let head = match self.rev_parse_commit("HEAD") {
+            Ok(head) => head,
+            Err(GitError::Resolve { .. }) => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        let mut ranked = Vec::new();
+        for branch in branches {
+            if current == Some(branch) {
+                continue;
+            }
+            let branch_ref = branch.qualified();
+            let branch_tip = self.rev_parse_commit(&branch_ref)?;
+            // A descendant of HEAD is not an ancestor candidate. A second
+            // branch at the exact same commit is retained: that is common
+            // immediately after cutting a stacked branch.
+            if branch_tip != head
+                && self
+                    .git_probe(&["merge-base", "--is-ancestor", "HEAD", &branch_ref])?
+                    .is_some()
+            {
+                continue;
+            }
+            let Some(merge_base) = self.git_probe(&["merge-base", &branch_ref, "HEAD"])? else {
+                continue;
+            };
+            let merge_base = String::from_utf8_lossy(&merge_base).trim().to_owned();
+            let range = format!("{merge_base}..HEAD");
+            let Some(count) = self.git_probe(&["rev-list", "--count", &range])? else {
+                continue;
+            };
+            let count = String::from_utf8_lossy(&count)
+                .trim()
+                .parse::<u64>()
+                .map_err(|error| GitError::Parse(format!("rev-list count: {error}")))?;
+            let points_at_merge_base = branch_tip.to_string() == merge_base;
+            let is_trunk = trunk == Some(branch);
+            ranked.push((count, !points_at_merge_base, !is_trunk, branch.clone()));
+        }
+        ranked.sort();
+        Ok(ranked.into_iter().next().map(|(_, _, _, branch)| branch))
+    }
+
+    fn trunk_branch(&self, branches: &[LocalBranch]) -> Result<Option<LocalBranch>, GitError> {
+        let find = |name: &str| {
+            branches
+                .iter()
+                .find(|branch| branch.as_str() == name)
+                .cloned()
+        };
+        if let Some(out) = self.git_probe(&[
+            "symbolic-ref",
+            "--quiet",
+            "--short",
+            "refs/remotes/origin/HEAD",
+        ])? {
+            let target = String::from_utf8_lossy(&out);
+            if let Some(branch) = target.trim().strip_prefix("origin/").and_then(&find) {
+                return Ok(Some(branch));
+            }
+        }
+        if let Some(out) = self.git_probe(&["config", "--get", "init.defaultBranch"])?
+            && let Some(branch) = find(String::from_utf8_lossy(&out).trim())
+        {
+            return Ok(Some(branch));
+        }
+        for name in ["main", "master", "trunk", "develop"] {
+            if let Some(branch) = find(name) {
+                return Ok(Some(branch));
+            }
+        }
+        Ok((branches.len() == 1).then(|| branches[0].clone()))
+    }
 
     /// Resolve a [`RefSpec`] to concrete content. `WorkingTree` snapshots the
     /// working tree as a new tree object.
@@ -161,6 +356,7 @@ impl Repo {
                     other @ (GitError::Open { .. }
                     | GitError::Command { .. }
                     | GitError::Resolve { .. }
+                    | GitError::DefaultBase { .. }
                     | GitError::Object { .. }
                     | GitError::Parse(_)
                     | GitError::Io(_)) => other.to_string(),
