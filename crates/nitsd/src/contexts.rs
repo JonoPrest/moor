@@ -92,15 +92,12 @@ pub fn local_spec(
 /// (and starts) the daemon on its own machine.
 fn ssh_command(
     host: &str,
-    bin: Option<&str>,
+    nits: &str,
     args: &[String],
     ssh: Option<&str>,
 ) -> tokio::process::Command {
     let mut cmd = tokio::process::Command::new(ssh.unwrap_or("ssh"));
-    cmd.arg(host)
-        .arg(bin.unwrap_or("nits"))
-        .args(["daemon", "stdio"])
-        .args(args);
+    cmd.arg(host).arg(nits).args(["daemon", "stdio"]).args(args);
     cmd
 }
 
@@ -127,21 +124,25 @@ pub async fn connect(
         Context::Ssh {
             host,
             bin,
-            legacy_nitsd,
             args,
             ssh,
         } => {
-            // Refuse rather than run it: `<path>/nitsd daemon stdio` is not a
-            // command the old daemon understands, so proceeding would report
-            // the host as unreachable for a reason the user cannot see.
-            if let Some(nitsd) = legacy_nitsd {
-                return Err(ContextError::LegacyNitsd {
-                    host: host.clone(),
-                    nitsd: nitsd.clone(),
-                    help: Context::LEGACY_NITSD_HELP,
-                });
-            }
-            let mut cmd = ssh_command(host, bin.as_deref(), args, ssh.as_deref());
+            // A context naming the old `nitsd` is refused rather than run:
+            // `<path>/nitsd daemon stdio` is not a command that binary
+            // understands, so proceeding would report the host as
+            // unreachable for a reason the user cannot see.
+            let nits = match bin {
+                nits_config::RemoteBin::Legacy(nitsd) => {
+                    return Err(ContextError::LegacyNitsd {
+                        host: host.clone(),
+                        nitsd: nitsd.clone(),
+                        help: Context::LEGACY_NITSD_HELP,
+                    });
+                }
+                nits_config::RemoteBin::Default => "nits",
+                nits_config::RemoteBin::Nits(bin) => bin,
+            };
+            let mut cmd = ssh_command(host, nits, args, ssh.as_deref());
             if !autostart {
                 // Exits 3 rather than waking a daemon, so a client can
                 // probe or stop a remote without starting one.

@@ -470,10 +470,12 @@ both hidden-or-documented subcommands of the one `nits` binary.
   `nitsd::launch::nits_binary` starts a daemon by re-executing the
   running `nits` (`$NITS_BIN` overrides), so client and daemon are always
   the same build and cannot fail the version handshake.
-- ssh contexts run `ssh <host> nits daemon stdio`; `Context::Ssh.bin` names
-  the remote binary. The old `nitsd` key is **not** aliased onto it — it
-  names a binary that cannot serve — but is kept as `legacy_nitsd` so
-  `connect` can refuse the context with the exact edit to make.
+- ssh contexts run `ssh <host> nits daemon stdio`; `Context::Ssh.bin` is a
+  `RemoteBin` (`Default | Nits(path) | Legacy(path)`), parsed from the two
+  wire spellings once at the config boundary. The old `nitsd` key is **not**
+  aliased onto `bin` — it names a binary that cannot serve — it becomes
+  `Legacy`, which `connect` refuses with the exact edit to make; both keys
+  at once is a config error rather than a silent winner.
   `--no-autostart` replaced `--stdio-if-running`.
 - `daemon serve|stdio` take `--ws-listen`, not `--ws`: the global `--ws`
   is the client side, a URL to connect to.

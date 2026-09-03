@@ -52,17 +52,45 @@ pub enum ConfigError {
     NoHome,
 }
 
+/// Which binary an ssh context runs on the remote, parsed from the two
+/// wire spellings once, here. The rest of the code never sees "both keys"
+/// or has to decide which wins: the states a config can express are the
+/// variants, and nothing else.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum RemoteBin {
+    /// No key: `nits` from the remote PATH.
+    #[default]
+    Default,
+    /// `bin = "..."`: where `nits` is on that host.
+    Nits(String),
+    /// `nitsd = "..."`, written before the daemon became `nits daemon
+    /// serve`. Its own variant because it must never be *run* — the value
+    /// names an executable that does not understand `daemon stdio` — only
+    /// refused, with the edit to make.
+    Legacy(String),
+}
+
+impl RemoteBin {
+    /// The remote `nits` to run, for a context that may be run at all.
+    #[must_use]
+    pub fn nits(&self) -> Option<&str> {
+        match self {
+            RemoteBin::Default => Some("nits"),
+            RemoteBin::Nits(bin) => Some(bin),
+            RemoteBin::Legacy(_) => None,
+        }
+    }
+}
+
 /// Where a daemon is and how to reach it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", deny_unknown_fields)]
+#[serde(try_from = "ContextWire", into = "ContextWire")]
 pub enum Context {
     /// A daemon on this machine, started on demand.
     Local {
         /// Default: `$XDG_DATA_HOME/nits` or `~/.local/share/nits`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         data_dir: Option<PathBuf>,
         /// Default: `<data_dir>/nitsd.sock`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         socket: Option<PathBuf>,
     },
     /// A daemon on another machine, reached by `ssh <host> nits daemon
@@ -70,41 +98,120 @@ pub enum Context {
     /// from `~/.ssh/config`.
     Ssh {
         host: String,
-        /// The remote `nits` binary. Default: `nits` on the remote PATH.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        bin: Option<String>,
-        /// The pre-one-binary `nitsd` key, kept **only** so a config written
-        /// before the daemon became `nits daemon serve` can be recognised
-        /// and reported. It is deliberately not an alias for `bin`: the
-        /// value names a `nitsd` executable that does not understand
-        /// `daemon stdio` (and is probably gone after the upgrade), so
-        /// silently running it would fail obscurely. See
-        /// [`Context::legacy_nitsd`].
-        #[serde(default, rename = "nitsd", skip_serializing_if = "Option::is_none")]
-        legacy_nitsd: Option<String>,
+        bin: RemoteBin,
         /// Extra arguments for the remote daemon, e.g. `--data-dir`.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         args: Vec<String>,
         /// The ssh client to run. Default: `ssh`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         ssh: Option<String>,
     },
     /// A daemon already listening for WebSocket clients.
     Ws { url: String },
 }
 
-impl Context {
-    /// The pre-one-binary `nitsd = "..."` key, if this context still carries
-    /// one. Callers must refuse to use such a context and say how to fix it
-    /// — [`Context::LEGACY_NITSD_HELP`] is that message.
-    #[must_use]
-    pub fn legacy_nitsd(&self) -> Option<&str> {
-        match self {
-            Context::Ssh { legacy_nitsd, .. } => legacy_nitsd.as_deref(),
-            Context::Local { .. } | Context::Ws { .. } => None,
+/// The file's spelling of a context. Only [`Context`] is used past the
+/// boundary; this exists so the two ways of naming a remote binary are
+/// turned into one domain value — or rejected — exactly once.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", deny_unknown_fields)]
+enum ContextWire {
+    Local {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        data_dir: Option<PathBuf>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        socket: Option<PathBuf>,
+    },
+    Ssh {
+        host: String,
+        /// The remote `nits` binary. Default: `nits` on the remote PATH.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        bin: Option<String>,
+        /// The pre-one-binary key, recognised so a config written before
+        /// the daemon became `nits daemon serve` can be reported rather
+        /// than silently mis-run.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        nitsd: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        args: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ssh: Option<String>,
+    },
+    Ws {
+        url: String,
+    },
+}
+
+/// Why a context in the file is not a context.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ContextParseError {
+    #[error(
+        "context for {host} sets both `bin` and `nitsd`; {}",
+        Context::LEGACY_NITSD_HELP
+    )]
+    BothBinAndNitsd { host: String },
+}
+
+impl TryFrom<ContextWire> for Context {
+    type Error = ContextParseError;
+
+    fn try_from(w: ContextWire) -> Result<Self, Self::Error> {
+        Ok(match w {
+            ContextWire::Local { data_dir, socket } => Context::Local { data_dir, socket },
+            ContextWire::Ssh {
+                host,
+                bin,
+                nitsd,
+                args,
+                ssh,
+            } => {
+                let bin = match (bin, nitsd) {
+                    (Some(_), Some(_)) => {
+                        return Err(ContextParseError::BothBinAndNitsd { host });
+                    }
+                    (Some(bin), None) => RemoteBin::Nits(bin),
+                    (None, Some(nitsd)) => RemoteBin::Legacy(nitsd),
+                    (None, None) => RemoteBin::Default,
+                };
+                Context::Ssh {
+                    host,
+                    bin,
+                    args,
+                    ssh,
+                }
+            }
+            ContextWire::Ws { url } => Context::Ws { url },
+        })
+    }
+}
+
+impl From<Context> for ContextWire {
+    fn from(c: Context) -> Self {
+        match c {
+            Context::Local { data_dir, socket } => ContextWire::Local { data_dir, socket },
+            Context::Ssh {
+                host,
+                bin,
+                args,
+                ssh,
+            } => {
+                let (bin, nitsd) = match bin {
+                    RemoteBin::Default => (None, None),
+                    RemoteBin::Nits(bin) => (Some(bin), None),
+                    RemoteBin::Legacy(nitsd) => (None, Some(nitsd)),
+                };
+                ContextWire::Ssh {
+                    host,
+                    bin,
+                    nitsd,
+                    args,
+                    ssh,
+                }
+            }
+            Context::Ws { url } => ContextWire::Ws { url },
         }
     }
+}
 
+impl Context {
     /// What to tell someone whose config still has the old key.
     pub const LEGACY_NITSD_HELP: &'static str = "the daemon is now `nits daemon serve`. Replace `nitsd = \"...\"` with \
          `bin = \"nits\"` (or the path to `nits` on that host), or drop the line \
@@ -219,8 +326,7 @@ mod tests {
             "box".into(),
             Context::Ssh {
                 host: "build-box".into(),
-                bin: None,
-                legacy_nitsd: None,
+                bin: RemoteBin::Default,
                 args: vec!["--data-dir".into(), "/srv/nits".into()],
                 ssh: None,
             },
@@ -262,11 +368,38 @@ mod tests {
 
         let cfg = Config::load(&path).expect("an old config still loads");
         let (_, ctx) = cfg.resolve(Some("box")).unwrap();
-        assert_eq!(ctx.legacy_nitsd(), Some("/opt/bin/nitsd"));
-        // Crucially not adopted as the binary to run: `/opt/bin/nitsd daemon
-        // stdio` is not a command the old daemon understands.
-        assert!(matches!(ctx, Context::Ssh { bin: None, .. }));
+        // Recognised as the legacy key, and crucially not adopted as the
+        // binary to run: `/opt/bin/nitsd daemon stdio` is not a command
+        // the old daemon understands. There is no state in which a caller
+        // has to decide between two spellings — the parse already did.
+        assert!(matches!(
+            &ctx,
+            Context::Ssh { bin: RemoteBin::Legacy(n), .. } if n == "/opt/bin/nitsd"
+        ));
+        assert_eq!(
+            match &ctx {
+                Context::Ssh { bin, .. } => bin.nits(),
+                Context::Local { .. } | Context::Ws { .. } => None,
+            },
+            None,
+            "a legacy context names nothing runnable"
+        );
         assert!(Context::LEGACY_NITSD_HELP.contains("bin = "));
+        // It round-trips back to the old spelling rather than being
+        // rewritten into something the old client would not understand.
+        let round: Context = toml::from_str(&toml::to_string(&ctx).unwrap()).unwrap();
+        assert_eq!(round, ctx);
+
+        // Both keys at once is not a context: the file is refused, with
+        // the edit to make, rather than one of them silently winning.
+        std::fs::write(
+            &path,
+            "[contexts.box]\ntype = \"Ssh\"\nhost = \"build-box\"\nbin = \"nits\"\nnitsd = \"/opt/bin/nitsd\"\n",
+        )
+        .unwrap();
+        let err = Config::load(&path).expect_err("both keys is not a context");
+        let text = err.to_string();
+        assert!(text.contains("bin") && text.contains("nitsd"), "{text}");
 
         // A migrated config has no legacy key and names `nits`.
         std::fs::write(
@@ -275,7 +408,30 @@ mod tests {
         )
         .unwrap();
         let (_, ctx) = Config::load(&path).unwrap().resolve(Some("box")).unwrap();
-        assert_eq!(ctx.legacy_nitsd(), None);
-        assert!(matches!(ctx, Context::Ssh { bin: Some(b), .. } if b == "nits"));
+        assert!(matches!(
+            &ctx,
+            Context::Ssh { bin: RemoteBin::Nits(b), .. } if b == "nits"
+        ));
+        // And one with neither key runs `nits` from the remote PATH.
+        std::fs::write(
+            &path,
+            "[contexts.box]\ntype = \"Ssh\"\nhost = \"build-box\"\n",
+        )
+        .unwrap();
+        let (_, ctx) = Config::load(&path).unwrap().resolve(Some("box")).unwrap();
+        assert!(matches!(
+            &ctx,
+            Context::Ssh {
+                bin: RemoteBin::Default,
+                ..
+            }
+        ));
+        assert_eq!(
+            match &ctx {
+                Context::Ssh { bin, .. } => bin.nits(),
+                Context::Local { .. } | Context::Ws { .. } => None,
+            },
+            Some("nits")
+        );
     }
 }

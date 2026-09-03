@@ -1245,8 +1245,10 @@ fn context_cmd(
             &name,
             &Context::Ssh {
                 host,
-                bin,
-                legacy_nitsd: None,
+                bin: bin.map_or(
+                    nits_config::RemoteBin::Default,
+                    nits_config::RemoteBin::Nits,
+                ),
                 args,
                 ssh: None,
             },
