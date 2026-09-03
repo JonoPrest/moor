@@ -66,8 +66,10 @@ let make = (~stepper: CommitStepper.t, ~focus: Focus.t, ~dispatch: Action.t => u
           <li
             key=c.oid
             className={"stepper-commit" ++ (isSelected ? " stepper-selected" : "")}
-            onClick={_ => dispatch(SetFocus({focus: Focus.CommitStepper({index: i})}))}
-            onDoubleClick={_ => dispatch(StepCommit({selected: Some(i)}))}
+            onClick={_ => {
+              dispatch(SetFocus({focus: Focus.CommitStepper({index: i})}))
+              dispatch(SetScope({scope: Commit({repoId: stepper.repoId, oid: c.oid})}))
+            }}
           >
             <span className="commit-oid">
               {React.string(String.slice(c.oid, ~start=0, ~end=8))}

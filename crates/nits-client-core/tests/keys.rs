@@ -573,15 +573,26 @@ fn every_action_is_reachable_from_a_binding() {
         .handle(Input::Server(ServerMsg::Response {
             id,
             response: nits_protocol::Response::Commits {
-                commits: vec![nits_protocol::CommitInfo {
-                    oid: nits_protocol::CommitOid::from_bytes([2; 20]),
-                    parents: Vec::new(),
-                    tree: TreeOid::from_bytes([2; 20]),
-                    author: sig.clone(),
-                    committer: sig,
-                    subject: "one".into(),
-                    body: String::new(),
-                }],
+                commits: [2u8, 1u8]
+                    .into_iter()
+                    .map(|fill| nits_protocol::CommitInfo {
+                        oid: nits_protocol::CommitOid::from_bytes([fill; 20]),
+                        parents: Vec::new(),
+                        tree: TreeOid::from_bytes([fill; 20]),
+                        author: sig.clone(),
+                        committer: sig.clone(),
+                        subject: format!("commit {fill}"),
+                        body: String::new(),
+                    })
+                    .collect(),
+            },
+        }))
+        .unwrap();
+    with_stepper
+        .handle(Input::User(Action::SetScope {
+            scope: nits_client_core::ScopeChoice::Commit {
+                repo_id: repo_id(),
+                oid: nits_protocol::CommitOid::from_bytes([2; 20]),
             },
         }))
         .unwrap();

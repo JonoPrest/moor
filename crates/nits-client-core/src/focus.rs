@@ -792,9 +792,16 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                     Ok(open_file(file.clone(), row, side, Landing::Follow))
                 }
             }
-            Focus::CommitStepper { index } => Ok(Action::StepCommit {
-                selected: Some(index),
-            }),
+            Focus::CommitStepper { index } => {
+                let stepper = view.stepper.as_ref().ok_or_else(nothing)?;
+                let commit = stepper.commits.get(index).ok_or_else(nothing)?;
+                Ok(Action::SetScope {
+                    scope: ScopeChoice::Commit {
+                        repo_id: stepper.repo_id,
+                        oid: commit.oid,
+                    },
+                })
+            }
             Focus::Composer | Focus::Help => Err(nothing()),
         },
         Command::Back => {
