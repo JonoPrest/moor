@@ -199,6 +199,30 @@ impl Default for ViewPrefs {
     }
 }
 
+/// Where the host should put a row of the diff. Vertical motion keeps the
+/// focused row on screen by itself; these are the explicit repositions
+/// (`z z`/`z t`/`z b`), which move the view and leave the cursor put.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::EnumIter)]
+pub enum ScrollAlign {
+    /// The row to the middle of the viewport (`z z`).
+    Center,
+    /// The row to the top (`z t`).
+    Top,
+    /// The row to the bottom (`z b`).
+    Bottom,
+}
+
+/// A reposition the host has not performed yet. `seq` counts the
+/// instructions, so pressing `z z` again after scrolling away by mouse is
+/// a new one even though the row and alignment repeat.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScrollIntent {
+    pub row: u32,
+    pub align: ScrollAlign,
+    pub seq: u32,
+}
+
 /// The Visual-mode line selection (UI-DESIGN: modal keys): row indices of
 /// the open file, ordered, both ends inclusive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -251,6 +275,9 @@ pub struct ViewModel {
     pub focus: Focus,
     /// Which center tab is shown (`1`/`2`/`3`).
     pub tab: Tab,
+    /// The last `z z`/`z t`/`z b`, for the host to act on (§6.4: the
+    /// viewport follows core state, the DOM never decides where to be).
+    pub scroll: Option<ScrollIntent>,
     /// Vim-style mode (UI-DESIGN: modal keys): Insert while a text
     /// editor owns the keys, Normal otherwise. The hint bar shows it.
     pub mode: crate::keymap::Mode,

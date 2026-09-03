@@ -17,7 +17,8 @@ use crate::explorer::{Progress, TreeView};
 use crate::focus::Focus;
 use crate::keymap::{HelpView, Hint, Mode};
 use crate::view::{
-    ConnectionView, ContentSearchView, Draft, Tab, ViewDelta, ViewModel, ViewPrefs, VisualView,
+    ConnectionView, ContentSearchView, Draft, ScrollIntent, Tab, ViewDelta, ViewModel, ViewPrefs,
+    VisualView,
 };
 
 /// The part of the view one section owns.
@@ -69,6 +70,10 @@ pub enum ViewPatch {
     Focus {
         focus: Focus,
         tab: Tab,
+        /// The last `z z`/`z t`/`z b`; the host repositions the view when
+        /// its `seq` changes.
+        #[serde(default)]
+        scroll: Option<ScrollIntent>,
     },
     Hints {
         hints: Vec<Hint>,
@@ -154,6 +159,7 @@ impl ViewModel {
             ViewSection::Focus => ViewPatch::Focus {
                 focus: self.focus,
                 tab: self.tab,
+                scroll: self.scroll,
             },
             ViewSection::Hints => ViewPatch::Hints {
                 hints: self.hints.clone(),
@@ -231,9 +237,10 @@ impl ViewModel {
             ViewPatch::Conversation { conversation } => self.conversation = conversation,
             ViewPatch::CommitStepper { stepper } => self.stepper = stepper,
             ViewPatch::Progress { progress } => self.progress = progress,
-            ViewPatch::Focus { focus, tab } => {
+            ViewPatch::Focus { focus, tab, scroll } => {
                 self.focus = focus;
                 self.tab = tab;
+                self.scroll = scroll;
             }
             ViewPatch::Hints {
                 hints,

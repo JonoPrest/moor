@@ -20,6 +20,7 @@ let make = (
   ~diff: DiffView.t,
   ~layout: Layout.t,
   ~focus: Focus.t,
+  ~scroll: option<ScrollIntent.t>=?,
   ~threads: array<ThreadView.t>=[],
   ~draft: option<Draft.t>=?,
   ~pendingRefresh: bool=false,
@@ -58,11 +59,32 @@ let make = (
   }
   React.useEffect1(() => {
     switch focusedRow {
-    | Some(row) => virtualizer->Virtual.scrollToIndex(row)
+    | Some(row) => virtualizer->Virtual.scrollToIndexAligned(row, {"align": "auto"})
     | None => ()
     }
     None
   }, [focusedRow])
+  // `z z`/`z t`/`z b` reposition the view around the focused row; the
+  // core counts the instructions so the same chord twice scrolls twice.
+  // The watermark starts at whatever intent exists when this view mounts:
+  // switching tabs away and back must not replay an old reposition as if
+  // the reader had just asked for it.
+  let lastScroll = React.useRef(scroll->Option.map((s: ScrollIntent.t) => s.seq))
+  React.useEffect1(() => {
+    switch scroll {
+    | Some({seq, row, align}) if lastScroll.current != Some(seq) => {
+        lastScroll.current = Some(seq)
+        let align = switch align {
+        | View.ScrollAlign.Center => "center"
+        | Top => "start"
+        | Bottom => "end"
+        }
+        virtualizer->Virtual.scrollToIndexAligned(row, {"align": align})
+      }
+    | Some(_) | None => ()
+    }
+    None
+  }, [scroll])
   // A viewed file collapses (§4.4); the reader can expand it for this visit.
   let (expanded, setExpanded) = React.useState(() => false)
   let collapsed = diff.viewed == Viewed && !expanded

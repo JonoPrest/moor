@@ -4,6 +4,11 @@
     "side": "Head",
     "type": "Diff"
   },
+  "scroll": {
+    "align": "Center",
+    "row": 121,
+    "seq": 3
+  },
   "tab": "FilesChanged",
   "type": "Focus"
 }

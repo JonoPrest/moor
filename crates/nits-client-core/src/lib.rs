@@ -72,7 +72,7 @@ pub use keymap::{
 pub use patch::{ViewPatch, ViewPatchKind};
 pub use view::{
     ConnectionView, ConnectionViewKind, ContentSearchView, Draft, Layout, OpenFile, OpenReview,
-    PendingEvent, Tab, ViewDelta, ViewModel, ViewPrefs, VisualView,
+    PendingEvent, ScrollAlign, ScrollIntent, Tab, ViewDelta, ViewModel, ViewPrefs, VisualView,
 };
 
 pub use nits_protocol as protocol;
@@ -236,6 +236,12 @@ pub enum Action {
     /// the core treats this as a no-op so it stays binding-reachable).
     CopyPath {
         path: RepoPath,
+    },
+    /// Reposition the view around the focused row (`z z`/`z t`/`z b`).
+    /// Only the host knows the viewport's height, so the core records the
+    /// intent and the host performs the scroll.
+    ScrollView {
+        align: crate::view::ScrollAlign,
     },
     /// Hide/show the left sidebar (persisted).
     ToggleSidebar,
@@ -1640,6 +1646,16 @@ impl ClientCore {
                 Ok(self.apply_prefs(prefs, true))
             }
             Action::CopyPath { path: _ } => Ok(Vec::new()),
+            Action::ScrollView { align } => {
+                let Focus::Diff { row, .. } = self.view.focus else {
+                    return Err(CoreError::NoTarget(focus::NoTarget::Nothing(
+                        Command::CenterView,
+                    )));
+                };
+                let seq = self.view.scroll.map_or(0, |s| s.seq).wrapping_add(1);
+                self.view.scroll = Some(crate::view::ScrollIntent { row, align, seq });
+                Ok(vec![render(&[ViewSection::Focus])])
+            }
             Action::MarkViewed { file } => self.mark_viewed(file, true),
             Action::UnmarkViewed { file } => self.mark_viewed(file, false),
             Action::ListCommits { repo_id } => {

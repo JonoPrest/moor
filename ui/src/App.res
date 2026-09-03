@@ -88,14 +88,54 @@ module Shell = {
       KeyEvent.listen("keydown", handler)
       Some(() => KeyEvent.unlisten("keydown", handler))
     })
-    // Keep the focused list item on screen (the diff scrolls itself).
+    // Keep whatever is focused on screen. On the diff that means vim-style
+    // edge scrolling: the row moves, the view follows by as little as it
+    // can, and `z z`/`z t`/`z b` reposition it outright.
+    //
+    // The trigger has to cover every way the row can end up in the wrong
+    // place: the focus moving, the row arriving (a jump like `G` focuses a
+    // row whose chunk is still in flight, so there is nothing to scroll to
+    // on the first render), a new reposition, and the tab remounting the
+    // scroller with a fresh scroll position.
+    let focusedRow = switch model.focus {
+    | Diff({row}) => Some(row)
+    | ReviewList(_) | Tree(_) | Thread(_) | CommitStepper(_) | Composer(_) | Help(_) => None
+    }
+    let rowPresent = switch (focusedRow, model.diff) {
+    | (Some(row), Some(d)) => d.rows->Array.some((r: View.DiffRow.t) => r.index == row)
+    | (Some(_), None) | (None, _) => false
+    }
+    // An intent that already existed when this shell mounted has been
+    // performed by whoever was showing the row before.
+    let seen = React.useRef(model.scroll->Option.map(s => s.seq))
+    let file = switch model.diff {
+    | Some(d) => d.file.repoId ++ ":" ++ d.file.path
+    | None => ""
+    }
+    let key =
+      [
+        JSON.stringifyAny(model.focus)->Option.getOr(""),
+        file,
+        rowPresent ? "1" : "0",
+        model.scroll->Option.map(s => Int.toString(s.seq))->Option.getOr(""),
+        JSON.stringifyAny(model.tab)->Option.getOr(""),
+      ]->Array.join("|")
     React.useEffect1(() => {
-      switch model.focus {
-      | Diff(_) | Composer(_) | Help(_) => ()
-      | ReviewList(_) | Tree(_) | Thread(_) | CommitStepper(_) => Focused.scrollIntoView()
+      let (step, next) = Scroll.plan(
+        ~focus=model.focus,
+        ~scroll=model.scroll,
+        ~present=rowPresent,
+        ~seen=seen.current,
+      )
+      seen.current = next
+      switch step {
+      | Skip => ()
+      | Follow => Scroll.apply(Nearest)
+      | Reposition(align) => Scroll.apply(Align(align))
+      | List => Focused.scrollIntoView()
       }
       None
-    }, [model.focus])
+    }, [key])
     // `y`: the clipboard is the shell's; copy here, the core no-ops.
     let dispatch = (action: Action.t) => {
       switch action {
@@ -229,7 +269,10 @@ module Shell = {
               | None => React.null
               }}
               {switch model.diff {
-              | Some(diff) => <DiffView diff layout=model.prefs.layout focus=model.focus dispatch />
+              | Some(diff) =>
+                <DiffView
+                  diff layout=model.prefs.layout focus=model.focus scroll=?model.scroll dispatch
+                />
               | None => <div className="diff-empty"> {React.string("Open a file")} </div>
               }}
               {switch model.draft {

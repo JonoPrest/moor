@@ -545,7 +545,10 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 | Command::ExpandDown
                 | Command::CommentOnFile
                 | Command::SideBase
-                | Command::SideHead => false,
+                | Command::SideHead
+                | Command::CenterView
+                | Command::ViewTop
+                | Command::ViewBottom => false,
             };
             // A folded open file contributes no in-file stops.
             let found = if collapsed_of(view, render) {
@@ -1089,6 +1092,20 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
             Ok(Action::SetFocus {
                 focus: Focus::Diff { row, side: want },
             })
+        }
+        Command::CenterView | Command::ViewTop | Command::ViewBottom => {
+            // The view moves, the cursor stays: only meaningful on a row.
+            let Focus::Diff { .. } = focus else {
+                return Err(nothing());
+            };
+            let align = if command == Command::ViewTop {
+                crate::view::ScrollAlign::Top
+            } else if command == Command::ViewBottom {
+                crate::view::ScrollAlign::Bottom
+            } else {
+                crate::view::ScrollAlign::Center
+            };
+            Ok(Action::ScrollView { align })
         }
         Command::CommentOnFile => {
             let file = target_file(view, focus).ok_or_else(nothing)?;
