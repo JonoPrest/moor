@@ -10,6 +10,7 @@
 //!   reads; the event broadcast every connection tails.
 //! - [`connection`]: one client: request mux, cancellation, subscriptions.
 //! - [`server`]: accept loops (unix socket, stdio).
+//! - [`serve`]: running the daemon, and the stdio proxy that reaches it.
 //! - [`client`]: the async client used by tests, the CLI and the MCP shim.
 
 pub mod client;
@@ -23,6 +24,7 @@ pub mod ids;
 pub mod launch;
 pub mod ops;
 pub mod render_text;
+pub mod serve;
 pub mod server;
 pub mod transport;
 pub mod watcher;

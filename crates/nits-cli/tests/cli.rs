@@ -322,13 +322,15 @@ fn contexts_and_daemon_lifecycle() {
         .stderr(predicate::str::contains("managed elsewhere"));
 
     // An ssh context: `ssh` is replaced by a script that ignores the host
-    // and runs the same daemon's proxy locally.
+    // and the remote binary name, and runs this build's proxy locally —
+    // `nits daemon stdio`, pointed at the same data dir. The flags go after
+    // the subcommand because they are global.
     let fake_ssh = dir.path().join("fake-ssh.sh");
     std::fs::write(
         &fake_ssh,
         format!(
-            "#!/bin/sh\nshift 2\nexec {} --data-dir {} --socket {} \"$@\"\n",
-            nitsd_bin().display(),
+            "#!/bin/sh\nshift 2\nexec {} \"$@\" --data-dir {} --socket {}\n",
+            env!("CARGO_BIN_EXE_nits"),
             data.display(),
             socket.display()
         ),
@@ -378,8 +380,83 @@ fn ctx_desc(data: &Path, socket: &Path) -> String {
     )
 }
 
-/// The `nitsd` built alongside `nits`.
-fn nitsd_bin() -> PathBuf {
-    let nits = PathBuf::from(env!("CARGO_BIN_EXE_nits"));
-    nits.parent().unwrap().join("nitsd")
+/// The daemon subcommands parse their own flags.
+///
+/// clap keys arguments by *field name*, and only notices a clash when the
+/// parsed value is read: a global `--ws` reaching a `ServeArgs` whose field
+/// was also called `ws` panics with "Mismatch between definition and access"
+/// at run time, in front of a user. Help output does not build far enough to
+/// catch it, so this parses for real. `--no-autostart` makes `daemon stdio`
+/// exit 3 against a socket nothing is listening on, doing nothing else.
+#[test]
+fn the_daemon_subcommands_parse_their_flags() {
+    let dir = tempfile::tempdir().unwrap();
+    Command::cargo_bin("nits")
+        .unwrap()
+        .env("NITS_CONFIG", dir.path().join("no-config.toml"))
+        .env_remove("NITS_SOCKET")
+        .env_remove("NITS_WS")
+        .args(["daemon", "stdio", "--no-autostart"])
+        .args(["--ws-listen", "127.0.0.1:7699"])
+        .args(["--idle-exit", "60"])
+        .args(["--data-dir", dir.path().to_str().unwrap()])
+        .arg("--socket")
+        .arg(dir.path().join("nothing.sock"))
+        .assert()
+        .code(3);
+}
+
+/// Every subcommand's help renders — a cheap guard on the flag definitions
+/// the test above cannot reach (`daemon serve` blocks; `mcp` reads stdin).
+#[test]
+fn every_subcommand_definition_builds() {
+    for args in [
+        &["--help"][..],
+        &["daemon", "--help"],
+        &["daemon", "serve", "--help"],
+        &["daemon", "stdio", "--help"],
+        &["mcp", "--help"],
+        &["context", "add-ssh", "--help"],
+    ] {
+        Command::cargo_bin("nits")
+            .unwrap()
+            .args(args)
+            .assert()
+            .success();
+    }
+}
+
+/// An ssh context written before the daemon became `nits daemon serve` names
+/// a `nitsd` binary that cannot serve `daemon stdio`. Running it anyway would
+/// report the host unreachable for a reason the user cannot see, so the
+/// context is refused with the edit to make.
+#[test]
+fn a_legacy_ssh_context_says_how_to_migrate_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = dir.path().join("config.toml");
+    std::fs::write(
+        &cfg,
+        "[contexts.box]\ntype = \"Ssh\"\nhost = \"build-box\"\nnitsd = \"/opt/bin/nitsd\"\n",
+    )
+    .unwrap();
+    let nits = || {
+        let mut c = Command::cargo_bin("nits").unwrap();
+        c.env("NITS_CONFIG", &cfg)
+            .env_remove("NITS_SOCKET")
+            .env_remove("NITS_CONTEXT");
+        c
+    };
+    // `status` never fails the process — it reports per context — so the
+    // guidance has to reach the user through the row itself.
+    nits()
+        .args(["-c", "box", "daemon", "status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("/opt/bin/nitsd"))
+        .stdout(predicate::str::contains("bin = "));
+    nits()
+        .args(["-c", "box", "workspace", "list"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("nits daemon serve"));
 }

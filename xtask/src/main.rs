@@ -29,7 +29,7 @@ fn package_arg(args: &[String]) -> anyhow::Result<Releasable> {
         .iter()
         .position(|a| a == "--package" || a == "-p")
         .and_then(|i| args.get(i + 1))
-        .context("missing `--package <nits|nitsd|nits-mcp>`")?;
+        .context("missing `--package nits`")?;
     Releasable::parse(name)
 }
 

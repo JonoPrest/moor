@@ -40,8 +40,8 @@ followed the plan below almost exactly; deltas worth knowing:
   (explorer.rs obfuscated_if_else, keymap doc_markdown, keys_file
   redundant closure) — fixed in the same commit.
 
-`nits`/`nitsd` are NOT installed on this machine (`cargo install` them
-before demoing); Playwright lives in the session scratchpad `pw/`.
+`nits` is NOT installed on this machine (`cargo install nits` before
+demoing); Playwright lives in the session scratchpad `pw/`.
 
 ## 2026-09-01 (evening): DONE — Visual mode (keyboard multiline comments)
 
@@ -185,7 +185,7 @@ verified headlessly (Playwright against a live `nits <repo>` server;
 scripts in the session scratchpad `pw/`). Every commit is pushed and
 every gate is green (fmt, clippy -D warnings, all workspace tests minus
 nits-client-tauri locally — CI covers it —, wasm check, fixtures no-op,
-451 UI tests). Protocol bumped to 0.2.0; reinstall `nits`/`nitsd` and
+451 UI tests). Protocol bumped to 0.2.0; reinstall `nits` and
 restart the daemon before demoing.
 
 Landed since the last note, per phase:
@@ -288,8 +288,8 @@ commit):
    to phase 2.
 5. Verify headlessly: `nits .` in the repo, then Playwright scripts in
    the scratchpad `pw/` dir pattern (see below); keep every gate green.
-   NOTE: `~/.cargo/bin/nits*` predate all of this — `cargo install` the
-   cli/daemon and restart nitsd before demoing.
+   NOTE: `~/.cargo/bin/nits*` predate all of this — `cargo install nits`
+   and `nits daemon stop` before demoing.
 
 Then phases 2–3 as listed in the section below.
 
@@ -459,3 +459,28 @@ Written 2026-08-27 at the end of the session that finished Milestone 3 and
   the package is namespaced: `-open RescriptSchema` in `rescript.json`.
   `pnpm-workspace.yaml` must allow the build scripts of `rescript`,
   `rescript-schema-ppx` and `@rescript/react` (pnpm 11 `allowBuilds`).
+
+## 2026-09-02: DONE — one binary
+
+`nitsd` and `nits-mcp` lost their `[[bin]]` sections and are libraries
+only; the daemon is `nits daemon serve` and the MCP server is `nits mcp`,
+both hidden-or-documented subcommands of the one `nits` binary.
+
+- `nitsd::serve` holds what `nitsd`'s `main` did (`serve`, `stdio`);
+  `nitsd::launch::nits_binary` starts a daemon by re-executing the
+  running `nits` (`$NITS_BIN` overrides), so client and daemon are always
+  the same build and cannot fail the version handshake.
+- ssh contexts run `ssh <host> nits daemon stdio`; `Context::Ssh.bin` is a
+  `RemoteBin` (`Default | Nits(path) | Legacy(path)`), parsed from the two
+  wire spellings once at the config boundary. The old `nitsd` key is **not**
+  aliased onto `bin` — it names a binary that cannot serve — it becomes
+  `Legacy`, which `connect` refuses with the exact edit to make; both keys
+  at once is a config error rather than a silent winner.
+  `--no-autostart` replaced `--stdio-if-running`.
+- `daemon serve|stdio` take `--ws-listen`, not `--ws`: the global `--ws`
+  is the client side, a URL to connect to.
+- Packaging: one tarball/formula/PKGBUILD/deb/rpm, no `Depends: nitsd`,
+  `cargo install nits` is the whole instruction. `Releasable` has one
+  variant; the workflow's package choice is `[nits]`.
+- `nits-web` and `nits-desktop` are unchanged — a dev bridge and a GUI
+  app, neither of which anyone installs from a package.

@@ -13,11 +13,11 @@ version=${2:?version}
 tag=${3:?tag}
 artifacts=${4:?artifact directory}
 shift 4
-# Every binary the tarball carries. The clients spawn nitsd, so installing only
-# the headline binary yields a formula whose `--version` passes and whose first
-# real command fails.
+# Every binary the tarball carries — one, since the daemon and the MCP server
+# are subcommands of `nits`. Kept as a list so the formula follows whatever
+# `Releasable::binaries()` says rather than assuming.
 binaries=("$@")
-[ ${#binaries[@]} -gt 0 ] || binaries=("$package" nitsd)
+[ ${#binaries[@]} -gt 0 ] || binaries=("$package")
 
 repo=https://github.com/JonoPrest/nits
 
@@ -35,10 +35,8 @@ sha256_for() {
 url_for() { echo "$repo/releases/download/$tag/$package-$version-$1.tar.gz"; }
 
 case $package in
-  nits)     desc="Daemon-backed code review tool where nits stick to content, not diffs" ;;
-  nitsd)    desc="Nits code-review daemon" ;;
-  nits-mcp) desc="MCP stdio server for the Nits code-review daemon" ;;
-  *)        echo "unknown package $package" >&2; exit 1 ;;
+  nits) desc="Daemon-backed code review tool where nits stick to content, not diffs" ;;
+  *)    echo "unknown package $package" >&2; exit 1 ;;
 esac
 
 cat <<EOF
@@ -79,27 +77,17 @@ $(for b in "${binaries[@]}"; do echo "    bin.install \"$b\""; done)
     assert_match "$version", shell_output("#{bin}/$package --version")
 $(case $package in
 nits) cat <<'TEST'
-    # A command that actually starts and connects to the daemon. `--version`
-    # and `daemon status` both pass without nitsd installed — only something
-    # reaching ensure_daemon catches a client shipped without it.
+    # Commands that actually start the daemon and the MCP server. `--version`
+    # passes on a binary missing either; only something reaching
+    # `ensure_daemon` proves the one binary really carries the whole thing.
     ENV["NITS_DATA_DIR"] = testpath/"data"
     ENV["NITS_CONFIG"]   = testpath/"config.toml"
     system bin/"nits", "workspace", "list"
-    system bin/"nits", "daemon", "stop"
-TEST
-;;
-nits-mcp) cat <<'TEST'
-    # nits-mcp is a stdio MCP server with no subcommands, so a CLI-shaped
-    # smoke test would fail on argument parsing. Drive the protocol instead:
-    # the initialize result names the daemon it connected to, and without
-    # nitsd installed this returns a JSON-RPC error rather than a result.
-    ENV["NITS_DATA_DIR"] = testpath/"data"
-    ENV["NITS_CONFIG"]   = testpath/"config.toml"
     req = <<~JSON
       {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"brew-test","version":"0"}}}
     JSON
-    out = pipe_output(bin/"nits-mcp", req)
-    assert_match "Connected to nitsd", out
+    assert_match "Connected to nitsd", pipe_output("#{bin}/nits mcp", req)
+    system bin/"nits", "daemon", "stop"
 TEST
 ;;
 esac)

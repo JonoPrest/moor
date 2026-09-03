@@ -16,21 +16,19 @@ tag=${3:?tag}
 artifacts=${4:?artifact directory}
 outdir=${5:?output directory}
 shift 5
-# Every binary the tarball carries. Clients spawn nitsd via
-# `nitsd::launch::sibling_binary`, so a package with only the client installs
-# something whose first real command fails.
+# Every binary the tarball carries — one, since the daemon and the MCP server
+# are subcommands of `nits`. Kept as a list so the package follows whatever
+# `Releasable::binaries()` says rather than assuming.
 binaries=("$@")
-[ ${#binaries[@]} -gt 0 ] || binaries=("$package" nitsd)
+[ ${#binaries[@]} -gt 0 ] || binaries=("$package")
 
 repo=https://github.com/JonoPrest/nits
 pkgname="$package-bin"
 mkdir -p "$outdir"
 
 case $package in
-  nits)     pkgdesc="Daemon-backed code review tool where nits stick to content, not diffs" ;;
-  nitsd)    pkgdesc="Nits code-review daemon" ;;
-  nits-mcp) pkgdesc="MCP stdio server for the Nits code-review daemon" ;;
-  *)        echo "unknown package $package" >&2; exit 1 ;;
+  nits) pkgdesc="Daemon-backed code review tool where nits stick to content, not diffs" ;;
+  *)    echo "unknown package $package" >&2; exit 1 ;;
 esac
 
 sha256_for() {
