@@ -56,7 +56,7 @@ pub struct Endpoint {
     pub context: nits_config::Context,
     /// Start the daemon on `initialize` if it is not running (local and
     /// ssh contexts), so an agent can always get going.
-    pub autostart: bool,
+    pub start: nitsd::contexts::StartPolicy,
 }
 
 /// Identity of the agent on the other end of stdio, from the environment
@@ -234,7 +234,7 @@ impl Server {
             author,
         };
         let client =
-            nitsd::contexts::connect(&self.endpoint.context, identity, self.endpoint.autostart)
+            nitsd::contexts::connect(&self.endpoint.context, identity, self.endpoint.start)
                 .await
                 .map_err(|e| ToolError::Invalid(format!("connecting to daemon: {e}")))?;
         let daemon = client.welcome.daemon.clone();

@@ -41,9 +41,9 @@ struct Cli {
     /// Ad-hoc local context: data dir (socket at `<data-dir>/nitsd.sock`).
     #[arg(long, env = "NITS_DATA_DIR", global = true)]
     data_dir: Option<PathBuf>,
-    /// Fail instead of starting the daemon when it is not running.
-    #[arg(long, global = true)]
-    no_autostart: bool,
+    /// Whether a connection may start a managed daemon when needed.
+    #[arg(long, value_enum, default_value_t = StartPolicyArg::StartIfNeeded, global = true)]
+    start_policy: StartPolicyArg,
     /// Port for the served web UI (default: a free port).
     #[arg(long, env = "NITS_PORT", default_value_t = 0)]
     port: u16,
@@ -79,6 +79,32 @@ enum Ui {
     Web,
     Desktop,
     Headless,
+}
+
+/// CLI spelling of the daemon lifecycle policy. The transport-level enum
+/// stays independent of clap; this adapter converts once at the boundary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum StartPolicyArg {
+    StartIfNeeded,
+    RequireRunning,
+}
+
+impl StartPolicyArg {
+    fn as_arg(self) -> &'static str {
+        match self {
+            Self::StartIfNeeded => "start-if-needed",
+            Self::RequireRunning => "require-running",
+        }
+    }
+}
+
+impl From<StartPolicyArg> for contexts::StartPolicy {
+    fn from(value: StartPolicyArg) -> Self {
+        match value {
+            StartPolicyArg::StartIfNeeded => Self::StartIfNeeded,
+            StartPolicyArg::RequireRunning => Self::RequireRunning,
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -203,8 +229,8 @@ enum DaemonCmd {
     #[command(hide = true)]
     Serve(ServeArgs),
     /// Pipe stdin/stdout to this machine's daemon, starting one if nothing
-    /// answers; `--no-autostart` exits 3 instead. What `ssh host nits
-    /// daemon stdio` runs for an ssh context.
+    /// answers; `--start-policy require-running` exits 3 instead. What
+    /// `ssh host nits daemon stdio` runs for an ssh context.
     #[command(hide = true)]
     Stdio(ServeArgs),
 }
@@ -397,6 +423,30 @@ fn config_path(cli: &Cli) -> anyhow::Result<PathBuf> {
     }
 }
 
+/// Typed desktop arguments equivalent to this process's context selection.
+/// The desktop parses them into its own endpoint-source enum before use.
+fn desktop_args(cli: &Cli) -> Vec<std::ffi::OsString> {
+    let mut args = vec!["--start-policy".into(), cli.start_policy.as_arg().into()];
+    if let Some(url) = &cli.ws {
+        args.extend(["--ws".into(), url.into()]);
+    } else if cli.socket.is_some() || cli.data_dir.is_some() {
+        if let Some(socket) = &cli.socket {
+            args.extend(["--socket".into(), socket.as_os_str().into()]);
+        }
+        if let Some(data_dir) = &cli.data_dir {
+            args.extend(["--data-dir".into(), data_dir.as_os_str().into()]);
+        }
+    } else {
+        if let Some(context) = &cli.context {
+            args.push(context.into());
+        }
+        if let Some(config) = &cli.config {
+            args.extend(["--config".into(), config.as_os_str().into()]);
+        }
+    }
+    args
+}
+
 fn identity(cli: &Cli) -> Identity {
     let machine = gethostname::gethostname().to_string_lossy().into_owned();
     let name = cli
@@ -426,7 +476,7 @@ fn identity(cli: &Cli) -> Identity {
 }
 
 async fn connect(cli: &Cli, ctx: &Context) -> anyhow::Result<Ops> {
-    let client = contexts::connect(ctx, identity(cli), !cli.no_autostart)
+    let client = contexts::connect(ctx, identity(cli), cli.start_policy.into())
         .await
         .with_context(|| format!("connecting to {}", ctx.describe()))?;
     Ok(Ops::new(client))
@@ -464,12 +514,12 @@ fn serve_opts(spec: &nitsd::launch::DaemonSpec, args: &ServeArgs) -> nitsd::serv
 }
 
 /// `nits mcp`: the MCP stdio server, on the context the global flags chose.
-async fn mcp(ctx: &Context, no_autostart: bool) -> anyhow::Result<()> {
+async fn mcp(ctx: &Context, start: contexts::StartPolicy) -> anyhow::Result<()> {
     init_daemon_logging();
     nits_mcp::serve_stdio(
         nits_mcp::Endpoint {
             context: ctx.clone(),
-            autostart: !no_autostart,
+            start,
         },
         nits_mcp::server::AgentIdentity::from_env(),
         BuildInfo {
@@ -661,15 +711,16 @@ async fn main() -> anyhow::Result<()> {
     }
     let (name, ctx) = resolve_context(&cli, &cfg)?;
     if let Some(Cmd::Daemon(c)) = cli.cmd {
-        return daemon_cmd(&cfg, &name, &ctx, c, json, cli.no_autostart).await;
+        return daemon_cmd(&cfg, &name, &ctx, c, json, cli.start_policy.into()).await;
     }
     if let Some(Cmd::Mcp) = cli.cmd {
-        return mcp(&ctx, cli.no_autostart).await;
+        return mcp(&ctx, cli.start_policy.into()).await;
     }
-    let mut ops = connect(&cli, &ctx).await?;
+    let ops = connect(&cli, &ctx).await?;
     let Some(cmd) = cli.cmd else {
-        return open_ui(&cli, &ctx, &mut ops).await;
+        return open_ui(&cli, &ctx, ops).await;
     };
+    let mut ops = ops;
     match cmd {
         Cmd::Context(_) | Cmd::Daemon(_) | Cmd::Keys(_) | Cmd::Mcp => {
             unreachable!("handled above")
@@ -692,9 +743,9 @@ async fn main() -> anyhow::Result<()> {
 /// review (head = working tree); then serve the browser UI in the
 /// foreground on a free port and print the URL (deep-linked when a
 /// review was resolved). Without a path: the workspace menu.
-async fn open_ui(cli: &Cli, ctx: &Context, ops: &mut Ops) -> anyhow::Result<()> {
+async fn open_ui(cli: &Cli, ctx: &Context, mut ops: Ops) -> anyhow::Result<()> {
     let review_id = if let Some(path) = &cli.path {
-        Some(directory_review(ops, ctx, path).await?)
+        Some(directory_review(&mut ops, ctx, path).await?)
     } else {
         anyhow::ensure!(
             !cli.headless && cli.ui != Ui::Headless,
@@ -717,29 +768,18 @@ async fn open_ui(cli: &Cli, ctx: &Context, ops: &mut Ops) -> anyhow::Result<()> 
                 .filter(|p| p.exists())
                 .ok_or_else(|| anyhow::anyhow!("nits-desktop not found next to nits"))?;
             let mut child = std::process::Command::new(app);
-            if let Some(c) = &cli.context {
-                child.arg(c);
-            }
+            child.args(desktop_args(cli));
             child.spawn().context("launching nits-desktop")?;
             return Ok(());
         }
         (Ui::Web, _) => {}
     }
-    // The bridge runs its own host, so it needs the daemon socket, not
-    // our already-open client.
-    let socket = match ctx {
-        Context::Local { data_dir, socket } => {
-            nitsd::contexts::local_spec(data_dir.as_ref(), socket.as_ref())?.socket
-        }
-        Context::Ssh { .. } | Context::Ws { .. } => {
-            anyhow::bail!(
-                "the web UI needs a local context so far (remote viewing: PLAN 4.6); \
-                 `--headless` works on remote contexts"
-            )
-        }
-    };
-    let host = nits_client_host::local_config(
-        &socket,
+    // The bridge owns a ClientCore and therefore its own daemon connection.
+    // Release the command client's SSH proxy before the host dials another.
+    drop(ops);
+    let endpoint = contexts::DaemonEndpoint::resolve(ctx, cli.start_policy.into())?;
+    let host = nits_client_host::host_config(
+        endpoint,
         web_identity(cli),
         nits_client_core::IdSeed(nitsd::ids::fresh_parts().1),
         nits_client_host::KvConfig::Memory,
@@ -1265,7 +1305,7 @@ async fn daemon_cmd(
     ctx: &Context,
     cmd: DaemonCmd,
     json: bool,
-    no_autostart: bool,
+    start: contexts::StartPolicy,
 ) -> anyhow::Result<()> {
     match cmd {
         // Being the daemon, and reaching it over a pipe. Both need a place
@@ -1278,7 +1318,7 @@ async fn daemon_cmd(
         DaemonCmd::Stdio(args) => {
             init_daemon_logging();
             let opts = serve_opts(&ctx_local(ctx, name)?, &args);
-            match nitsd::serve::stdio(opts, !no_autostart).await? {
+            match nitsd::serve::stdio(opts, start == contexts::StartPolicy::StartIfNeeded).await? {
                 nitsd::serve::StdioOutcome::Proxied => Ok(()),
                 // Not an error: the caller asked whether one was running.
                 nitsd::serve::StdioOutcome::NotRunning => std::process::exit(3),
@@ -1366,5 +1406,45 @@ mod tests {
     #[test]
     fn the_command_definition_is_valid() {
         <Cli as clap::CommandFactory>::command().debug_assert();
+    }
+
+    #[test]
+    fn start_policy_is_parsed_as_an_exhaustive_choice() {
+        let default = Cli::try_parse_from(["nits", "workspace", "list"]).unwrap();
+        assert_eq!(default.start_policy, StartPolicyArg::StartIfNeeded);
+
+        let required = Cli::try_parse_from([
+            "nits",
+            "--start-policy",
+            "require-running",
+            "workspace",
+            "list",
+        ])
+        .unwrap();
+        assert_eq!(required.start_policy, StartPolicyArg::RequireRunning);
+    }
+
+    #[test]
+    fn desktop_arguments_preserve_an_ad_hoc_endpoint_and_policy() {
+        let cli = Cli::try_parse_from([
+            "nits",
+            "--ws",
+            "ws://review.example:7677",
+            "--start-policy",
+            "require-running",
+            "--ui",
+            "desktop",
+        ])
+        .unwrap();
+        assert_eq!(
+            desktop_args(&cli),
+            [
+                "--start-policy",
+                "require-running",
+                "--ws",
+                "ws://review.example:7677"
+            ]
+            .map(std::ffi::OsString::from)
+        );
     }
 }

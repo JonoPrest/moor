@@ -6,12 +6,13 @@
 // The harness reads top to bottom.
 #![allow(clippy::too_many_lines)]
 
+use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
 use nits_client_core::{Action, ConnectionView, FileRef, IdSeed, Layout, ViewPatch};
-use nits_client_host::{Handle, HostConfig, Identity, KvConfig, local_config, spawn};
+use nits_client_host::{Handle, HostConfig, Identity, KvConfig, host_config, spawn};
 use nits_protocol::{
     Author, BuildInfo, ClientId, ClientSeq, Mutation, NonEmpty, RefSpec, RepoId, RepoPath, Request,
     Response, ReviewId, ReviewTarget, ViewSection, WorkspaceId,
@@ -20,7 +21,8 @@ use nits_review_core::DataDir;
 use nits_test_support::{RepoBuilder, TestRepo};
 use nitsd::Daemon;
 use nitsd::client::Client;
-use nitsd::server::UnixServer;
+use nitsd::contexts::{DaemonEndpoint, StartPolicy};
+use nitsd::server::{UnixServer, WsServer};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -29,6 +31,7 @@ const IPC_LIMIT: usize = 64 * 1024;
 struct Harness {
     _dir: tempfile::TempDir,
     socket: PathBuf,
+    ws_url: String,
     shutdown: CancellationToken,
     _repo: TestRepo,
 }
@@ -110,8 +113,13 @@ async fn start() -> Harness {
     )
     .unwrap();
     let server = UnixServer::bind(&socket).unwrap();
+    let ws_server = WsServer::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+        .await
+        .unwrap();
+    let ws_url = format!("ws://{}", ws_server.addr());
     let shutdown = CancellationToken::new();
     tokio::spawn(server.run(Arc::clone(&daemon), shutdown.clone()));
+    tokio::spawn(ws_server.run(Arc::clone(&daemon), shutdown.clone()));
 
     let seed = identity(99);
     let client = Client::connect_unix(
@@ -187,6 +195,7 @@ async fn start() -> Harness {
     Harness {
         _dir: dir,
         socket,
+        ws_url,
         shutdown,
         _repo: repo,
     }
@@ -220,9 +229,22 @@ async fn until(
 
 fn config(h: &Harness, kv: KvConfig) -> HostConfig {
     // Hermetic: never read the developer's real keys.toml.
+    let mut spec = nitsd::launch::DaemonSpec::for_data_dir(h.socket.with_extension("data"));
+    spec.socket.clone_from(&h.socket);
+    let endpoint = DaemonEndpoint::Local {
+        spec,
+        start: StartPolicy::RequireRunning,
+    };
     HostConfig {
         keys_file: None,
-        ..local_config(&h.socket, identity(1), IdSeed(0x5eed), kv)
+        ..host_config(endpoint, identity(1), IdSeed(0x5eed), kv)
+    }
+}
+
+fn config_for_endpoint(endpoint: DaemonEndpoint, kv: KvConfig) -> HostConfig {
+    HostConfig {
+        keys_file: None,
+        ..host_config(endpoint, identity(1), IdSeed(0x5eed), kv)
     }
 }
 
@@ -231,17 +253,7 @@ async fn connect_and_open(
     rx: &mut mpsc::UnboundedReceiver<Vec<ViewPatch>>,
     seen: &mut Vec<ViewPatch>,
 ) {
-    assert!(handle.dispatch(Action::Connect));
-    until(rx, seen, |p| {
-        matches!(
-            p,
-            ViewPatch::Connection {
-                connection: ConnectionView::Subscribed,
-                ..
-            }
-        )
-    })
-    .await;
+    connect_subscribed(handle, rx, seen).await;
     assert!(handle.dispatch(Action::ListReviews { workspace_id: ws() }));
     until(
         rx,
@@ -259,6 +271,63 @@ async fn connect_and_open(
         |p| matches!(p, ViewPatch::Progress { progress } if progress.total == 2),
     )
     .await;
+}
+
+async fn connect_subscribed(
+    handle: &Handle,
+    rx: &mut mpsc::UnboundedReceiver<Vec<ViewPatch>>,
+    seen: &mut Vec<ViewPatch>,
+) {
+    assert!(handle.dispatch(Action::Connect));
+    until(rx, seen, |p| {
+        matches!(
+            p,
+            ViewPatch::Connection {
+                connection: ConnectionView::Subscribed,
+                ..
+            }
+        )
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn host_connects_over_websocket_framing() {
+    let h = start().await;
+    let endpoint = DaemonEndpoint::WebSocket {
+        url: h.ws_url.clone(),
+    };
+    let shutdown = CancellationToken::new();
+    let (handle, mut rx) = spawn(
+        config_for_endpoint(endpoint, KvConfig::Memory),
+        shutdown.clone(),
+    )
+    .unwrap();
+    let mut seen = Vec::new();
+    connect_subscribed(&handle, &mut rx, &mut seen).await;
+    assert!(handle.dispatch(Action::Disconnect));
+    until(&mut rx, &mut seen, |patch| {
+        matches!(
+            patch,
+            ViewPatch::Connection {
+                connection: ConnectionView::Disconnected,
+                ..
+            }
+        )
+    })
+    .await;
+    assert!(handle.dispatch(Action::Connect));
+    until(&mut rx, &mut seen, |patch| {
+        matches!(
+            patch,
+            ViewPatch::Connection {
+                connection: ConnectionView::Subscribed,
+                ..
+            }
+        )
+    })
+    .await;
+    shutdown.cancel();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

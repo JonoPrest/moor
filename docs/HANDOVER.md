@@ -393,10 +393,12 @@ Written 2026-08-27 at the end of the session that finished Milestone 3 and
   landed 2026-08-27 (macOS needs no extra libs; CI's rust job now installs
   webkit2gtk for Ubuntu). `tauri::Builder` with three commands that call
   `Handle`, a task draining the patch receiver into `app.emit("view", …)`,
-  socket via `nits-config` → `nitsd::contexts::local_spec` +
-  `ensure_daemon` (autostart), KV at `app_data_dir()/kv.redb`, seed from
-  `fastrand`. `nits-desktop [context]`; only `Local` contexts work (ssh/ws
-  → `SetupError::NotLocal`, see 4.6). Run: `pnpm --dir ui build` then
+  endpoint via `nits-config` → `nitsd::contexts::DaemonEndpoint`, KV at
+  `app_data_dir()/kv.redb`, seed from `fastrand`. `nits-desktop [context]`
+  accepts Local, SSH and WebSocket contexts through the shared host dialer;
+  its typed `--socket`/`--data-dir`, `--ws`, and `--start-policy` arguments
+  preserve the exact selection made by `nits --ui desktop`.
+  Run: `pnpm --dir ui build` then
   `cargo run -p nits-client-tauri` (serves the embedded `ui/dist`; no
   `devUrl` is configured, because with one a debug build loads
   `localhost:5173` and shows a blank page unless `vite` is running). Icon is a placeholder square. Smoke-tested by hand:
@@ -409,9 +411,8 @@ Written 2026-08-27 at the end of the session that finished Milestone 3 and
   context, or `BlobRender` rows spliced in, would be needed). Playwright
   against the Tauri dev build is impossible here (no Tauri libs), so the
   smoke/keyboard-only flows exist only as component tests.
-- 4.6: remote connection UX (ssh target picker) is a host concern —
-  `nits-client-host` takes a socket path; the picker belongs in the Tauri
-  wrapper with `nits-config` contexts.
+- 4.6: remote connection UX (SSH/context picker) remains a Tauri concern;
+  `nits-client-host` already takes a typed Local/SSH/WebSocket endpoint.
 - `nits [PATH]` (added 2026-08-31) is the vite-style entry point. No
   path: serves the workspace menu. With a path: walks up
   to the repo root (worktree-aware — each worktree is its own repo),
@@ -424,7 +425,8 @@ Written 2026-08-27 at the end of the session that finished Milestone 3 and
   client; remotes are named contexts only (an ad-hoc `--ssh` was tried
   and removed — one way of doing things). `--ui desktop` launches a
   sibling `nits-desktop` (no deep link there yet); `--ui tui` reserved.
-  The web UI itself still needs a local context (PLAN 4.6).
+  The browser bridge itself stays local, but its host can connect to any
+  named Local, SSH or WebSocket daemon context.
 - Browser dev/test path (added 2026-08-31): `nits-client-web` (`nits-web`
   bin) is now HTTP+WS on one port: `/` serves the `ui/dist` build embedded
   at compile time (build the UI before cargo — CI's rust job does), `/ws`
@@ -476,7 +478,7 @@ both hidden-or-documented subcommands of the one `nits` binary.
   aliased onto `bin` — it names a binary that cannot serve — it becomes
   `Legacy`, which `connect` refuses with the exact edit to make; both keys
   at once is a config error rather than a silent winner.
-  `--no-autostart` replaced `--stdio-if-running`.
+  `--start-policy require-running` replaced `--stdio-if-running`.
 - `daemon serve|stdio` take `--ws-listen`, not `--ws`: the global `--ws`
   is the client side, a URL to connect to.
 - Packaging: one tarball/formula/PKGBUILD/deb/rpm, no `Depends: nitsd`,

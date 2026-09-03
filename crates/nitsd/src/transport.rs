@@ -13,8 +13,9 @@ use std::future::Future;
 use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, BufWriter, ReadHalf, WriteHalf};
-use tokio_tungstenite::WebSocketStream;
+use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::{self, Message};
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 use crate::codec::{self, CodecError};
 
@@ -29,6 +30,118 @@ pub trait FrameWrite: Send + Unpin {
     fn send(&mut self, frame: &[u8]) -> impl Future<Output = Result<(), CodecError>> + Send;
     /// Flush and signal end-of-stream to the peer.
     fn close(&mut self) -> impl Future<Output = Result<(), CodecError>> + Send;
+}
+
+/// An I/O stream erased only after the context has selected a byte-stream
+/// transport (a Unix socket or SSH stdio).
+trait ByteStream: AsyncRead + AsyncWrite + Send + Unpin {}
+
+impl<T> ByteStream for T where T: AsyncRead + AsyncWrite + Send + Unpin {}
+
+type BoxByteStream = Box<dyn ByteStream>;
+type ConnectedWebSocket = WebSocketStream<MaybeTlsStream<TcpStream>>;
+
+enum FramedReadKind {
+    Byte(ByteRead<BoxByteStream>),
+    WebSocket(WsRead<MaybeTlsStream<TcpStream>>),
+}
+
+enum FramedWriteKind {
+    Byte(ByteWrite<BoxByteStream>),
+    WebSocket(WsWrite<MaybeTlsStream<TcpStream>>),
+}
+
+/// Receiving half of a connection dialled from a configured context.
+///
+/// Its variants stay private so callers cannot combine the byte-framed read
+/// half of one transport with the WebSocket write half of another.
+pub struct FramedRead {
+    inner: FramedReadKind,
+}
+
+impl std::fmt::Debug for FramedRead {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FramedRead").finish_non_exhaustive()
+    }
+}
+
+/// Sending half paired with [`FramedRead`].
+pub struct FramedWrite {
+    inner: FramedWriteKind,
+}
+
+impl std::fmt::Debug for FramedWrite {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FramedWrite").finish_non_exhaustive()
+    }
+}
+
+/// A context-dialled transport after its framing has been selected.
+#[derive(Debug)]
+pub struct FramedConnection {
+    read: FramedRead,
+    write: FramedWrite,
+}
+
+impl FramedConnection {
+    /// Length-prefixed framing over a Unix socket or SSH stdio stream.
+    pub fn byte<S>(stream: S) -> Self
+    where
+        S: AsyncRead + AsyncWrite + Send + Unpin + 'static,
+    {
+        let (read, write) = byte_stream(Box::new(stream) as BoxByteStream);
+        Self {
+            read: FramedRead {
+                inner: FramedReadKind::Byte(read),
+            },
+            write: FramedWrite {
+                inner: FramedWriteKind::Byte(write),
+            },
+        }
+    }
+
+    /// Native WebSocket framing over a connected client socket.
+    pub fn web_socket(socket: ConnectedWebSocket) -> Self {
+        let (read, write) = web_socket(socket);
+        Self {
+            read: FramedRead {
+                inner: FramedReadKind::WebSocket(read),
+            },
+            write: FramedWrite {
+                inner: FramedWriteKind::WebSocket(write),
+            },
+        }
+    }
+
+    /// Split into the paired halves consumed by a client implementation.
+    pub fn into_parts(self) -> (FramedRead, FramedWrite) {
+        (self.read, self.write)
+    }
+}
+
+impl FrameRead for FramedRead {
+    async fn recv(&mut self) -> Result<Option<Vec<u8>>, CodecError> {
+        match &mut self.inner {
+            FramedReadKind::Byte(read) => read.recv().await,
+            FramedReadKind::WebSocket(read) => read.recv().await,
+        }
+    }
+}
+
+impl FrameWrite for FramedWrite {
+    async fn send(&mut self, frame: &[u8]) -> Result<(), CodecError> {
+        match &mut self.inner {
+            FramedWriteKind::Byte(write) => FrameWrite::send(write, frame).await,
+            FramedWriteKind::WebSocket(write) => FrameWrite::send(write, frame).await,
+        }
+    }
+
+    async fn close(&mut self) -> Result<(), CodecError> {
+        match &mut self.inner {
+            FramedWriteKind::Byte(write) => FrameWrite::close(write).await,
+            FramedWriteKind::WebSocket(write) => FrameWrite::close(write).await,
+        }
+    }
 }
 
 /// Length-prefixed frames over a byte stream.

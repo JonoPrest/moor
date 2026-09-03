@@ -192,7 +192,7 @@ Goal: usable desktop app.
 - Tests: adapter unit tests with a mocked Tauri API; assert no IPC message exceeds 64 KB during a scripted session (typing a comment, scrolling a 100k-line file).
 
 ### 4.3 Tauri host (`nits-client-tauri`)
-- Owns `ClientCore`, unix-socket transport (and ssh-forwarded path), KV via file, clock; pushes `ViewModel` diffs to webview.
+- Owns `ClientCore`, a context-aware Local/SSH/WebSocket transport, KV via file, and clock; pushes `ViewModel` diffs to the webview. SSH children are owned and reaped by the connection they carry.
 - Tests: host integration test against a real daemon in a temp dir.
 
 ### 4.4 Screens
@@ -212,7 +212,7 @@ Goal: usable desktop app.
 - Tests: component tests that the hint bar reflects the focus context; Playwright script performing the full review flow (open review, navigate files/hunks, comment, reply, mark viewed, step commits, toggle layout) using keyboard only — no mouse events.
 
 ### 4.6 Polish
-- "changes pending" indicator, remote connection UX (ssh target picker).
+- "changes pending" indicator, remote context picker (the underlying Local/SSH/WebSocket transport is shared by all native hosts).
 
 ---
 

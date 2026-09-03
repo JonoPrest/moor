@@ -8,10 +8,11 @@ use std::time::Duration;
 
 use futures_util::{SinkExt as _, StreamExt as _};
 use nits_client_core::{IdSeed, ViewPatch};
-use nits_client_host::{Identity, KvConfig, local_config};
+use nits_client_host::{Identity, KvConfig, host_config};
 use nits_protocol::{Author, BuildInfo, ClientId, ViewSection};
 use nits_review_core::DataDir;
 use nitsd::Daemon;
+use nitsd::contexts::{DaemonEndpoint, StartPolicy};
 use nitsd::server::UnixServer;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_util::sync::CancellationToken;
@@ -46,7 +47,15 @@ async fn browser_attach_sees_subscribed_view() {
     let server = UnixServer::bind(&socket).unwrap();
     tokio::spawn(server.run(Arc::clone(&daemon), shutdown.clone()));
 
-    let config = local_config(&socket, identity(), IdSeed(42), KvConfig::Memory);
+    let endpoint = DaemonEndpoint::resolve(
+        &nits_config::Context::Local {
+            data_dir: None,
+            socket: Some(socket),
+        },
+        StartPolicy::RequireRunning,
+    )
+    .unwrap();
+    let config = host_config(endpoint, identity(), IdSeed(42), KvConfig::Memory);
     let bridge = nits_client_web::serve(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)), config)
         .await
         .unwrap();

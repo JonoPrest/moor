@@ -1,23 +1,27 @@
 //! `nits` against a daemon running in this test process (plan 2.6).
 
+use std::net::{Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use assert_cmd::Command;
+use futures_util::{SinkExt as _, StreamExt as _};
 use nits_protocol::BuildInfo;
 use nits_review_core::DataDir;
 use nits_test_support::{RepoBuilder, TestRepo, files};
 use nitsd::Daemon;
-use nitsd::server::UnixServer;
+use nitsd::server::{UnixServer, WsServer};
 use predicates::prelude::*;
+use tokio_tungstenite::tungstenite::Message;
 use tokio_util::sync::CancellationToken;
 
 struct Harness {
     dir: tempfile::TempDir,
     socket: PathBuf,
+    ws_url: String,
     shutdown: CancellationToken,
     repo: TestRepo,
-    _rt: tokio::runtime::Runtime,
+    rt: tokio::runtime::Runtime,
 }
 
 impl Drop for Harness {
@@ -73,6 +77,11 @@ fn start() -> Harness {
         UnixServer::bind(&socket).unwrap()
     };
     rt.spawn(server.run(Arc::clone(&daemon), shutdown.clone()));
+    let ws_server = rt
+        .block_on(WsServer::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))))
+        .unwrap();
+    let ws_url = format!("ws://{}", ws_server.addr());
+    rt.spawn(ws_server.run(Arc::clone(&daemon), shutdown.clone()));
     let repo = RepoBuilder::new()
         .commit("base", files!["a.rs" => "fn a() {}\nfn z() {}\n"])
         .branch("feature")
@@ -82,9 +91,10 @@ fn start() -> Harness {
     Harness {
         dir,
         socket,
+        ws_url,
         shutdown,
         repo,
-        _rt: rt,
+        rt,
     }
 }
 
@@ -255,7 +265,7 @@ fn errors_are_reported_not_panicked() {
     let mut c = Command::cargo_bin("nits").unwrap();
     c.env("NITS_SOCKET", "/tmp/definitely-not-a-nitsd.sock")
         .env("NITS_CONFIG", h.dir.path().join("no-config.toml"))
-        .args(["--no-autostart", "workspace", "list"])
+        .args(["--start-policy", "require-running", "workspace", "list"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("not running"));
@@ -331,7 +341,7 @@ fn contexts_and_daemon_lifecycle() {
         format!("box\t{}\tstopped", ctx_desc(&data, &socket))
     );
     nits()
-        .args(["--no-autostart", "workspace", "list"])
+        .args(["--start-policy", "require-running", "workspace", "list"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("not running"));
@@ -428,14 +438,133 @@ fn ctx_desc(data: &Path, socket: &Path) -> String {
     )
 }
 
+struct RunningUi(std::process::Child);
+
+impl Drop for RunningUi {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+async fn browser_reaches_subscribed(port: u16) {
+    let url = format!("ws://127.0.0.1:{port}/ws");
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(15);
+    let mut socket = loop {
+        match tokio_tungstenite::connect_async(&url).await {
+            Ok((socket, _)) => break socket,
+            Err(err) => {
+                assert!(
+                    tokio::time::Instant::now() < deadline,
+                    "UI bridge did not listen at {url}: {err}"
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+        }
+    };
+    socket
+        .send(Message::Text(r#"{"cmd":"attach"}"#.into()))
+        .await
+        .unwrap();
+    loop {
+        let message = tokio::time::timeout_at(deadline, socket.next())
+            .await
+            .expect("timed out waiting for subscribed view")
+            .expect("UI bridge closed")
+            .unwrap();
+        let Message::Text(text) = message else {
+            continue;
+        };
+        let patches: Vec<nits_client_core::ViewPatch> = serde_json::from_str(&text).unwrap();
+        if patches.iter().any(|patch| {
+            matches!(
+                patch,
+                nits_client_core::ViewPatch::Connection {
+                    connection: nits_client_core::ConnectionView::Subscribed,
+                    ..
+                }
+            )
+        }) {
+            return;
+        }
+    }
+}
+
+/// Both remote context kinds can back the locally served browser UI. The SSH
+/// stand-in runs `nits daemon stdio` against this harness's daemon, exactly as
+/// the lifecycle test above does for command clients.
+#[test]
+fn browser_ui_connects_to_named_ssh_and_websocket_contexts() {
+    let h = start();
+    let cfg_path = h.dir.path().join("remote-ui.toml");
+    let ssh_starts = h.dir.path().join("ssh-starts");
+    let fake_ssh = h.dir.path().join("fake-ui-ssh.sh");
+    std::fs::write(
+        &fake_ssh,
+        format!(
+            "#!/bin/sh\necho x >> {}\nshift 2\nexec {} \"$@\" --socket {}\n",
+            ssh_starts.display(),
+            env!("CARGO_BIN_EXE_nits"),
+            h.socket.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(
+        &fake_ssh,
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .unwrap();
+    let mut cfg = nits_config::Config::default();
+    cfg.contexts.insert(
+        "remote".into(),
+        nits_config::Context::Ssh {
+            host: "test-host".into(),
+            bin: nits_config::RemoteBin::Default,
+            args: Vec::new(),
+            ssh: Some(fake_ssh.to_string_lossy().into_owned()),
+        },
+    );
+    cfg.contexts.insert(
+        "remote-ws".into(),
+        nits_config::Context::Ws {
+            url: h.ws_url.clone(),
+        },
+    );
+    cfg.save(&cfg_path).unwrap();
+
+    for context in ["remote", "remote-ws"] {
+        let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let child = std::process::Command::new(env!("CARGO_BIN_EXE_nits"))
+            .env("NITS_CONFIG", &cfg_path)
+            .env("NITS_USER", "ada")
+            .env_remove("NITS_SOCKET")
+            .args(["--context", context, "--port", &port.to_string()])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let ui = RunningUi(child);
+        h.rt.block_on(browser_reaches_subscribed(port));
+        drop(ui);
+    }
+    let starts = std::fs::read_to_string(ssh_starts).unwrap();
+    assert_eq!(
+        starts.lines().count(),
+        2,
+        "the short-lived command client and long-lived UI host each dial once"
+    );
+}
+
 /// The daemon subcommands parse their own flags.
 ///
 /// clap keys arguments by *field name*, and only notices a clash when the
 /// parsed value is read: a global `--ws` reaching a `ServeArgs` whose field
 /// was also called `ws` panics with "Mismatch between definition and access"
 /// at run time, in front of a user. Help output does not build far enough to
-/// catch it, so this parses for real. `--no-autostart` makes `daemon stdio`
-/// exit 3 against a socket nothing is listening on, doing nothing else.
+/// catch it, so this parses for real. `--start-policy require-running` makes
+/// `daemon stdio` exit 3 against a socket nothing is listening on.
 #[test]
 fn the_daemon_subcommands_parse_their_flags() {
     let dir = tempfile::tempdir().unwrap();
@@ -444,7 +573,7 @@ fn the_daemon_subcommands_parse_their_flags() {
         .env("NITS_CONFIG", dir.path().join("no-config.toml"))
         .env_remove("NITS_SOCKET")
         .env_remove("NITS_WS")
-        .args(["daemon", "stdio", "--no-autostart"])
+        .args(["daemon", "stdio", "--start-policy", "require-running"])
         .args(["--ws-listen", "127.0.0.1:7699"])
         .args(["--idle-exit", "60"])
         .args(["--data-dir", dir.path().to_str().unwrap()])

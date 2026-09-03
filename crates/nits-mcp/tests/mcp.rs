@@ -98,7 +98,7 @@ fn server(h: &Harness) -> Server {
                 data_dir: None,
                 socket: Some(h.socket.clone()),
             },
-            autostart: false,
+            start: nitsd::contexts::StartPolicy::RequireRunning,
         },
         AgentIdentity {
             model: "test-model".into(),
