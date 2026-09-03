@@ -701,6 +701,21 @@ if (!globalThis.Element.prototype.scrollIntoView) {
 }
 `)
 
+module SideFocusHarness = {
+  @react.component
+  let make = (~diff: View.DiffView.t) => {
+    let (focus, setFocus) = React.useState((): View.Focus.t => Diff({row: 121, side: Head}))
+    let dispatch = action =>
+      switch action {
+      | Action.SetFocus({focus}) => setFocus(_ => focus)
+      | _ => ()
+      }
+    <FileDiff
+      diff layout=Split focus threads=[] draft=None pendingRefresh=false isOpen=true dispatch
+    />
+  }
+}
+
 describe("Row sides", () => {
   // The fixture row is modified (two cells) and carries a base-anchored
   // thread; a removed row below it gives the drag a second base line.
@@ -772,6 +787,28 @@ describe("Row sides", () => {
     expect(dispatch)->toHaveBeenLastCalledWith(
       Action.SetFocus({focus: Diff({row: 121, side: Head})}),
     )
+  })
+
+  test("split-mode focus styling follows side-selection interactions", () => {
+    let {container} = render(<SideFocusHarness diff={diff()} />)
+    let row = () =>
+      Element.querySelector(container, "[data-row-index=\"121\"]")
+      ->Nullable.toOption
+      ->Option.getExn
+    let left = () => Element.querySelector(row(), ".cell-left")->Nullable.toOption->Option.getExn
+    let right = () => Element.querySelector(row(), ".cell-right")->Nullable.toOption->Option.getExn
+
+    expect(Element.className(right()))->toContain("cell-focused")
+    expect(Element.className(left()))->not_->toContain("cell-focused")
+    FireEvent.click(left())
+    expect(Element.className(left()))->toContain("cell-focused")
+    expect(Element.className(right()))->not_->toContain("cell-focused")
+    expect(Element.getAttribute(row(), "data-side"))->toEqual(Nullable.make("Base"))
+
+    FireEvent.click(right())
+    expect(Element.className(right()))->toContain("cell-focused")
+    expect(Element.className(left()))->not_->toContain("cell-focused")
+    expect(Element.getAttribute(row(), "data-side"))->toEqual(Nullable.make("Head"))
   })
 
   test("dragging down the removed side comments on base lines", () => {
