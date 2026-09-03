@@ -173,6 +173,80 @@ describe("HintBar", () => {
     expect(Screen.getByText("g"))->toBeTruthy
     expect(Screen.getByText("split layout"))->toBeTruthy
   })
+
+  test("renders every continuation while the Diff z group is pending", () => {
+    let hints: array<View.Hint.t> = [
+      {keys: "u", command: ExpandUp, label: "expand up"},
+      {keys: "d", command: ExpandDown, label: "expand down"},
+      {keys: "c", command: CommentOnFile, label: "comment on file"},
+      {keys: "z", command: CenterView, label: "centre the view"},
+      {keys: "t", command: ViewTop, label: "row to top"},
+      {keys: "b", command: ViewBottom, label: "row to bottom"},
+    ]
+    let {container} = render(
+      <HintBar
+        hints
+        pendingKeys="z"
+        pendingLabel="Expand/scroll"
+        focusName="DIFF"
+        connection={Subscribed({})}
+        progress={{viewed: 0, changedSinceViewed: 0, total: 0, additions: 0, deletions: 0}}
+      />,
+    )
+    expect(Element.querySelector(container, ".hint-bar-pending"))->not_->toBeNull
+    expect(Screen.getByText("Expand/scroll"))->toBeTruthy
+    [
+      "expand up",
+      "expand down",
+      "comment on file",
+      "centre the view",
+      "row to top",
+      "row to bottom",
+    ]->Array.forEach(label => expect(Screen.getByText(label))->toBeTruthy)
+    ["u", "d", "c", "t", "b"]->Array.forEach(
+      key => expect(Array.length(Screen.queryAllByText(key)))->toBe(1),
+    )
+  })
+})
+
+describe("HelpOverlay", () => {
+  test("renders every full Diff z chord plus Global, overrides, and conflicts", () => {
+    let entry = (keys, command, label, overridden): View.HelpEntry.t => {
+      keys,
+      command,
+      label,
+      primary: false,
+      overridden,
+    }
+    let help: View.HelpView.t = {
+      groups: [
+        {
+          context: Diff,
+          entries: [
+            entry("z u", ExpandUp, "expand up", true),
+            entry("z d", ExpandDown, "expand down", false),
+            entry("z c", CommentOnFile, "comment on file", false),
+            entry("z z", CenterView, "centre the view", false),
+            entry("z t", ViewTop, "row to top", false),
+            entry("z b", ViewBottom, "row to bottom", false),
+          ],
+        },
+        {
+          context: Global,
+          entries: [entry("?", ToggleHelp, "help", false)],
+        },
+      ],
+      conflicts: [{context: Diff, keys: "z u", commands: [ExpandUp, ExpandDown]}],
+    }
+    let {container} = render(<HelpOverlay help dispatch={_ => ()} />)
+    ["z u", "z d", "z c", "z z", "z t", "z b", "?"]->Array.forEach(
+      keys => expect(Array.length(Screen.queryAllByText(keys)))->toBe(keys == "z u" ? 2 : 1),
+    )
+    expect(Screen.getByText("Diff"))->toBeTruthy
+    expect(Screen.getByText("Global"))->toBeTruthy
+    expect(Element.querySelector(container, ".help-overridden"))->not_->toBeNull
+    expect(Element.querySelector(container, ".help-conflicts"))->not_->toBeNull
+  })
 })
 
 describe("Tree", () => {

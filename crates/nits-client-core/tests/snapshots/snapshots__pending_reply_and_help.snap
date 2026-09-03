@@ -1168,34 +1168,83 @@ expression: core.view()
   "help": {
     "groups": [
       {
-        "context": "Help",
+        "context": "Thread",
         "entries": [
           {
             "keys": "j",
             "command": "MoveDown",
             "label": "down",
-            "primary": false,
+            "primary": true,
             "overridden": false
           },
           {
             "keys": "k",
             "command": "MoveUp",
             "label": "up",
+            "primary": true,
+            "overridden": false
+          },
+          {
+            "keys": "down",
+            "command": "MoveDown",
+            "label": "down",
             "primary": false,
             "overridden": false
           },
           {
-            "keys": "?",
-            "command": "ToggleHelp",
-            "label": "help",
+            "keys": "up",
+            "command": "MoveUp",
+            "label": "up",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "g g",
+            "command": "GoTop",
+            "label": "top",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "G",
+            "command": "GoBottom",
+            "label": "bottom",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "enter",
+            "command": "Open",
+            "label": "open",
             "primary": true,
             "overridden": false
           },
           {
-            "keys": "esc",
-            "command": "Back",
-            "label": "back",
+            "keys": "r",
+            "command": "Reply",
+            "label": "reply",
             "primary": true,
+            "overridden": false
+          },
+          {
+            "keys": "x",
+            "command": "ToggleResolved",
+            "label": "resolve",
+            "primary": true,
+            "overridden": false
+          },
+          {
+            "keys": "d",
+            "command": "Delete",
+            "label": "delete",
+            "primary": false,
+            "overridden": false
+          },
+          {
+            "keys": "a",
+            "command": "ApplySuggestion",
+            "label": "apply suggestion",
+            "primary": false,
             "overridden": false
           }
         ]
