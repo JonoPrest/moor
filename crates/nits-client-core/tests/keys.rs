@@ -9,7 +9,8 @@ use std::collections::BTreeSet;
 
 use nits_client_core::{
     Action, ActionKind, CacheConfig, ClientCore, Command, Config, Context, CoreError, Effect,
-    Focus, IdSeed, Input, KeyChord, Keymap, NamedKey, NoTarget, SEQ_TIMEOUT_MS, TransportEvent,
+    Focus, IdSeed, Input, KeyChord, Keymap, LastKey, NamedKey, NoTarget, SEQ_TIMEOUT_MS,
+    TransportEvent,
 };
 use nits_protocol::{
     Anchor, Author, BuildInfo, ChangeKind, ChunkIndex, ClientId, ClientMsg, Comment, CommentId,
@@ -827,10 +828,12 @@ fn sequences_resolve_and_expire() {
     }))
     .unwrap();
     assert_eq!(core.view().focus, Focus::Composer);
-    assert!(
-        core.handle(Input::Key(KeyChord::char('j')))
-            .unwrap()
-            .is_empty()
+    // Text for the host's editor, not a command: the only thing the core
+    // has to say about it is that it counted the key (a host acting on a
+    // key before the answer arrives correlates against that count).
+    assert_eq!(
+        rendered(&core.handle(Input::Key(KeyChord::char('j'))).unwrap()),
+        vec![ViewSection::Hints]
     );
     // Esc discards and focus returns to the tree.
     press(&mut core, "esc").unwrap();
@@ -1844,5 +1847,225 @@ fn a_realign_belongs_to_the_render_that_asked_for_it() {
             side: Side::Head
         },
         "a.rs's pending realign leaves b.rs's cursor where it is"
+    );
+}
+
+#[test]
+fn the_view_says_what_y_would_copy_from_here() {
+    // The clipboard is the shell's and a write only works inside the
+    // gesture that asks for it, so the shell cannot wait for a round trip
+    // to learn the path. The core still decides *which* file it is.
+    let mut core = ready();
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::Tree { index: 2 },
+    }))
+    .unwrap();
+    let focused = nits_client_core::visible_nodes(core.view())
+        .get(2)
+        .and_then(|n| match n {
+            nits_client_core::TreeNode::File { path, .. } => Some(path.clone()),
+            nits_client_core::TreeNode::Dir { .. } => None,
+        })
+        .expect("a file is focused");
+    assert_eq!(core.view().copy_target.as_ref(), Some(&focused));
+
+    // It follows the focus rather than the last copy: moving to a review
+    // with no file leaves nothing to copy.
+    let effects = core
+        .handle(Input::User(Action::SetFocus {
+            focus: Focus::ReviewList { index: 0 },
+        }))
+        .unwrap();
+    assert!(rendered(&effects).contains(&ViewSection::Focus));
+    assert_eq!(core.view().copy_target, None);
+
+    // `y` itself is a no-op in the core: the shell has already copied.
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::Tree { index: 2 },
+    }))
+    .unwrap();
+    // The only patch is the key count: the copy itself happened in the
+    // shell, inside the gesture.
+    let effects = press(&mut core, "y").unwrap();
+    assert_eq!(rendered(&effects), vec![ViewSection::Hints]);
+    assert_eq!(core.view().copy_target.as_ref(), Some(&focused));
+}
+
+#[test]
+fn the_view_lists_the_bindings_that_apply_where_the_focus_is() {
+    // A host that must decide what a key means before the core answers
+    // resolves against this. `hints` is primary bindings only (`y` is not
+    // one) and `chrome` is one entry per command with no context, so
+    // either would have `y` copying on a focused thread, where the
+    // keymap binds nothing and the core refuses the key.
+    let mut core = ready();
+    let bound = |core: &ClientCore, command: nits_client_core::Command| {
+        core.view().bindings.iter().any(|b| b.command == command)
+    };
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::Tree { index: 2 },
+    }))
+    .unwrap();
+    assert!(bound(&core, nits_client_core::Command::CopyPath));
+    assert!(
+        !core
+            .view()
+            .hints
+            .iter()
+            .any(|h| h.command == nits_client_core::Command::CopyPath),
+        "`y` is not a primary binding, so the hint bar does not carry it"
+    );
+
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::Thread { index: 0 },
+    }))
+    .unwrap();
+    assert!(
+        !bound(&core, nits_client_core::Command::CopyPath),
+        "the thread keymap binds no copy, and the core refuses the key there"
+    );
+    assert!(press(&mut core, "y").is_err());
+    // The chrome, by contrast, carries `y` everywhere — which is why the
+    // shell must not resolve against it.
+    assert!(
+        core.view()
+            .chrome
+            .iter()
+            .any(|h| h.command == nits_client_core::Command::CopyPath)
+    );
+}
+
+#[test]
+fn every_key_the_core_acts_on_is_counted_with_what_it_meant() {
+    // A host that acts on a key before the core answers compares this
+    // count against what it has sent, and reads the command rather than
+    // predicting one. A command that changes nothing still has to be
+    // counted, or the count stalls on it and the host waits for ever; a
+    // key the context does not bind stays a typed error and is not
+    // counted, and the host — resolving against the same bindings —
+    // does not count that one either.
+    let mut core = ready();
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::Tree { index: 2 },
+    }))
+    .unwrap();
+    let start = core.view().last_key.map_or(0, |k| k.seq);
+
+    // `y` is a no-op in the core (the shell has already copied) and is
+    // still counted, with a patch to carry the verdict.
+    let effects = press(&mut core, "y").unwrap();
+    assert_eq!(
+        core.view().last_key,
+        Some(LastKey {
+            seq: start + 1,
+            command: Some(Command::CopyPath),
+        })
+    );
+    assert!(rendered(&effects).contains(&ViewSection::Hints));
+
+    // A prefix and the chord completing it are two, and only the second
+    // resolved to anything.
+    press(&mut core, "g").ok();
+    assert_eq!(
+        core.view().last_key,
+        Some(LastKey {
+            seq: start + 2,
+            command: None,
+        })
+    );
+    press(&mut core, "g").ok();
+    assert_eq!(
+        core.view().last_key,
+        Some(LastKey {
+            seq: start + 3,
+            command: Some(Command::GoTop),
+        })
+    );
+
+    // An unbound key stays an error, and is still counted and recorded:
+    // the host counts the keys it sends, and it sent this one. There is
+    // no patch — the rejection returns before the view is derived — but
+    // the view carries the verdict, so a host attaching now reads the
+    // sequence the core is actually at.
+    assert!(core.handle(Input::Key(KeyChord::char('q'))).is_err());
+    assert_eq!(
+        core.view().last_key,
+        Some(LastKey {
+            seq: start + 4,
+            command: None,
+        }),
+        "a rejected key is counted, and the view says where the core is"
+    );
+}
+
+#[test]
+fn a_shell_attaching_after_a_rejected_key_reads_the_sequence_the_core_is_at() {
+    // The attach re-emits the view as it stands, without deriving, so a
+    // key the core rejected has to be in the view already: a host that
+    // adopted the last broadcast sequence would count from behind, and
+    // mistake the next key's verdict for its own.
+    let mut core = ready();
+    press(&mut core, "j").unwrap();
+    assert!(core.handle(Input::Key(KeyChord::char('q'))).is_err());
+
+    let attached = core
+        .view()
+        .full_patches()
+        .into_iter()
+        .find_map(|p| {
+            if let nits_client_core::ViewPatch::Hints { last_key, .. } = p {
+                Some(last_key)
+            } else {
+                None
+            }
+        })
+        .expect("the attach carries the hints section");
+    assert_eq!(attached, core.view().last_key);
+    assert_eq!(
+        attached.map(|k| k.seq),
+        Some(2),
+        "both keys counted, the rejected one included"
+    );
+}
+
+#[test]
+fn a_key_that_lands_where_it_is_unbound_reports_no_command() {
+    // The case a host cannot predict: `y` typed straight after `g t`
+    // resolves against the diff's bindings on the way out, but lands in
+    // the thread list, where it means nothing. The core says so, so the
+    // host copies nothing rather than the file it was looking at.
+    let mut core = ready();
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::Diff {
+            row: 0,
+            side: Side::Head,
+        },
+    }))
+    .unwrap();
+    assert_eq!(
+        core.view().focus.context(),
+        Context::Diff,
+        "y is bound here"
+    );
+
+    press(&mut core, "g").ok();
+    press(&mut core, "t").ok();
+    assert_eq!(core.view().focus.context(), Context::Thread);
+
+    let waiting = core.view().last_key.map_or(0, |k| k.seq) + 1;
+    assert!(
+        core.handle(Input::Key(KeyChord::char('y'))).is_err(),
+        "y is not bound in the thread list"
+    );
+
+    // The verdict on that key is what stops a host copying the file it
+    // happened to be looking at: the key was acted on, and it meant
+    // nothing.
+    assert_eq!(
+        core.view().last_key,
+        Some(LastKey {
+            seq: waiting,
+            command: None,
+        })
     );
 }

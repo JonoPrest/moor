@@ -916,3 +916,407 @@ describe("Scroll.plan", () => {
     expect(step)->toEqual(Scroll.Skip)
   })
 })
+
+// jsdom has no clipboard, and the interesting cases are the ones that do
+// not look like success: an absent API and a refused write.
+%%raw(`
+function installSlowClipboard(delays) {
+  globalThis.__copied = []
+  let i = 0
+  Object.defineProperty(globalThis.navigator, "clipboard", {
+    configurable: true,
+    value: {
+      writeText: (text) => {
+        const ms = delays[i++] ?? 0
+        return new Promise((resolve) => setTimeout(() => {
+          globalThis.__copied.push(text)
+          resolve()
+        }, ms))
+      },
+    },
+  })
+}
+function installClipboard(mode) {
+  globalThis.__copied = []
+  const value =
+    mode === "missing"
+      ? undefined
+      : {
+          writeText: (text) => {
+            if (mode === "refuse") return Promise.reject(new Error("denied"))
+            globalThis.__copied.push(text)
+            return Promise.resolve()
+          },
+        }
+  Object.defineProperty(globalThis.navigator, "clipboard", {configurable: true, value})
+}
+function copiedPaths() {
+  return globalThis.__copied || []
+}
+function flush() {
+  return new Promise((resolve) => setTimeout(resolve, 0))
+}
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+`)
+
+@val external installClipboard: string => unit = "installClipboard"
+@val external installSlowClipboard: array<int> => unit = "installSlowClipboard"
+@val external copiedPaths: unit => array<string> = "copiedPaths"
+@val external flush: unit => promise<unit> = "flush"
+@val external sleep: int => promise<unit> = "sleep"
+
+describe("Copy path", () => {
+  let chrome: array<View.Hint.t> = [{keys: "y", command: CopyPath, label: "copy path"}]
+
+  test("both file headers offer copy, and the tooltip comes from the keymap", () => {
+    let dispatch = fn()
+    let base = Fixtures.parse(View.DiffView.schema, "client", "DiffView", "default")
+    // Browse (DiffView) had no copy affordance at all.
+    let {container} = render(
+      <DiffView diff=base layout=Unified focus={Diff({row: 0, side: Head})} chrome dispatch />,
+    )
+    let copy =
+      Element.querySelector(container, "[title=\"copy path (y)\"]")
+      ->Nullable.toOption
+      ->Option.getExn
+    FireEvent.click(copy)
+    expect(dispatch)->toHaveBeenLastCalledWith(Action.CopyPath({path: base.file.path}))
+    cleanup()
+    // Rebound: the tooltip follows the keymap rather than a literal `y`.
+    let rebound: array<View.Hint.t> = [{keys: "ctrl+y", command: CopyPath, label: "copy path"}]
+    let {container} = render(
+      <DiffView
+        diff=base layout=Unified focus={Diff({row: 0, side: Head})} chrome=rebound dispatch
+      />,
+    )
+    expect(Element.querySelector(container, "[title=\"copy path (ctrl+y)\"]"))->not_->toBeNull
+  })
+
+  testAsync("a write that lands, one that is refused, and no clipboard at all", async () => {
+    installClipboard("ok")
+    let outcome = await Clipboard.write("src/a.rs")
+    expect(outcome)->toEqual(Ok())
+    expect(copiedPaths())->toEqual(["src/a.rs"])
+    expect(Clipboard.message("src/a.rs", outcome))->toBe("Copied src/a.rs")
+
+    installClipboard("refuse")
+    let outcome = await Clipboard.write("src/a.rs")
+    expect(outcome)->toEqual(Error(Clipboard.Refused))
+    expect(copiedPaths())->toEqual([])
+    expect(Clipboard.message("src/a.rs", outcome))->toContain("refused")
+
+    // An insecure context has no clipboard object at all: the binding
+    // must not throw where a promise rejection would have been caught.
+    installClipboard("missing")
+    let outcome = await Clipboard.write("src/a.rs")
+    expect(outcome)->toEqual(Error(Clipboard.Unavailable))
+    expect(Clipboard.message("src/a.rs", outcome))->toContain("no clipboard")
+  })
+
+  testAsync("the toast shows, then dismisses itself", async () => {
+    let {container, rerender} = render(<Toast message=None />)
+    expect(Element.querySelector(container, ".toast"))->toBeNull
+    rerender(<Toast message={Some(("Copied src/a.rs", false))} />)
+    expect(Element.textContent(Screen.getByTextRe(/Copied/)))->toContain("src/a.rs")
+    // A failure is styled as one, and neither sits there for the session.
+    rerender(<Toast message={Some(("Could not copy — the clipboard refused", true))} />)
+    let el = Element.querySelector(container, ".toast")->Nullable.toOption->Option.getExn
+    expect(Element.className(el))->toContain("toast-error")
+    await sleep(Toast.dismissAfterMs + 20)
+    expect(Element.querySelector(container, ".toast"))->toBeNull
+  })
+
+  testAsync("overlapping copies show the newest result, not the slowest", async () => {
+    // Two clicks in a row: the first write settles last, and must not
+    // overwrite what the second one already told the reader.
+    installSlowClipboard([40, 0])
+    let shown = ref([])
+    let writer = Clipboard.latest()
+    writer("first.rs", (text, _) => shown := Array.concat(shown.contents, [text]))
+    writer("second.rs", (text, _) => shown := Array.concat(shown.contents, [text]))
+    await sleep(80)
+    expect(shown.contents)->toEqual(["Copied second.rs"])
+  })
+
+  test("the shell tracks its own chord prefix, so it cannot lag the keys", () => {
+    // The core's `pendingKeys` is its answer to the *previous* key and
+    // arrives a round trip later — one keystroke too late to decide
+    // anything about this one. The shell sends the chords, so it tracks
+    // the prefix itself.
+    let chord = (c: string): Keys.KeyChord.t => {
+      key: Char({c: c}),
+      mods: {ctrl: false, alt: false, shift: false, meta: false},
+    }
+    let bindings: array<View.Hint.t> = [
+      {keys: "y", command: CopyPath, label: "copy path"},
+      {keys: "g g", command: GoTop, label: "top"},
+    ]
+    let p = App.Pending.make()
+    expect(App.Pending.step(p, bindings, chord("y")))->toEqual(
+      App.Pending.Runs(View.Command.CopyPath),
+    )
+    // `j` binds nothing in this table and nothing is pending: the core
+    // calls that an unbound key and does not count it, so neither does
+    // the shell.
+    expect(App.Pending.step(p, bindings, chord("j")))->toEqual(App.Pending.Unbound)
+
+    // A sequence typed faster than the round trip: the second chord still
+    // completes it, because the prefix never left this shell.
+    let sequence: array<View.Hint.t> = [{keys: "g y", command: CopyPath, label: "copy path"}]
+    let p = App.Pending.make()
+    expect(App.Pending.step(p, sequence, chord("g")))->toEqual(App.Pending.Prefix)
+    expect(App.Pending.step(p, sequence, chord("y")))->toEqual(
+      App.Pending.Runs(View.Command.CopyPath),
+    )
+    // And a bare `y` under that binding runs nothing, so nothing is copied.
+    let p = App.Pending.make()
+    expect(App.Pending.step(p, sequence, chord("y")))->toEqual(App.Pending.Unbound)
+    // A chord that matches no binding clears the prefix rather than
+    // leaving it to swallow the next key.
+    let p = App.Pending.make()
+    expect(App.Pending.step(p, sequence, chord("g")))->toEqual(App.Pending.Prefix)
+    expect(App.Pending.step(p, sequence, chord("x")))->toEqual(App.Pending.Prefix)
+    expect(App.Pending.step(p, bindings, chord("y")))->toEqual(
+      App.Pending.Runs(View.Command.CopyPath),
+    )
+
+    // The bindings come from the core's applicable set for the focused
+    // context — not from `hints` (primary only, so `y` is absent) and not
+    // from `chrome` (one per command, no context, so `y` would look bound
+    // on a focused thread, where the core refuses it).
+    let m = Fixtures.parse(View.ViewModel.schema, "client", "ViewModel", "default")
+    let onAThread: View.ViewModel.t = {
+      ...m,
+      bindings: [{keys: "enter", command: Open, label: "open"}],
+      hints: [{keys: "enter", command: Open, label: "open"}],
+      chrome: [{keys: "y", command: CopyPath, label: "copy path"}],
+    }
+    let p = App.Pending.make()
+    expect(App.Pending.step(p, App.bindingsFor(onAThread), chord("y")))->toEqual(
+      App.Pending.Unbound,
+    )
+    let onATree: View.ViewModel.t = {
+      ...m,
+      bindings: [{keys: "y", command: CopyPath, label: "copy path"}],
+      hints: [],
+      chrome: [{keys: "y", command: CopyPath, label: "copy path"}],
+    }
+    let p = App.Pending.make()
+    expect(App.Pending.step(p, App.bindingsFor(onATree), chord("y")))->toEqual(
+      App.Pending.Runs(View.Command.CopyPath),
+    )
+  })
+})
+
+// Key events, dispatched at the window the way the shell listens for them.
+%%raw(`
+function pressKey(key) {
+  globalThis.window.dispatchEvent(new globalThis.KeyboardEvent("keydown", {key, bubbles: true}))
+}
+`)
+@val external pressKey: string => unit = "pressKey"
+/// React 19's `act`, so a model pushed outside an event is flushed.
+@module("react") external act: (unit => unit) => unit = "act"
+
+describe("Copying from the keyboard, through the shell", () => {
+  // The core applies keys in order, counts every one it is sent, and
+  // says what each turned out to mean. The shell copies inside the
+  // gesture when its view accounts for every earlier key; otherwise it
+  // waits for the core's verdict rather than predicting one, because a
+  // key typed after a focus change lands somewhere the shell has not
+  // seen yet.
+  let after = (seq, command): option<View.LastKey.t> => Some({seq, command})
+
+  let model = (~target, ~lastKey): View.ViewModel.t => {
+    let base = Fixtures.parse(View.ViewModel.schema, "client", "ViewModel", "default")
+    {
+      ...base,
+      copyTarget: Some(target),
+      lastKey,
+      bindings: [
+        {keys: "y", command: CopyPath, label: "copy path"},
+        {keys: "j", command: MoveDown, label: "down"},
+        {keys: "g t", command: FocusThreads, label: "threads"},
+      ],
+      hints: [],
+      chrome: [],
+    }
+  }
+
+  let mount = initial => {
+    let push = ref(_ => ())
+    let core: Core.t = {
+      dispatch: _ => (),
+      key: _ => (),
+      subscribe: listener => {
+        push := listener
+        listener(initial)
+        () => ()
+      },
+      attach: () => (),
+    }
+    (render(<App.Shell core />), push)
+  }
+
+  testAsync("`y` copies the current target when the core is caught up", async () => {
+    installClipboard("ok")
+    let (_, _) = mount(model(~target="src/a.rs", ~lastKey=None))
+    pressKey("y")
+    await flush()
+    expect(copiedPaths())->toEqual(["src/a.rs"])
+    cleanup()
+  })
+
+  testAsync("`y` twice copies twice, though neither key changes the view", async () => {
+    // `CopyPath` is a no-op in the core, so the second `y` gets no patch
+    // of its own: a shell that waited for one would copy once.
+    installClipboard("ok")
+    let (_, push) = mount(model(~target="src/a.rs", ~lastKey=None))
+    pressKey("y")
+    await flush()
+    act(() => push.contents(model(~target="src/a.rs", ~lastKey=after(1, Some(CopyPath)))))
+    pressKey("y")
+    await flush()
+    expect(copiedPaths())->toEqual(["src/a.rs", "src/a.rs"])
+    cleanup()
+  })
+
+  testAsync("two movements then `y` waits for the core's word on `y` itself", async () => {
+    installClipboard("ok")
+    let (_, push) = mount(model(~target="before.rs", ~lastKey=None))
+    pressKey("j")
+    pressKey("j")
+    pressKey("y")
+    await flush()
+    expect(copiedPaths())->toEqual([])
+    // The movements land one at a time; neither is the key that copies.
+    act(() => push.contents(model(~target="after-one.rs", ~lastKey=after(1, Some(MoveDown)))))
+    act(() => push.contents(model(~target="after-two.rs", ~lastKey=after(2, Some(MoveDown)))))
+    await flush()
+    expect(copiedPaths())->toEqual([])
+    // The core reaches the `y`, in the context the movements left it in.
+    act(() => push.contents(model(~target="after-two.rs", ~lastKey=after(3, Some(CopyPath)))))
+    await flush()
+    expect(copiedPaths())->toEqual(["after-two.rs"])
+    cleanup()
+  })
+
+  testAsync("a shell that attaches mid-session does not read the core as caught up", async () => {
+    // A reload, or a second browser on the shared web host: the core has
+    // handled keys this shell never sent, so its count says nothing about
+    // this shell's own.
+    installClipboard("ok")
+    let (_, push) = mount(model(~target="before.rs", ~lastKey=after(10, Some(MoveDown))))
+    pressKey("j")
+    pressKey("y")
+    await flush()
+    expect(copiedPaths())->toEqual([])
+    act(() => push.contents(model(~target="after.rs", ~lastKey=after(11, Some(MoveDown)))))
+    await flush()
+    expect(copiedPaths())->toEqual([])
+    act(() => push.contents(model(~target="after.rs", ~lastKey=after(12, Some(CopyPath)))))
+    await flush()
+    expect(copiedPaths())->toEqual(["after.rs"])
+    cleanup()
+  })
+
+  testAsync("`y` typed into a context the core has moved to copies nothing", async () => {
+    // `g t` focuses the threads, where `y` is bound to nothing. The shell
+    // still holds the diff's bindings when the `y` arrives, so it would
+    // resolve it as a copy — the core's verdict is what stops it.
+    installClipboard("ok")
+    let (_, push) = mount(model(~target="before.rs", ~lastKey=None))
+    pressKey("g")
+    pressKey("t")
+    pressKey("y")
+    pressKey("j")
+    await flush()
+    act(() => push.contents(model(~target="threads.rs", ~lastKey=after(2, Some(FocusThreads)))))
+    await flush()
+    expect(copiedPaths())->toEqual([])
+    // The core rejected the `y` (seq 3), which carries no patch, so the
+    // next verdict is the `j` that followed it: the shell reads that as
+    // its answer — the key it was holding is behind the core now — and
+    // drops the copy rather than taking the file it was looking at.
+    act(() => push.contents(model(~target="threads.rs", ~lastKey=after(4, Some(MoveDown)))))
+    await flush()
+    expect(copiedPaths())->toEqual([])
+    cleanup()
+  })
+
+  testAsync("two deferred copies both happen, in the order they were typed", async () => {
+    installClipboard("ok")
+    let (_, push) = mount(model(~target="before.rs", ~lastKey=None))
+    pressKey("j")
+    pressKey("y")
+    pressKey("j")
+    pressKey("y")
+    await flush()
+    act(() => push.contents(model(~target="after-one.rs", ~lastKey=after(2, Some(CopyPath)))))
+    act(() => push.contents(model(~target="after-two.rs", ~lastKey=after(4, Some(CopyPath)))))
+    await flush()
+    expect(copiedPaths())->toEqual(["after-one.rs", "after-two.rs"])
+    cleanup()
+  })
+
+  testAsync("an unbound key still counts, on both sides", async () => {
+    // The core counts every key it is handed, rejected ones included, so
+    // this shell counts every chord it sends. `q` is bound to nothing
+    // here; if it went uncounted, the `j` verdict would be mistaken for
+    // the `y` one and the copy would be dropped.
+    installClipboard("ok")
+    let (_, push) = mount(model(~target="before.rs", ~lastKey=None))
+    pressKey("q")
+    pressKey("j")
+    pressKey("y")
+    await flush()
+    // `q` was seq 1 and carried no patch of its own; `j` is seq 2.
+    act(() => push.contents(model(~target="after.rs", ~lastKey=after(2, Some(MoveDown)))))
+    await flush()
+    expect(copiedPaths())->toEqual([])
+    act(() => push.contents(model(~target="after.rs", ~lastKey=after(3, Some(CopyPath)))))
+    await flush()
+    expect(copiedPaths())->toEqual(["after.rs"])
+    cleanup()
+  })
+
+  testAsync("attaching after a rejected key adopts the sequence the core is at", async () => {
+    // A rejection derives no patch, but the view it attaches to records
+    // it, so this shell starts from 11 rather than the 10 that was last
+    // broadcast.
+    installClipboard("ok")
+    let (_, push) = mount(model(~target="before.rs", ~lastKey=after(11, None)))
+    pressKey("j")
+    pressKey("y")
+    await flush()
+    act(() => push.contents(model(~target="after.rs", ~lastKey=after(12, Some(MoveDown)))))
+    await flush()
+    expect(copiedPaths())->toEqual([])
+    act(() => push.contents(model(~target="after.rs", ~lastKey=after(13, Some(CopyPath)))))
+    await flush()
+    expect(copiedPaths())->toEqual(["after.rs"])
+    cleanup()
+  })
+
+  testAsync("a key the focused context does not bind copies nothing", async () => {
+    installClipboard("ok")
+    let base = Fixtures.parse(View.ViewModel.schema, "client", "ViewModel", "default")
+    // A thread is focused: the keymap binds no copy there, and the core
+    // would refuse the key.
+    let onAThread: View.ViewModel.t = {
+      ...base,
+      copyTarget: Some("src/a.rs"),
+      lastKey: None,
+      bindings: [{keys: "enter", command: Open, label: "open"}],
+      hints: [],
+      chrome: [{keys: "y", command: CopyPath, label: "copy path"}],
+    }
+    let (_, _) = mount(onAThread)
+    pressKey("y")
+    await flush()
+    expect(copiedPaths())->toEqual([])
+    cleanup()
+  })
+})

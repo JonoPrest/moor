@@ -2,8 +2,8 @@
 //! names the sections that changed.
 
 use nits_protocol::{
-    Anchor, ClientSeq, DiffScope, EventBody, RenderOpts, ResolvedTarget, Review, ReviewId,
-    ReviewSnapshot, RpcError, Side, ThreadId, TreeOid, ViewSection, Workspace,
+    Anchor, ClientSeq, DiffScope, EventBody, RenderOpts, RepoPath, ResolvedTarget, Review,
+    ReviewId, ReviewSnapshot, RpcError, Side, ThreadId, TreeOid, ViewSection, Workspace,
 };
 
 use crate::cache::RenderKey;
@@ -238,6 +238,17 @@ pub struct ScrollIntent {
     pub seq: u32,
 }
 
+/// The core's verdict on one key: which key (keys it acts on are counted
+/// in order from 1) and what it resolved to. `None` means the key meant
+/// nothing where it landed — a cancelled sequence, or a command whose
+/// context had moved on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LastKey {
+    pub seq: u64,
+    pub command: Option<crate::keymap::Command>,
+}
+
 /// The Visual-mode line selection (UI-DESIGN: modal keys): row indices of
 /// the open file, ordered, both ends inclusive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -310,8 +321,27 @@ pub struct ViewModel {
     /// One hint per bound command, for button tooltips (derived from the
     /// keymap, never hand-written).
     pub chrome: Vec<Hint>,
+    /// Every binding that applies where the focus is, aliases included.
+    /// A host that must decide what a key means before the core answers
+    /// resolves against this rather than guessing from `hints` (primary
+    /// only) or `chrome` (one per command, no context).
+    pub bindings: Vec<Hint>,
+    /// What the core made of the last key it acted on. A host that must
+    /// act on a key before the core answers (the clipboard needs the
+    /// gesture that asked for it) compares `seq` against what it has
+    /// sent — equal means this view accounts for every key — and reads
+    /// `command` rather than predicting one: the context a key lands in
+    /// is the one the core moved to, which the host cannot know until it
+    /// is told.
+    pub last_key: Option<LastKey>,
     /// The `?` overlay while open.
     pub help: Option<HelpView>,
+    /// What `y` would copy from where the focus is (UI-DESIGN §Chrome).
+    /// The clipboard is the shell's and a write only works inside the
+    /// gesture that asked for it, so the shell reads this and copies
+    /// during the key or click rather than after a round trip — the core
+    /// still owns *which file* that is.
+    pub copy_target: Option<RepoPath>,
     pub connection: ConnectionView,
     /// Last request error the daemon returned; cleared on (re)subscribe.
     pub last_error: Option<RpcError>,

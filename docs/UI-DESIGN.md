@@ -281,6 +281,17 @@ Everything explicitly asked for, so no shell or rewrite loses them.
   shells only render and own shell effects (clipboard).
 
 ### Chrome
+- ✓ Toast region (`role="status"`): a transient line, dismissed after a
+  few seconds. Its first use is the copy confirmation.
+- ✓ Copying a path happens in the shell, inside the gesture that asks for
+  it — a clipboard write needs transient user activation, and one host
+  serves every attached browser, so nothing about a copy travels through
+  the shared view. The core still decides WHICH file:
+  `ViewModel.copy_target` is what `y` would copy from where the focus is.
+  The keymap decides which key that is (prefix included), so a rebinding
+  is followed and a bare `y` under a `g y` binding copies nothing. A
+  clipboard that is absent or refuses says so rather than looking like a
+  copy. Every file header carries the affordance, Browse included.
 - ✓ Mac-style scrollbars (trackless, slim rounded grey, hover-darken);
   never two vertical scrollbars.
 - ✓ Demo server pinned to `--port 7788`; the URL is posted on every

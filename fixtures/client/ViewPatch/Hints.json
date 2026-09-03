@@ -1,4 +1,11 @@
 {
+  "bindings": [
+    {
+      "command": "NextFile",
+      "keys": "] f",
+      "label": "next file"
+    }
+  ],
   "chrome": [
     {
       "command": "NextFile",
@@ -13,6 +20,10 @@
       "label": "next file"
     }
   ],
+  "last_key": {
+    "command": "CopyPath",
+    "seq": 12
+  },
   "leader": "space",
   "mode": "Normal",
   "pending": "g",

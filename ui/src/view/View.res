@@ -389,6 +389,14 @@ module Command = {
     | ViewBottom
 }
 
+/// The core's verdict on one key: which key (counted in order from 1)
+/// and what it resolved to. `None` means the key meant nothing where it
+/// landed, so a shell waiting on it must not act.
+module LastKey = {
+  @schema
+  type t = {seq: int, command: @s.null option<Command.t>}
+}
+
 /// A key sequence in its text form (`"g g"`, `"ctrl+p"`).
 @schema type keySeq = string
 
@@ -453,7 +461,17 @@ module ViewModel = {
     @as("pending_label") pendingLabel: @s.null option<string>,
     leader: string,
     chrome: array<Hint.t>,
+    /// Every binding that applies where the focus is, aliases included.
+    bindings: array<Hint.t>,
+    /// What the core made of the last key it acted on. A shell that must
+    /// act on a key before the core answers compares `seq` against what
+    /// it has sent, and reads `command` rather than guessing which one
+    /// the core will have run.
+    @as("last_key") lastKey: @s.null option<LastKey.t>,
     help: @s.null option<HelpView.t>,
+    /// What `y` would copy from where the focus is; the shell copies it
+    /// during the gesture that asks for it.
+    @as("copy_target") copyTarget: @s.null option<string>,
     connection: ConnectionView.t,
     @as("last_error") lastError: @s.null option<Rpc.RpcError.t>,
     workspaces: array<Domain.Workspace.t>,
@@ -494,7 +512,10 @@ module ViewModel = {
     pendingLabel: None,
     leader: "space",
     chrome: [],
+    bindings: [],
+    lastKey: None,
     help: None,
+    copyTarget: None,
     connection: Disconnected({}),
     lastError: None,
     workspaces: [],
@@ -543,7 +564,13 @@ module ViewPatch = {
     | @as("Conversation") Conversation({conversation: array<ThreadView.t>})
     | @as("CommitStepper") CommitStepper({stepper: @s.null option<CommitStepper.t>})
     | @as("Progress") Progress({progress: Progress.t})
-    | @as("Focus") Focus({focus: Focus.t, tab: Tab.t, scroll: @s.null option<ScrollIntent.t>})
+    | @as("Focus")
+    Focus({
+        focus: Focus.t,
+        tab: Tab.t,
+        scroll: @s.null option<ScrollIntent.t>,
+        @as("copy_target") copyTarget: @s.null option<string>,
+      })
     | @as("Hints")
     Hints({
         hints: array<Hint.t>,
@@ -552,6 +579,8 @@ module ViewPatch = {
         mode: Mode.t,
         leader: string,
         chrome: array<Hint.t>,
+        bindings: array<Hint.t>,
+        @as("last_key") lastKey: @s.null option<LastKey.t>,
       })
     | @as("Help") Help({help: @s.null option<HelpView.t>})
     | @as("Draft")
@@ -584,8 +613,8 @@ module ViewPatch = {
     | Conversation({conversation}) => {...model, conversation}
     | CommitStepper({stepper}) => {...model, stepper}
     | Progress({progress}) => {...model, progress}
-    | Focus({focus, tab, scroll}) => {...model, focus, tab, scroll}
-    | Hints({hints, pending, pendingLabel, mode, leader, chrome}) => {
+    | Focus({focus, tab, scroll, copyTarget}) => {...model, focus, tab, scroll, copyTarget}
+    | Hints({hints, pending, pendingLabel, mode, leader, chrome, bindings, lastKey}) => {
         ...model,
         hints,
         pendingKeys: pending,
@@ -593,6 +622,8 @@ module ViewPatch = {
         mode,
         leader,
         chrome,
+        bindings,
+        lastKey,
       }
     | Help({help}) => {...model, help}
     | Draft({draft, pendingRefresh}) => {...model, draft, pendingRefresh}

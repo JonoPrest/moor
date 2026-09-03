@@ -3,6 +3,8 @@
 
 @module("vitest") external describe: (string, unit => unit) => unit = "describe"
 @module("vitest") external test: (string, unit => unit) => unit = "test"
+/// A test whose body awaits (the clipboard's promise, say).
+@module("vitest") external testAsync: (string, unit => promise<unit>) => unit = "test"
 @module("vitest") external afterEach: (unit => unit) => unit = "afterEach"
 
 type expect<'a>

@@ -1,5 +1,12 @@
 {
   "action_palette": false,
+  "bindings": [
+    {
+      "command": "NextFile",
+      "keys": "] f",
+      "label": "next file"
+    }
+  ],
   "browse_ref": null,
   "chrome": [
     {
@@ -27,6 +34,7 @@
     "truncated": false
   },
   "conversation": [],
+  "copy_target": "src/lib.rs",
   "diff": {
     "collapsed": false,
     "content": {
@@ -228,6 +236,10 @@
     }
   ],
   "last_error": null,
+  "last_key": {
+    "command": "CopyPath",
+    "seq": 12
+  },
   "leader": "space",
   "mode": "Normal",
   "open_review": "01HF7YATZ80000000000000004",

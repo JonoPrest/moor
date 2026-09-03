@@ -62,7 +62,7 @@ pub use explorer::{
 };
 pub use focus::{
     Focus, FocusKind, NoTarget, PAGE_ROWS, Realign, VisualAnchor, clamp as clamp_focus,
-    visible_nodes,
+    target_file_of, visible_nodes,
 };
 pub use ids::IdSeed;
 pub use keymap::{
@@ -72,9 +72,9 @@ pub use keymap::{
 };
 pub use patch::{ViewPatch, ViewPatchKind};
 pub use view::{
-    ConnectionView, ConnectionViewKind, ContentSearchView, Draft, Landing, Layout, OpenFile,
-    OpenReview, PendingEvent, ScrollAlign, ScrollIntent, Tab, ViewDelta, ViewModel, ViewPrefs,
-    VisualView,
+    ConnectionView, ConnectionViewKind, ContentSearchView, Draft, Landing, LastKey, Layout,
+    OpenFile, OpenReview, PendingEvent, ScrollAlign, ScrollIntent, Tab, ViewDelta, ViewModel,
+    ViewPrefs, VisualView,
 };
 
 pub use nits_protocol as protocol;
@@ -571,6 +571,11 @@ pub struct ClientCore {
     /// Visual mode (UI-DESIGN: modal keys): the diff row and side `V` was
     /// pressed on; the other end of the selection is the focused row.
     visual_anchor: Option<VisualAnchor>,
+    /// Keys acted on, in order. Paired with what each resolved to in
+    /// `last_key`, this is how a host tells whether the view it holds
+    /// accounts for the keys it has sent, and what they meant (§6.4).
+    keys_handled: u64,
+    last_key: Option<crate::view::LastKey>,
     /// A re-render is in flight that will renumber the rows (opening a
     /// gap inserts lines above the ones below it). The line the cursor
     /// was on is remembered so the focus and the viewport can follow the
@@ -630,6 +635,8 @@ impl ClientCore {
             browse: None,
             visual_anchor: None,
             realign: None,
+            keys_handled: 0,
+            last_key: None,
         }
     }
 
@@ -691,7 +698,37 @@ impl ClientCore {
                 // it waits until the user continues or cancels.
                 Vec::new()
             }
-            Input::Key(chord) => self.key(chord)?,
+            // Every key the core acts on is counted, including one that
+            // resolves to a command changing nothing: a host that must
+            // act on a key before the core answers (the clipboard needs
+            // the gesture that asked for it) can only tell that its view
+            // accounts for that key by counting. A key the context does
+            // not bind stays a typed error and is not counted — the host
+            // resolves against the same bindings, so it does not count
+            // that one either.
+            Input::Key(chord) => {
+                // Counted before it is resolved, and whatever resolution
+                // makes of it: a host counts the keys it sends, and a key
+                // that turns out to be unbound (or to have no target) is
+                // one it sent. Counting only what the core acted on would
+                // put the two out of step at exactly the moments a host
+                // needs them aligned.
+                self.keys_handled = self.keys_handled.wrapping_add(1);
+                let seq = self.keys_handled;
+                let resolved = self.key(chord);
+                let command = resolved.as_ref().ok().and_then(|(_, c)| *c);
+                self.last_key = Some(crate::view::LastKey { seq, command });
+                if resolved.is_err() {
+                    // A rejection returns before the view is derived, so
+                    // there is no patch to carry the verdict. The view
+                    // records it anyway: which key the core has acted on
+                    // is a fact about the view a host attaches to, and a
+                    // host reading the last sequence that produced a
+                    // patch would count from behind the core.
+                    self.view.last_key = self.last_key;
+                }
+                resolved?.0
+            }
         };
         // One `Render` per input: the union of every section touched, in
         // first-touched order, after every other effect.
@@ -933,6 +970,14 @@ impl ClientCore {
             self.view.focus = focus;
             sections.push(ViewSection::Focus);
         }
+        // What `y` would copy from here. Derived, not remembered: the
+        // shell reads it during the gesture, so it must always be current
+        // for the focus rather than for the last copy.
+        let copy_target = focus::target_file_of(&self.view, focus).map(|f| f.path);
+        if copy_target != self.view.copy_target {
+            self.view.copy_target = copy_target;
+            sections.push(ViewSection::Focus);
+        }
         // The Visual selection spans the anchor and the focused row.
         let visual = match (self.visual_anchor, focus) {
             (Some(anchor), Focus::Diff { row, .. }) => Some(crate::view::VisualView {
@@ -991,6 +1036,15 @@ impl ClientCore {
             self.view.chrome = chrome;
             sections.push(ViewSection::Hints);
         }
+        let bindings = self.keymap.applicable_bindings(focus.context());
+        if bindings != self.view.bindings {
+            self.view.bindings = bindings;
+            sections.push(ViewSection::Hints);
+        }
+        if self.last_key != self.view.last_key {
+            self.view.last_key = self.last_key;
+            sections.push(ViewSection::Hints);
+        }
         let leader = self.keymap.leader().to_string();
         if leader != self.view.leader {
             self.view.leader = leader;
@@ -1032,10 +1086,13 @@ impl ClientCore {
         ids
     }
 
-    /// Resolve a key press. The chord buffer is the one piece of state a
-    /// rejected input may change: an unbound or unresolvable sequence
-    /// clears it, so the next key starts fresh.
-    fn key(&mut self, chord: KeyChord) -> Result<Vec<Effect>, CoreError> {
+    /// Resolve a key press, reporting what it turned out to mean so the
+    /// view can carry the verdict (§6.4): a host that must act on a key
+    /// inside the gesture that produced it reads this rather than
+    /// predicting the context the key would land in. The chord buffer is
+    /// the one piece of state a rejected input may change: an unbound or
+    /// unresolvable sequence clears it, so the next key starts fresh.
+    fn key(&mut self, chord: KeyChord) -> Result<(Vec<Effect>, Option<Command>), CoreError> {
         let context = self.view.focus.context();
         let mut pressed = self.chords.clone();
         pressed.push(chord);
@@ -1045,24 +1102,24 @@ impl ClientCore {
                     self.chord_started = self.now;
                 }
                 self.chords = pressed;
-                Ok(Vec::new())
+                Ok((Vec::new(), None))
             }
             Lookup::Command(command) => {
                 self.chords.clear();
                 let action = focus::resolve(self, command)?;
-                self.user(action)
+                Ok((self.user(action)?, Some(command)))
             }
             Lookup::None => {
                 let was_pending = !self.chords.is_empty();
                 self.chords.clear();
                 if context == Context::Composer {
                     // Text for the host's editor, not a command.
-                    Ok(Vec::new())
+                    Ok((Vec::new(), None))
                 } else if was_pending {
                     // A key outside the pending group (esc included) just
                     // cancels the sequence, vim-like; the which-key popup
                     // closes on the derive.
-                    Ok(Vec::new())
+                    Ok((Vec::new(), None))
                 } else {
                     let seq =
                         KeySeq::new(pressed).map_or_else(|_| chord.to_string(), |s| s.to_string());
@@ -1792,6 +1849,12 @@ impl ClientCore {
                 };
                 Ok(self.apply_prefs(prefs, true))
             }
+            // The clipboard is the shell's, and a write only works inside
+            // the gesture that asked for it, so the shell copies during
+            // the click or key press — reading `ViewModel::copy_target`,
+            // which is this same decision made here. The action stays so
+            // the command is binding-reachable and other hosts can send
+            // it; there is nothing left for the core to do with it.
             Action::CopyPath { path: _ } => Ok(Vec::new()),
             Action::ScrollView { align } => {
                 let Focus::Diff { row, .. } = self.view.focus else {

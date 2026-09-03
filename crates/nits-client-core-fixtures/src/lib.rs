@@ -857,6 +857,7 @@ enum_fixture!(
             },
             tab: Tab::FilesChanged,
             scroll: Some(local::<ScrollIntent>()?),
+            copy_target: Some(path("src/lib.rs")?),
         },
         ViewPatch::Hints {
             hints: vec![local::<Hint>()?],
@@ -865,6 +866,11 @@ enum_fixture!(
             mode: Mode::Normal,
             leader: "space".into(),
             chrome: vec![local::<Hint>()?],
+            bindings: vec![local::<Hint>()?],
+            last_key: Some(LastKey {
+                seq: 12,
+                command: Some(Command::CopyPath),
+            }),
         },
         ViewPatch::Help {
             help: Some(local::<HelpView>()?),
@@ -919,7 +925,13 @@ struct_fixture!(
         pending_label: None,
         leader: "space".into(),
         chrome: vec![local::<Hint>()?],
+        bindings: vec![local::<Hint>()?],
+        last_key: Some(LastKey {
+            seq: 12,
+            command: Some(Command::CopyPath),
+        }),
         help: None,
+        copy_target: Some(path("src/lib.rs")?),
         connection: ConnectionView::Subscribed,
         last_error: None,
         workspaces: vec![proto::<Workspace>()?],

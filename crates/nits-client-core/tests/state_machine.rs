@@ -956,7 +956,22 @@ proptest! {
                     prop_assert!(down, "rejected handshake left the connection up");
                 }
                 Err(_) => {
-                    prop_assert_eq!(core.view(), &view, "rejected {:?} changed the view", input);
+                    // A rejected key is still a key the core was handed,
+                    // and the view says which key that was — a host
+                    // attaching afterwards reads the sequence the core is
+                    // actually at, not the last one that produced a
+                    // patch. Nothing else about the view may move.
+                    let mut before = view.clone();
+                    if matches!(input, Input::Key(_)) {
+                        let seq = before.last_key.map_or(0, |k| k.seq) + 1;
+                        prop_assert_eq!(
+                            core.view().last_key,
+                            Some(nits_client_core::LastKey { seq, command: None }),
+                            "a rejected key is counted and reported"
+                        );
+                        before.last_key = core.view().last_key;
+                    }
+                    prop_assert_eq!(core.view(), &before, "rejected {:?} changed the view", input);
                     prop_assert_eq!(*core.connection(), connection);
                     prop_assert_eq!(core.cache().len(), cache_len, "rejected {:?} changed the cache", input);
                 }

@@ -74,6 +74,10 @@ pub enum ViewPatch {
         /// its `seq` changes.
         #[serde(default)]
         scroll: Option<ScrollIntent>,
+        /// What `y` would copy from here; the shell copies it during the
+        /// gesture that asks for it.
+        #[serde(default)]
+        copy_target: Option<nits_protocol::RepoPath>,
     },
     Hints {
         hints: Vec<Hint>,
@@ -82,6 +86,13 @@ pub enum ViewPatch {
         mode: Mode,
         leader: String,
         chrome: Vec<Hint>,
+        /// Every binding applicable where the focus is (§6.4).
+        #[serde(default)]
+        bindings: Vec<Hint>,
+        /// What the core made of the last key it acted on, for a host
+        /// that must act before it answers (§6.4).
+        #[serde(default)]
+        last_key: Option<crate::view::LastKey>,
     },
     Help {
         help: Option<HelpView>,
@@ -160,6 +171,7 @@ impl ViewModel {
                 focus: self.focus,
                 tab: self.tab,
                 scroll: self.scroll,
+                copy_target: self.copy_target.clone(),
             },
             ViewSection::Hints => ViewPatch::Hints {
                 hints: self.hints.clone(),
@@ -168,6 +180,8 @@ impl ViewModel {
                 mode: self.mode,
                 leader: self.leader.clone(),
                 chrome: self.chrome.clone(),
+                bindings: self.bindings.clone(),
+                last_key: self.last_key,
             },
             ViewSection::Help => ViewPatch::Help {
                 help: self.help.clone(),
@@ -237,10 +251,16 @@ impl ViewModel {
             ViewPatch::Conversation { conversation } => self.conversation = conversation,
             ViewPatch::CommitStepper { stepper } => self.stepper = stepper,
             ViewPatch::Progress { progress } => self.progress = progress,
-            ViewPatch::Focus { focus, tab, scroll } => {
+            ViewPatch::Focus {
+                focus,
+                tab,
+                scroll,
+                copy_target,
+            } => {
                 self.focus = focus;
                 self.tab = tab;
                 self.scroll = scroll;
+                self.copy_target = copy_target;
             }
             ViewPatch::Hints {
                 hints,
@@ -249,7 +269,11 @@ impl ViewModel {
                 mode,
                 leader,
                 chrome,
+                bindings,
+                last_key,
             } => {
+                self.bindings = bindings;
+                self.last_key = last_key;
                 self.hints = hints;
                 self.pending_keys = pending;
                 self.pending_label = pending_label;

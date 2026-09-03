@@ -19,6 +19,26 @@ module NamedKey = {
     | End
 }
 
+module NamedKeyName = {
+  /// The keymap's spelling of a named key, as bindings are written.
+  let of_ = (key: NamedKey.t): string =>
+    switch key {
+    | Enter => "enter"
+    | Esc => "esc"
+    | Tab => "tab"
+    | Backspace => "backspace"
+    | Space => "space"
+    | Up => "up"
+    | Down => "down"
+    | Left => "left"
+    | Right => "right"
+    | PageUp => "pageup"
+    | PageDown => "pagedown"
+    | Home => "home"
+    | End => "end"
+    }
+}
+
 module KeyCode = {
   @schema @tag("type")
   type t =

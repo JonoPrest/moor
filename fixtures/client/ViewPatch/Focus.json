@@ -1,4 +1,5 @@
 {
+  "copy_target": "src/lib.rs",
   "focus": {
     "row": 121,
     "side": "Head",
