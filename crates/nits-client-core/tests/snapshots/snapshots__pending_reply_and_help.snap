@@ -96,7 +96,8 @@ expression: core.view()
           "type": "HunkHeader",
           "text": "@@ -1,7 +1,8 @@"
         },
-        "threads": []
+        "threads": [],
+        "drafted": null
       },
       {
         "index": 1,
@@ -115,7 +116,8 @@ expression: core.view()
             "changed": []
           }
         },
-        "threads": []
+        "threads": [],
+        "drafted": null
       },
       {
         "index": 2,
@@ -128,7 +130,8 @@ expression: core.view()
             "changed": []
           }
         },
-        "threads": []
+        "threads": [],
+        "drafted": null
       },
       {
         "index": 3,
@@ -144,9 +147,11 @@ expression: core.view()
         "threads": [
           {
             "thread": "00000001YH0000000000000001",
-            "side": "Head"
+            "side": "Head",
+            "place": "Anchor"
           }
-        ]
+        ],
+        "drafted": null
       },
       {
         "index": 4,
@@ -159,7 +164,8 @@ expression: core.view()
             "changed": []
           }
         },
-        "threads": []
+        "threads": [],
+        "drafted": null
       },
       {
         "index": 5,
@@ -178,7 +184,8 @@ expression: core.view()
             "changed": []
           }
         },
-        "threads": []
+        "threads": [],
+        "drafted": null
       },
       {
         "index": 6,
@@ -197,7 +204,8 @@ expression: core.view()
             "changed": []
           }
         },
-        "threads": []
+        "threads": [],
+        "drafted": null
       },
       {
         "index": 7,
@@ -216,7 +224,8 @@ expression: core.view()
             "changed": []
           }
         },
-        "threads": []
+        "threads": [],
+        "drafted": null
       }
     ],
     "missing": [
@@ -253,7 +262,8 @@ expression: core.view()
             "type": "HunkHeader",
             "text": "@@ -1,7 +1,8 @@"
           },
-          "threads": []
+          "threads": [],
+          "drafted": null
         },
         {
           "index": 1,
@@ -272,7 +282,8 @@ expression: core.view()
               "changed": []
             }
           },
-          "threads": []
+          "threads": [],
+          "drafted": null
         },
         {
           "index": 2,
@@ -285,7 +296,8 @@ expression: core.view()
               "changed": []
             }
           },
-          "threads": []
+          "threads": [],
+          "drafted": null
         },
         {
           "index": 3,
@@ -301,9 +313,11 @@ expression: core.view()
           "threads": [
             {
               "thread": "00000001YH0000000000000001",
-              "side": "Head"
+              "side": "Head",
+              "place": "Anchor"
             }
-          ]
+          ],
+          "drafted": null
         },
         {
           "index": 4,
@@ -316,7 +330,8 @@ expression: core.view()
               "changed": []
             }
           },
-          "threads": []
+          "threads": [],
+          "drafted": null
         },
         {
           "index": 5,
@@ -335,7 +350,8 @@ expression: core.view()
               "changed": []
             }
           },
-          "threads": []
+          "threads": [],
+          "drafted": null
         },
         {
           "index": 6,
@@ -354,7 +370,8 @@ expression: core.view()
               "changed": []
             }
           },
-          "threads": []
+          "threads": [],
+          "drafted": null
         },
         {
           "index": 7,
@@ -373,7 +390,8 @@ expression: core.view()
               "changed": []
             }
           },
-          "threads": []
+          "threads": [],
+          "drafted": null
         }
       ],
       "missing": [
@@ -409,7 +427,8 @@ expression: core.view()
             "type": "HunkHeader",
             "text": "@@ -1,7 +1,8 @@"
           },
-          "threads": []
+          "threads": [],
+          "drafted": null
         },
         {
           "index": 1,
@@ -428,7 +447,8 @@ expression: core.view()
               "changed": []
             }
           },
-          "threads": []
+          "threads": [],
+          "drafted": null
         },
         {
           "index": 2,
@@ -441,7 +461,8 @@ expression: core.view()
               "changed": []
             }
           },
-          "threads": []
+          "threads": [],
+          "drafted": null
         },
         {
           "index": 3,
@@ -454,7 +475,8 @@ expression: core.view()
               "changed": []
             }
           },
-          "threads": []
+          "threads": [],
+          "drafted": null
         },
         {
           "index": 4,
@@ -467,7 +489,8 @@ expression: core.view()
               "changed": []
             }
           },
-          "threads": []
+          "threads": [],
+          "drafted": null
         },
         {
           "index": 5,
@@ -486,7 +509,8 @@ expression: core.view()
               "changed": []
             }
           },
-          "threads": []
+          "threads": [],
+          "drafted": null
         },
         {
           "index": 6,
@@ -505,7 +529,8 @@ expression: core.view()
               "changed": []
             }
           },
-          "threads": []
+          "threads": [],
+          "drafted": null
         },
         {
           "index": 7,
@@ -524,7 +549,8 @@ expression: core.view()
               "changed": []
             }
           },
-          "threads": []
+          "threads": [],
+          "drafted": null
         }
       ],
       "missing": [],

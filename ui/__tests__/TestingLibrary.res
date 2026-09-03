@@ -43,4 +43,5 @@ module Element = {
   @get external textContent: element => string = "textContent"
   @send external getAttribute: (element, string) => Nullable.t<string> = "getAttribute"
   @send external hasAttribute: (element, string) => bool = "hasAttribute"
+  @get external parentElement: element => element = "parentElement"
 }

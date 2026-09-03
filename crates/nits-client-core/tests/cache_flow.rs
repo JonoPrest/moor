@@ -1869,12 +1869,27 @@ fn line_anchors_land_on_the_last_line_of_the_range_on_the_right_side() {
         diff.rows[row]
             .threads
             .iter()
+            .filter(|t| t.place == nits_client_core::RowPlace::Anchor)
+            .map(|t| t.thread.random())
+            .collect()
+    };
+    let inside = |row: usize| -> Vec<u128> {
+        diff.rows[row]
+            .threads
+            .iter()
+            .filter(|t| t.place == nits_client_core::RowPlace::Inside)
             .map(|t| t.thread.random())
             .collect()
     };
     // Row index = line - 1 in this fixture.
     assert_eq!(at(6), vec![1], "5..=7 lands on line 7");
-    assert_eq!(at(4), Vec::<u128>::new());
+    assert_eq!(at(4), Vec::<u128>::new(), "not the card's row");
+    // ...but the rows the range covers know they are commented, so the
+    // stretch can be drawn.
+    assert_eq!(inside(4), vec![1], "line 5 is inside 5..=7");
+    assert_eq!(inside(5), vec![1]);
+    assert_eq!(inside(6), Vec::<u128>::new(), "the last line is the anchor");
+    assert_eq!(inside(3), Vec::<u128>::new(), "line 4 is outside");
     assert_eq!(at(20), vec![2]);
     assert_eq!(
         at(29),

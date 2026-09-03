@@ -43,6 +43,16 @@ module ConnectionView = {
 module Draft = {
   @schema
   type t = {anchor: Domain.Anchor.t, @as("reply_to") replyTo: @s.null option<threadId>}
+
+  /// Whether this draft docks at the bottom of the tab. A reply renders
+  /// in its thread's card and a line comment under its own row; only a
+  /// draft with no row of its own — review- or file-level — has nowhere
+  /// inline to sit.
+  let isDocked = (draft: t): bool =>
+    switch (draft.replyTo, draft.anchor) {
+    | (Some(_), _) | (None, Lines(_)) => false
+    | (None, Review(_) | File(_)) => true
+    }
 }
 
 module PendingEvent = {
@@ -216,15 +226,30 @@ module Progress = {
   }
 }
 
-/// A thread placed on a row, and the half of the row it is anchored to.
+/// What a row is to an anchored range: its last line, under which the
+/// card or the composer renders, or a line inside it.
+module RowPlace = {
+  @schema
+  type t = Anchor | Inside
+}
+
+/// A thread placed on a row: the half of the row it is anchored to, and
+/// whether this row is the range's last line or one inside it.
 module RowThread = {
   @schema
-  type t = {thread: threadId, side: Domain.Side.t}
+  type t = {thread: threadId, side: Domain.Side.t, place: RowPlace.t}
 }
 
 module DiffRow = {
   @schema
-  type t = {index: int, row: Render.Row.t, threads: array<RowThread.t>}
+  type t = {
+    index: int,
+    row: Render.Row.t,
+    threads: array<RowThread.t>,
+    /// The open draft covers this row; the composer renders under the
+    /// `Anchor` one.
+    drafted: @s.null option<(RowPlace.t, Domain.Side.t)>,
+  }
 }
 
 module DiffView = {

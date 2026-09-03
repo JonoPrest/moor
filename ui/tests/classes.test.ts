@@ -64,3 +64,41 @@ describe("app.css covers the render model", () => {
     }
   });
 });
+
+// A cell can be focused, selected, commented and drafted-about at once
+// (#11). Each state must own its own shadow layer: sharing one custom
+// property means the last rule in the cascade erases the others, which is
+// exactly the bug this replaced.
+describe("cell state layers compose", () => {
+  const declarations = (selector: string): string => {
+    const at = css.indexOf(`.${selector} {`);
+    expect(at, `.${selector} is defined`).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf("}", at));
+  };
+
+  const varsSetBy = (selector: string): string[] => [
+    ...declarations(selector).matchAll(/(--cell-[a-z-]+):/g),
+  ].map((m) => m[1]);
+
+  it("gives each state its own variable", () => {
+    const states = ["cell-commented", "cell-selected", "cell-drafting"];
+    const seen = new Map<string, string>();
+    for (const state of states) {
+      const vars = varsSetBy(state);
+      expect(vars.length, `${state} sets at least one layer`).toBeGreaterThan(0);
+      for (const v of vars) {
+        expect(seen.has(v), `${v} is set by both ${seen.get(v)} and ${state}`).toBe(false);
+        seen.set(v, state);
+      }
+    }
+  });
+
+  it("composes every layer in the cell's shadow", () => {
+    const cell = declarations("cell-left,\n  .cell-right");
+    for (const v of ["--cell-comment-rule", "--cell-select-tint", "--cell-draft-rule", "--cell-draft-tint"]) {
+      expect(cell, `the cell shadow includes ${v}`).toContain(v);
+    }
+    // Absent states must not break the shorthand.
+    expect(cell).toContain("0 0 transparent");
+  });
+});

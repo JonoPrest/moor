@@ -79,14 +79,25 @@ pub struct CommentView {
     pub pending: bool,
 }
 
-/// A thread placed on a row, and the half of the row it is anchored to —
-/// a modified row shows base threads against its removed cell and head
-/// threads against its added one.
+/// What a row is to an anchored range: the last line, under which the
+/// thread's card (or the composer) renders, or a line inside the range.
+/// A single-line anchor is `Anchor`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::EnumIter)]
+pub enum RowPlace {
+    Anchor,
+    Inside,
+}
+
+/// A thread placed on a row: the half of the row it is anchored to — a
+/// modified row shows base threads against its removed cell and head
+/// threads against its added one — and whether this row is the range's
+/// last line or one inside it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RowThread {
     pub thread: ThreadId,
     pub side: Side,
+    pub place: RowPlace,
 }
 
 /// A row of the open file with the threads placed on it.
@@ -97,6 +108,12 @@ pub struct DiffRow {
     pub index: u32,
     pub row: Row,
     pub threads: Vec<RowThread>,
+    /// The open draft's range covers this row. The composer renders
+    /// under the `Anchor` row, so a comment is written where it will be
+    /// read (UI-DESIGN §Comments) — mapping the draft's anchor to rows is
+    /// anchoring work, which lives here and not in a component.
+    #[serde(default)]
+    pub drafted: Option<(RowPlace, Side)>,
 }
 
 /// The open file, over the viewport window.
@@ -309,7 +326,43 @@ struct Placement {
 
 enum PlacementKind {
     File,
-    Lines { side: Side, end: u32 },
+    Lines { side: Side, start: u32, end: u32 },
+}
+
+/// The open draft's line range, when it is a line anchor on this render:
+/// `(side, start, end)`. A review- or file-level draft has no rows, and
+/// keeps the docked composer.
+fn draft_range(draft: Option<&crate::view::Draft>, render: &RenderKey) -> Option<(Side, u32, u32)> {
+    let Anchor::Lines {
+        repo_id,
+        path,
+        side,
+        blob_oid,
+        lines,
+        ..
+    } = &draft?.anchor
+    else {
+        return None;
+    };
+    if *repo_id != render.repo_id
+        || *path != render.path
+        || blob_on(&render.target, *side) != Some(*blob_oid)
+    {
+        return None;
+    }
+    Some((*side, lines.start().get(), lines.end().get()))
+}
+
+/// Where a row sits in `start..=end` on `side`, if at all.
+fn place_in(row: &Row, side: Side, start: u32, end: u32) -> Option<RowPlace> {
+    let line = line_on(row, side)?;
+    if line == end {
+        Some(RowPlace::Anchor)
+    } else if line >= start && line < end {
+        Some(RowPlace::Inside)
+    } else {
+        None
+    }
 }
 
 fn placements(snapshot: &ReviewSnapshot, render: &RenderKey) -> Vec<Placement> {
@@ -355,6 +408,7 @@ fn placements(snapshot: &ReviewSnapshot, render: &RenderKey) -> Vec<Placement> {
                 }
                 PlacementKind::Lines {
                     side: *side,
+                    start: lines.start().get(),
                     end: lines.end().get(),
                 }
             }
@@ -405,7 +459,15 @@ pub(crate) fn all_rows(
             render: render.clone(),
             index: ChunkIndex::new(ci),
         }) {
-            place_rows(chunk, ci * chunk_rows, 0, u32::MAX, &placements, &mut rows);
+            place_rows(
+                chunk,
+                ci * chunk_rows,
+                0,
+                u32::MAX,
+                &placements,
+                None,
+                &mut rows,
+            );
         }
     }
     rows
@@ -419,6 +481,7 @@ pub(crate) fn diff_view(
     render: &RenderKey,
     first_row: u32,
     last_row: u32,
+    draft: Option<&crate::view::Draft>,
 ) -> Option<DiffView> {
     let CacheValue::Header { header } = cache.peek(&CacheKey::Header {
         render: render.clone(),
@@ -437,6 +500,7 @@ pub(crate) fn diff_view(
         &render.path,
         blob_on(&render.target, Side::Head),
     );
+    let draft_range = draft_range(draft, render);
     let placements = placements(snapshot, render);
     let file_threads: Vec<ThreadId> = placements
         .iter()
@@ -493,6 +557,7 @@ pub(crate) fn diff_view(
                     first_row,
                     last_row,
                     &placements,
+                    draft_range,
                     &mut rows,
                 );
             }
@@ -545,6 +610,7 @@ fn place_rows(
     first_row: u32,
     last_row: u32,
     placements: &[Placement],
+    draft: Option<(Side, u32, u32)>,
     out: &mut Vec<DiffRow>,
 ) {
     for (i, row) in chunk.rows.iter().enumerate() {
@@ -554,15 +620,16 @@ fn place_rows(
         }
         let mut threads = Vec::new();
         for p in placements {
-            let PlacementKind::Lines { side, end } = p.kind else {
+            let PlacementKind::Lines { side, start, end } = p.kind else {
                 continue;
             };
-            // Anchor on the last line of the range; a row whose cell is
-            // that line carries the thread, on that cell's side.
-            if line_on(row, side) == Some(end) {
+            // The card hangs under the range's last line; every line of
+            // the range is marked, so the stretch can be drawn.
+            if let Some(place) = place_in(row, side, start, end) {
                 threads.push(RowThread {
                     thread: p.thread,
                     side,
+                    place,
                 });
             }
         }
@@ -570,6 +637,9 @@ fn place_rows(
             index,
             row: row.clone(),
             threads,
+            drafted: draft.and_then(|(side, start, end)| {
+                place_in(row, side, start, end).map(|place| (place, side))
+            }),
         });
     }
 }

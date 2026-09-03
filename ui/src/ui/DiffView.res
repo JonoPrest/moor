@@ -174,12 +174,19 @@ let make = (
                 index=item.index
                 focused
                 focusedSide
+                drafted=?r.drafted
                 threads=r.threads
                 onClick={side => dispatch(SetFocus({focus: Focus.Diff({row: item.index, side})}))}
                 chrome
                 onExpand={(gap, dir) => dispatch(ExpandGap({file: diff.file, gap, dir}))}
               />
+              {switch (r.drafted, draft) {
+              | (Some((Anchor, _)), Some({replyTo: None} as d)) =>
+                <Composer draft=d pendingRefresh dispatch />
+              | (Some(_), _) | (None, _) => React.null
+              }}
               {r.threads
+              ->Array.filter((t: View.RowThread.t) => t.place == Anchor)
               ->Array.map((t: View.RowThread.t) => t.thread)
               ->Array.filterMap(threadOf)
               ->Array.map(ti => {

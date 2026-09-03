@@ -50,7 +50,7 @@ pub use cache::{Bytes, CacheKey, CacheValue, ContentCache, Evicted, RenderKey};
 pub use connection::{Connection, ConnectionKind};
 pub use content::{CacheConfig, DiskTier, DiskTierKind, FileRef, PREFETCH_RADIUS};
 pub use diff::{
-    CommentView, CommitStepper, DiffRow, DiffView, PendingIds, RowThread, StepperCommit,
+    CommentView, CommitStepper, DiffRow, DiffView, PendingIds, RowPlace, RowThread, StepperCommit,
     ThreadPlace, ThreadPlaceKind, ThreadView, conversation, threads,
 };
 pub use events::{
@@ -878,6 +878,7 @@ impl ClientCore {
                         &f.render,
                         f.first_row,
                         f.last_row,
+                        self.view.draft.as_ref(),
                     )
                 });
                 (diff, threads)
@@ -916,6 +917,7 @@ impl ClientCore {
                         render,
                         first,
                         last,
+                        self.view.draft.as_ref(),
                     )
                 })
                 .collect(),

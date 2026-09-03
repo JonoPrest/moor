@@ -70,6 +70,13 @@ let pieces = (cell: Cell.t): array<piece> => {
   out
 }
 
+/// The other half of a row.
+let other = (side: Domain.Side.t): Domain.Side.t =>
+  switch side {
+  | Base => Head
+  | Head => Base
+  }
+
 /// The half of a row a cell is: base is the removed (left) column, head
 /// the added (right) one. A modified row renders both, and each is its
 /// own comment target.
@@ -86,15 +93,22 @@ module CellView = {
     ~side: Domain.Side.t,
     ~focused: bool=false,
     ~selected: bool=false,
+    ~commented: bool=false,
+    ~drafting: bool=false,
     ~threads: int=0,
     ~onClick: unit => unit=() => (),
     ~onMouseDown: unit => unit=() => (),
     ~onMouseEnter: unit => unit=() => (),
   ) => {
+    // Four states can be on one cell at once (focused, selected,
+    // commented, being drafted about), so each is its own class over the
+    // diff-side background rather than a background of its own.
     let className =
       "cell-" ++
       sideClass(side) ++
-      (focused ? " cell-focused" : "") ++ (selected ? " cell-selected" : "")
+      (focused ? " cell-focused" : "") ++
+      (selected ? " cell-selected" : "") ++
+      (commented ? " cell-commented" : "") ++ (drafting ? " cell-drafting" : "")
     Attrs.withData(
       <div
         className
@@ -136,6 +150,7 @@ let make = (
   ~threads: array<View.RowThread.t>,
   ~focusedSide: Domain.Side.t=Head,
   ~selectedSide: option<Domain.Side.t>=?,
+  ~drafted: option<(View.RowPlace.t, Domain.Side.t)>=?,
   ~onClick: Domain.Side.t => unit=_ => (),
   ~onMouseDown: Domain.Side.t => unit=_ => (),
   ~onMouseEnter: Domain.Side.t => unit=_ => (),
@@ -147,8 +162,19 @@ let make = (
   | Unified => base ++ " row-unified"
   | Split => base ++ " row-split"
   }
-  let threadsOn = (side: Domain.Side.t) =>
-    threads->Array.filter((t: View.RowThread.t) => t.side == side)->Array.length
+  // The 💬 marker hangs where the card is; every line of a range is
+  // marked as commented so the stretch reads as one thing.
+  let anchorsOn = (side: Domain.Side.t) =>
+    threads
+    ->Array.filter((t: View.RowThread.t) => t.side == side && t.place == Anchor)
+    ->Array.length
+  let commentedOn = (side: Domain.Side.t) =>
+    threads->Array.some((t: View.RowThread.t) => t.side == side)
+  let draftingOn = (side: Domain.Side.t) =>
+    switch drafted {
+    | Some((_, s)) => s == side
+    | None => false
+    }
   // One rendered cell standing for both sides: a unified context row has
   // a line on each side but shows only one. Added and removed rows are
   // NOT this — they genuinely have no cell on the other side, so they are
@@ -173,7 +199,9 @@ let make = (
       | Some(target) => onSide(side, target)
       | None => false
       }}
-      threads={threadsOn(side)}
+      commented={commentedOn(side) || (oneCellBothSides && commentedOn(other(side)))}
+      drafting={draftingOn(side) || (oneCellBothSides && draftingOn(other(side)))}
+      threads={anchorsOn(side) + (oneCellBothSides ? anchorsOn(other(side)) : 0)}
       onClick={() => onClick(side)}
       onMouseDown={() => onMouseDown(side)}
       onMouseEnter={() => onMouseEnter(side)}

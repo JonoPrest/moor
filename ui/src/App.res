@@ -400,11 +400,9 @@ module Shell = {
                   </div>
                 : <div className="diff-empty"> {React.string("No changed files")} </div>}
               {switch model.draft {
-              // A reply renders inline in its thread's card; only a fresh
-              // comment uses the bottom composer.
-              | Some({replyTo: None} as draft) =>
+              | Some(draft) if View.Draft.isDocked(draft) =>
                 <Composer draft pendingRefresh=model.pendingRefresh dispatch />
-              | Some({replyTo: Some(_)}) | None => React.null
+              | Some(_) | None => React.null
               }}
             </>
           | Conversation =>
@@ -432,13 +430,19 @@ module Shell = {
                   focus=model.focus
                   scroll=?model.scroll
                   chrome=model.chrome
+                  threads=model.threads
+                  draft=?model.draft
+                  pendingRefresh=model.pendingRefresh
                   dispatch
                 />
               | None => <div className="diff-empty"> {React.string("Open a file")} </div>
               }}
               {switch model.draft {
-              | Some(draft) => <Composer draft pendingRefresh=model.pendingRefresh dispatch />
-              | None => React.null
+              // Browse composes inline too; only a draft with no row of
+              // its own docks here.
+              | Some(draft) if View.Draft.isDocked(draft) =>
+                <Composer draft pendingRefresh=model.pendingRefresh dispatch />
+              | Some(_) | None => React.null
               }}
             </>
           }}

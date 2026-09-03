@@ -75,8 +75,9 @@ fn comment(n: u128, anchor: Anchor) -> Comment {
     }
 }
 
-/// Snapshot with one thread on line 5 (head) of a.rs, one on the removed
-/// side of line 5 of b.rs (a file that is not open), and one review-level.
+/// Snapshot with one thread over lines 3–5 (head) of a.rs, one on the
+/// removed side of line 5 of b.rs (a file that is not open), and one
+/// review-level.
 fn snapshot() -> ReviewSnapshot {
     use nits_protocol::{ContextHash, LineNo, LineRange, Side};
     let c1 = comment(
@@ -86,7 +87,9 @@ fn snapshot() -> ReviewSnapshot {
             path: path("src/a.rs"),
             side: Side::Head,
             blob_oid: blob(11),
-            lines: LineRange::single(LineNo::new(5).unwrap()),
+            // A range, so the rows it covers and the row its card hangs
+            // under are different things.
+            lines: LineRange::new(LineNo::new(3).unwrap(), LineNo::new(5).unwrap()).unwrap(),
             context_hash: ContextHash::new(0),
         },
     );
@@ -1259,6 +1262,58 @@ fn enter_on_an_expander_opens_that_hidden_run() {
 }
 
 #[test]
+fn an_open_draft_marks_the_rows_it_is_about() {
+    // The composer renders under the anchor row, so the core has to say
+    // which rows the draft covers — a component cannot work that out
+    // without redoing the anchoring.
+    let mut core = on_row(MODIFIED_ROW, Side::Base);
+    press(&mut core, "V").unwrap();
+    press(&mut core, "j").unwrap();
+    press(&mut core, "c").unwrap();
+    let rows = &core.view().diff.as_ref().expect("a file is open").rows;
+    let drafted: Vec<(u32, nits_client_core::RowPlace, Side)> = rows
+        .iter()
+        .filter_map(|r| r.drafted.map(|(place, side)| (r.index, place, side)))
+        .collect();
+    assert_eq!(
+        drafted,
+        vec![
+            (MODIFIED_ROW, nits_client_core::RowPlace::Inside, Side::Base),
+            (
+                MODIFIED_ROW + 1,
+                nits_client_core::RowPlace::Anchor,
+                Side::Base
+            ),
+        ],
+        "both selected rows are marked, the last one carrying the composer"
+    );
+    // Discarding clears them.
+    press(&mut core, "esc").unwrap();
+    assert!(
+        core.view()
+            .diff
+            .as_ref()
+            .is_some_and(|d| d.rows.iter().all(|r| r.drafted.is_none()))
+    );
+}
+
+#[test]
+fn a_review_level_draft_marks_no_rows() {
+    // It has no line to sit under, so it keeps the docked composer.
+    let mut core = on_row(MODIFIED_ROW, Side::Head);
+    core.handle(Input::User(Action::DraftOpened {
+        anchor: Anchor::Review,
+    }))
+    .unwrap();
+    assert!(
+        core.view()
+            .diff
+            .as_ref()
+            .is_some_and(|d| d.rows.iter().all(|r| r.drafted.is_none()))
+    );
+}
+
+#[test]
 fn the_scroll_family_records_an_intent_the_host_performs() {
     let mut core = on_row(4, Side::Head);
     assert_eq!(core.view().scroll, None);
@@ -2068,4 +2123,47 @@ fn a_key_that_lands_where_it_is_unbound_reports_no_command() {
             command: None,
         })
     );
+}
+
+#[test]
+fn comment_navigation_stops_once_per_thread() {
+    // The thread on line 5 of a.rs covers rows 2..=4 once its range is
+    // more than one line; `] c` must stop on the row its card hangs
+    // under, not on every line it marks.
+    let mut core = on_row(0, Side::Head);
+    let rows = core
+        .view()
+        .diff
+        .as_ref()
+        .expect("a file is open")
+        .rows
+        .clone();
+    let marked: Vec<u32> = rows
+        .iter()
+        .filter(|r| !r.threads.is_empty())
+        .map(|r| r.index)
+        .collect();
+    let anchors: Vec<u32> = rows
+        .iter()
+        .filter(|r| {
+            r.threads
+                .iter()
+                .any(|t| t.place == nits_client_core::RowPlace::Anchor)
+        })
+        .map(|r| r.index)
+        .collect();
+    assert!(
+        marked.len() > anchors.len(),
+        "the fixture has a multi-line thread: {marked:?} vs {anchors:?}"
+    );
+    press(&mut core, "] c").unwrap();
+    let Focus::Diff { row, .. } = core.view().focus else {
+        panic!("still on the diff")
+    };
+    assert!(
+        anchors.contains(&row),
+        "landed on {row}, which is not a card's row ({anchors:?})"
+    );
+    // And the next one skips the rest of that thread's rows.
+    assert!(press(&mut core, "] c").is_err() || !marked.contains(&(row + 1)));
 }
