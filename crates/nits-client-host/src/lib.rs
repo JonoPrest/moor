@@ -15,8 +15,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use nits_client_core::{
-    Action, CacheConfig, ClientCore, Config, Effect, IdSeed, Input, KeyChord, Keymap,
-    TransportEvent, ViewPatch,
+    Action, Bytes, CacheConfig, ClientCore, Config, DiskTier, Effect, IdSeed, Input, KeyChord,
+    Keymap, TransportEvent, ViewPatch,
 };
 use nits_protocol::{Author, BuildInfo, ClientId, ClientMsg, Envelope, ServerMsg};
 use nitsd::contexts::DaemonEndpoint;
@@ -439,13 +439,92 @@ pub fn host_config(
     id_seed: IdSeed,
     kv: KvConfig,
 ) -> HostConfig {
+    let cache = CacheConfig {
+        disk: match (&endpoint, &kv) {
+            (DaemonEndpoint::Ssh { .. } | DaemonEndpoint::WebSocket { .. }, KvConfig::Redb(_)) => {
+                DiskTier::Enabled {
+                    budget: Bytes::mib(2048),
+                }
+            }
+            (DaemonEndpoint::Local { .. }, KvConfig::Memory | KvConfig::Redb(_))
+            | (DaemonEndpoint::Ssh { .. } | DaemonEndpoint::WebSocket { .. }, KvConfig::Memory) => {
+                DiskTier::Disabled
+            }
+        },
+        ..CacheConfig::default()
+    };
     HostConfig {
         endpoint,
         kv,
         identity,
-        cache: CacheConfig::default(),
+        cache,
         id_seed,
         tick: Duration::from_millis(100),
         keys_file: keys_file::default_keys_path(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nitsd::contexts::{StartPolicy, local_spec};
+
+    fn identity() -> Identity {
+        Identity {
+            client_id: ClientId::from_parts(1, 1),
+            client: BuildInfo {
+                name: "host-test".into(),
+                version: "0".into(),
+            },
+            author: Author::Human {
+                name: "ada".into(),
+                machine: "box".into(),
+            },
+        }
+    }
+
+    #[test]
+    fn persistent_remote_hosts_get_the_documented_disk_tier() {
+        let remote = host_config(
+            DaemonEndpoint::WebSocket {
+                url: "ws://review.example:7677".into(),
+            },
+            identity(),
+            IdSeed(1),
+            KvConfig::Redb(PathBuf::from("remote.redb")),
+        );
+        assert_eq!(
+            remote.cache.disk,
+            DiskTier::Enabled {
+                budget: Bytes::mib(2048)
+            }
+        );
+    }
+
+    #[test]
+    fn local_or_memory_only_hosts_do_not_duplicate_the_disk_tier() {
+        let local = host_config(
+            DaemonEndpoint::Local {
+                spec: local_spec(
+                    Some(&PathBuf::from("/tmp/nits-host-test")),
+                    Some(&PathBuf::from("/tmp/nits-host-test.sock")),
+                )
+                .unwrap(),
+                start: StartPolicy::StartIfNeeded,
+            },
+            identity(),
+            IdSeed(1),
+            KvConfig::Redb(PathBuf::from("local.redb")),
+        );
+        let memory_remote = host_config(
+            DaemonEndpoint::WebSocket {
+                url: "ws://review.example:7677".into(),
+            },
+            identity(),
+            IdSeed(2),
+            KvConfig::Memory,
+        );
+        assert_eq!(local.cache.disk, DiskTier::Disabled);
+        assert_eq!(memory_remote.cache.disk, DiskTier::Disabled);
     }
 }

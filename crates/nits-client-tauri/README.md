@@ -9,8 +9,10 @@ Desktop wrapper (`nits-desktop`) around `nits-client-host`.
   also run `pnpm --dir ui res:watch` in another terminal so `.res` edits
   recompile.
 - `nits-desktop [context]` picks any named `nits-config` context (`Local`,
-  `Ssh`, or `Ws`). SSH uses the configured remote `nits daemon stdio` proxy;
-  WebSocket contexts connect directly.
+  `Ssh`, or `Ws`); `--socket`/`--data-dir` and `--ws` preserve the ad-hoc
+  selections accepted by `nits --ui desktop`, and `--start-policy` preserves
+  lifecycle behavior. SSH uses the configured remote `nits daemon stdio`
+  proxy; WebSocket contexts connect directly.
 - `capabilities/default.json` grants the main window `core:default` (events).
   Without it Tauri 2 silently denies `listen`/`invoke` and the UI stays
   "disconnected"; webview errors are forwarded to the Rust log via the

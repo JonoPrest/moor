@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use nits_client_core::{Action, IdSeed, KeyChord, ViewPatch};
 use nits_client_host::{Handle, HostConfig, Identity, KvConfig};
-use nits_config::Config;
+use nits_config::{Config, Context};
 use nits_protocol::{Author, BuildInfo, ClientId};
 use nitsd::contexts::{ContextError, DaemonEndpoint, StartPolicy};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -94,16 +94,49 @@ pub fn identity() -> Identity {
     }
 }
 
-/// Resolve `context` (the default when `None`) into the endpoint every host
-/// connection attempt will dial.
-pub fn endpoint_for(context: Option<&str>) -> Result<DaemonEndpoint, SetupError> {
-    let config_path = match std::env::var_os("NITS_CONFIG") {
-        Some(path) => PathBuf::from(path),
-        None => Config::default_path()?,
+/// Where the desktop gets its context definition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EndpointSource {
+    Named {
+        context: Option<String>,
+        config: Option<PathBuf>,
+    },
+    Local {
+        data_dir: Option<PathBuf>,
+        socket: Option<PathBuf>,
+    },
+    WebSocket {
+        url: String,
+    },
+}
+
+/// Fully typed endpoint selection received at the desktop process boundary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EndpointOptions {
+    pub source: EndpointSource,
+    pub start: StartPolicy,
+}
+
+/// Resolve the selected source into the endpoint every host connection
+/// attempt will dial.
+pub fn endpoint_for(options: &EndpointOptions) -> Result<DaemonEndpoint, SetupError> {
+    let context = match &options.source {
+        EndpointSource::Named { context, config } => {
+            let config_path = match config {
+                Some(path) => path.clone(),
+                None => Config::default_path()?,
+            };
+            let cfg = Config::load(&config_path)?;
+            let (_, context) = cfg.resolve(context.as_deref())?;
+            context
+        }
+        EndpointSource::Local { data_dir, socket } => Context::Local {
+            data_dir: data_dir.clone(),
+            socket: socket.clone(),
+        },
+        EndpointSource::WebSocket { url } => Context::Ws { url: url.clone() },
     };
-    let cfg = Config::load(&config_path)?;
-    let (_, ctx) = cfg.resolve(context)?;
-    Ok(DaemonEndpoint::resolve(&ctx, StartPolicy::StartIfNeeded)?)
+    Ok(DaemonEndpoint::resolve(&context, options.start)?)
 }
 
 /// Host config for the desktop: redb KV under `app_data_dir`, random seed.
@@ -154,12 +187,12 @@ pub fn start_host(app: &AppHandle, config: HostConfig) -> Result<Host, SetupErro
     Ok(Host { handle })
 }
 
-/// Build and run the app. `context` picks a `nits-config` context.
-pub fn run(context: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+/// Build and run the app with a context selection fixed for this process.
+pub fn run(options: EndpointOptions) -> Result<(), Box<dyn std::error::Error>> {
     tauri::Builder::default()
         .setup(move |app| {
             let data_dir = app.path().app_data_dir()?;
-            let endpoint = endpoint_for(context.as_deref())?;
+            let endpoint = endpoint_for(&options)?;
             let host = start_host(app.handle(), host_config(endpoint, &data_dir))?;
             app.manage(host);
             Ok(())
@@ -197,6 +230,39 @@ mod tests {
         let cfg = host_config(endpoint.clone(), Path::new("/data"));
         assert_eq!(cfg.endpoint, endpoint);
         assert!(matches!(&cfg.kv, KvConfig::Redb(p) if p == Path::new("/data/kv.redb")));
+    }
+
+    #[test]
+    fn endpoint_options_preserve_ad_hoc_sources_and_lifecycle() {
+        let websocket = endpoint_for(&EndpointOptions {
+            source: EndpointSource::WebSocket {
+                url: "ws://review.example:7677".into(),
+            },
+            start: StartPolicy::RequireRunning,
+        })
+        .unwrap();
+        assert_eq!(
+            websocket,
+            DaemonEndpoint::WebSocket {
+                url: "ws://review.example:7677".into()
+            }
+        );
+
+        let local = endpoint_for(&EndpointOptions {
+            source: EndpointSource::Local {
+                data_dir: Some(PathBuf::from("/tmp/nits-data")),
+                socket: Some(PathBuf::from("/tmp/nits.sock")),
+            },
+            start: StartPolicy::RequireRunning,
+        })
+        .unwrap();
+        assert!(matches!(
+            local,
+            DaemonEndpoint::Local {
+                start: StartPolicy::RequireRunning,
+                ..
+            }
+        ));
     }
 
     /// The `view` payload is exactly the array `CoreTauri.res` parses.

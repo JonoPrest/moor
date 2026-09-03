@@ -395,7 +395,9 @@ Written 2026-08-27 at the end of the session that finished Milestone 3 and
   `Handle`, a task draining the patch receiver into `app.emit("view", …)`,
   endpoint via `nits-config` → `nitsd::contexts::DaemonEndpoint`, KV at
   `app_data_dir()/kv.redb`, seed from `fastrand`. `nits-desktop [context]`
-  accepts Local, SSH and WebSocket contexts through the shared host dialer.
+  accepts Local, SSH and WebSocket contexts through the shared host dialer;
+  its typed `--socket`/`--data-dir`, `--ws`, and `--start-policy` arguments
+  preserve the exact selection made by `nits --ui desktop`.
   Run: `pnpm --dir ui build` then
   `cargo run -p nits-client-tauri` (serves the embedded `ui/dist`; no
   `devUrl` is configured, because with one a debug build loads

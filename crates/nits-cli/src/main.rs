@@ -89,6 +89,15 @@ enum StartPolicyArg {
     RequireRunning,
 }
 
+impl StartPolicyArg {
+    fn as_arg(self) -> &'static str {
+        match self {
+            Self::StartIfNeeded => "start-if-needed",
+            Self::RequireRunning => "require-running",
+        }
+    }
+}
+
 impl From<StartPolicyArg> for contexts::StartPolicy {
     fn from(value: StartPolicyArg) -> Self {
         match value {
@@ -414,6 +423,30 @@ fn config_path(cli: &Cli) -> anyhow::Result<PathBuf> {
     }
 }
 
+/// Typed desktop arguments equivalent to this process's context selection.
+/// The desktop parses them into its own endpoint-source enum before use.
+fn desktop_args(cli: &Cli) -> Vec<std::ffi::OsString> {
+    let mut args = vec!["--start-policy".into(), cli.start_policy.as_arg().into()];
+    if let Some(url) = &cli.ws {
+        args.extend(["--ws".into(), url.into()]);
+    } else if cli.socket.is_some() || cli.data_dir.is_some() {
+        if let Some(socket) = &cli.socket {
+            args.extend(["--socket".into(), socket.as_os_str().into()]);
+        }
+        if let Some(data_dir) = &cli.data_dir {
+            args.extend(["--data-dir".into(), data_dir.as_os_str().into()]);
+        }
+    } else {
+        if let Some(context) = &cli.context {
+            args.push(context.into());
+        }
+        if let Some(config) = &cli.config {
+            args.extend(["--config".into(), config.as_os_str().into()]);
+        }
+    }
+    args
+}
+
 fn identity(cli: &Cli) -> Identity {
     let machine = gethostname::gethostname().to_string_lossy().into_owned();
     let name = cli
@@ -735,12 +768,7 @@ async fn open_ui(cli: &Cli, ctx: &Context, mut ops: Ops) -> anyhow::Result<()> {
                 .filter(|p| p.exists())
                 .ok_or_else(|| anyhow::anyhow!("nits-desktop not found next to nits"))?;
             let mut child = std::process::Command::new(app);
-            if let Some(c) = &cli.context {
-                child.arg(c);
-            }
-            if let Some(config) = &cli.config {
-                child.env("NITS_CONFIG", config);
-            }
+            child.args(desktop_args(cli));
             child.spawn().context("launching nits-desktop")?;
             return Ok(());
         }
@@ -1394,5 +1422,29 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(required.start_policy, StartPolicyArg::RequireRunning);
+    }
+
+    #[test]
+    fn desktop_arguments_preserve_an_ad_hoc_endpoint_and_policy() {
+        let cli = Cli::try_parse_from([
+            "nits",
+            "--ws",
+            "ws://review.example:7677",
+            "--start-policy",
+            "require-running",
+            "--ui",
+            "desktop",
+        ])
+        .unwrap();
+        assert_eq!(
+            desktop_args(&cli),
+            [
+                "--start-policy",
+                "require-running",
+                "--ws",
+                "ws://review.example:7677"
+            ]
+            .map(std::ffi::OsString::from)
+        );
     }
 }
