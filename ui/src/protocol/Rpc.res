@@ -187,6 +187,7 @@ module Request = {
   type t =
     | @as("ListWorkspaces") ListWorkspaces({})
     | @as("ListReviews") ListReviews({@as("workspace_id") workspaceId: workspaceId})
+    | @as("DefaultBase") DefaultBase({@as("repo_id") repoId: repoId})
     | @as("GetReview") GetReview({@as("review_id") reviewId: reviewId})
     | @as("ReviewSnapshot") ReviewSnapshot({@as("review_id") reviewId: reviewId})
     | @as("ListFiles") ListFiles({@as("review_id") reviewId: reviewId, scope: DiffScope.t})
@@ -250,6 +251,7 @@ module Response = {
   type t =
     | @as("Workspaces") Workspaces({workspaces: array<Workspace.t>})
     | @as("Reviews") Reviews({reviews: array<Review.t>})
+    | @as("DefaultBase") DefaultBase({base: RefSpec.t})
     | @as("Review") Review({review: Review.t})
     | @as("ReviewSnapshot") ReviewSnapshot({snapshot: ReviewSnapshot.t})
     | @as("Files") Files({files: array<FileChange.t>, resolved: array<ResolvedTarget.t>})

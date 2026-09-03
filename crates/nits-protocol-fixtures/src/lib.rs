@@ -1321,6 +1321,7 @@ enum_fixture!(
         Request::ListReviews {
             workspace_id: workspace_id()
         },
+        Request::DefaultBase { repo_id: repo_id() },
         Request::GetReview {
             review_id: review_id()
         },
@@ -1414,6 +1415,11 @@ enum_fixture!(
         },
         Response::Reviews {
             reviews: vec![review()?]
+        },
+        Response::DefaultBase {
+            base: RefSpec::Branch {
+                name: "main".into()
+            }
         },
         Response::Review { review: review()? },
         Response::ReviewSnapshot {
@@ -1531,7 +1537,7 @@ fn daemon_build() -> BuildInfo {
 fn upgrade_notice() -> UpgradeNotice {
     UpgradeNotice {
         latest: ProtocolVersion::new(0, 2, 0),
-        message: "nitsd 0.2 speaks protocol 0.2.0; upgrade your client.".into(),
+        message: "nitsd 0.3 speaks protocol 0.3.0; upgrade your client.".into(),
     }
 }
 struct_fixture!(ProtocolVersion, "ProtocolVersion", ProtocolVersion::CURRENT);

@@ -148,6 +148,18 @@ impl Ops {
         }
     }
 
+    /// Ask the daemon beside the repository to choose a working-tree base.
+    pub async fn default_base(&self, repo_id: RepoId) -> Result<RefSpec, OpsError> {
+        match self
+            .client
+            .request(Request::DefaultBase { repo_id })
+            .await?
+        {
+            Response::DefaultBase { base } => Ok(base),
+            _ => Err(OpsError::Shape),
+        }
+    }
+
     pub async fn snapshot(&self, review_id: ReviewId) -> Result<ReviewSnapshot, OpsError> {
         match self
             .client

@@ -4,7 +4,7 @@ use nits_protocol::{
     ChangeKind, CommitOid, RefSpec, RepoId, ResolvedSource, TreeEntryKind, TreeOid,
 };
 use nits_review_core::git::{Repo, is_binary};
-use nits_test_support::{RepoBuilder, files};
+use nits_test_support::{RepoBuilder, TestRepo, files};
 
 fn commit(s: &str) -> CommitOid {
     CommitOid::new(s.parse().unwrap())
@@ -50,6 +50,120 @@ fn resolves_every_refspec_variant() {
         })
         .unwrap_err();
     assert!(err.to_string().contains("nope"), "{err}");
+}
+
+#[test]
+fn default_base_finds_master_without_a_remote() {
+    let t = RepoBuilder::new()
+        .commit("base", files!["a.txt" => "base\n"])
+        .build()
+        .unwrap();
+    t.git(&["branch", "-m", "master"]).unwrap();
+    t.git(&["checkout", "-q", "-b", "feature"]).unwrap();
+    t.git(&["commit", "-q", "--allow-empty", "-m", "feature"])
+        .unwrap();
+
+    assert_eq!(
+        Repo::open(t.path()).unwrap().default_base().unwrap(),
+        RefSpec::Branch {
+            name: "master".into()
+        }
+    );
+}
+
+#[test]
+fn default_base_finds_a_nonstandard_trunk() {
+    let t = RepoBuilder::new()
+        .commit("base", files!["a.txt" => "base\n"])
+        .build()
+        .unwrap();
+    t.git(&["branch", "-m", "integration"]).unwrap();
+    t.git(&["config", "init.defaultBranch", "integration"])
+        .unwrap();
+    t.git(&["checkout", "-q", "-b", "topic"]).unwrap();
+    t.git(&["commit", "-q", "--allow-empty", "-m", "topic"])
+        .unwrap();
+
+    assert_eq!(
+        Repo::open(t.path()).unwrap().default_base().unwrap(),
+        RefSpec::Branch {
+            name: "integration".into()
+        }
+    );
+}
+
+#[test]
+fn default_base_uses_the_parent_of_a_stacked_branch() {
+    let t = RepoBuilder::new()
+        .commit("base", files!["a.txt" => "base\n"])
+        .branch("feature-1")
+        .commit("one", files!["a.txt" => "one\n"])
+        .branch("feature-2")
+        .commit("two", files!["a.txt" => "two\n"])
+        .build()
+        .unwrap();
+
+    assert_eq!(
+        Repo::open(t.path()).unwrap().default_base().unwrap(),
+        RefSpec::Branch {
+            name: "feature-1".into()
+        }
+    );
+}
+
+#[test]
+fn default_base_does_not_treat_a_child_branch_as_the_trunks_parent() {
+    let t = RepoBuilder::new()
+        .commit("base", files!["a.txt" => "base\n"])
+        .branch("feature")
+        .commit("feature", files!["a.txt" => "feature\n"])
+        .checkout("main")
+        .build()
+        .unwrap();
+
+    assert_eq!(
+        Repo::open(t.path()).unwrap().default_base().unwrap(),
+        RefSpec::Branch {
+            name: "main".into()
+        }
+    );
+}
+
+#[test]
+fn default_base_rejects_a_child_of_an_unrecognized_custom_trunk() {
+    let t = RepoBuilder::new()
+        .commit("base", files!["a.txt" => "base\n"])
+        .build()
+        .unwrap();
+    t.git(&["branch", "-m", "production"]).unwrap();
+    t.git(&["checkout", "-q", "-b", "feature"]).unwrap();
+    t.git(&["commit", "-q", "--allow-empty", "-m", "feature"])
+        .unwrap();
+    t.git(&["checkout", "-q", "production"]).unwrap();
+
+    let error = Repo::open(t.path()).unwrap().default_base().unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("cannot determine a default review base"),
+        "{error}"
+    );
+}
+
+#[test]
+fn default_base_failure_names_the_repo_and_every_fallback() {
+    let t = TestRepo::init().unwrap();
+    let error = Repo::open(t.path()).unwrap().default_base().unwrap_err();
+    let message = error.to_string();
+    assert!(
+        message.contains(&t.path().display().to_string()),
+        "{message}"
+    );
+    assert!(message.contains("reflog"), "{message}");
+    assert!(message.contains("closest ancestor"), "{message}");
+    assert!(message.contains("origin/HEAD"), "{message}");
+    assert!(message.contains("init.defaultBranch"), "{message}");
+    assert!(message.contains("pass --base"), "{message}");
 }
 
 #[test]

@@ -362,6 +362,17 @@ fn parse_ref(s: &str) -> anyhow::Result<RefSpec> {
     })
 }
 
+fn ref_label(reference: &RefSpec) -> String {
+    match reference {
+        RefSpec::Branch { name } => name.clone(),
+        RefSpec::Commit { oid } => oid.to_string(),
+        RefSpec::Tag { name } => format!("tag:{name}"),
+        RefSpec::WorkingTree => "worktree".into(),
+        RefSpec::Upstream => "upstream".into(),
+        RefSpec::Head => "HEAD".into(),
+    }
+}
+
 /// The context to use: ad-hoc flags beat `--context` beats the config.
 fn resolve_context(cli: &Cli, cfg: &nits_config::Config) -> anyhow::Result<(String, Context)> {
     if let Some(url) = &cli.ws {
@@ -745,21 +756,20 @@ async fn open_ui(cli: &Cli, ctx: &Context, ops: &mut Ops) -> anyhow::Result<()> 
 /// The review for `path`'s repo: locate (attaching workspace+repo on
 /// first use), then find or create the working-tree review. On a remote
 /// context nothing local is consulted: the path goes to the daemon
-/// verbatim (it must be the repo root on that machine) and the base
-/// fallback is `main`.
+/// verbatim (it must be the repo root on that machine). Base detection is
+/// always performed by that daemon beside the repository.
 async fn directory_review(
     ops: &mut Ops,
     ctx: &Context,
     path: &Path,
 ) -> anyhow::Result<nits_protocol::ReviewId> {
     let local = matches!(ctx, Context::Local { .. });
-    let (root, fallback_base) = if local {
+    let root = if local {
         let root = repo_root(path)
             .with_context(|| format!("{} is not inside a git repository", path.display()))?;
-        let base = default_branch(&root);
-        (root, base)
+        root
     } else {
-        (path.to_path_buf(), "main".to_owned())
+        path.to_path_buf()
     };
     let dir_name = root
         .file_name()
@@ -803,15 +813,14 @@ async fn directory_review(
             })?
         }
     };
-    working_tree_review(ops, &located, &fallback_base, &dir_name).await
+    working_tree_review(ops, &located, &dir_name).await
 }
 
 /// The open review whose head is this repo's working tree, created if
-/// missing (base: upstream, else `fallback_base`).
+/// missing using the daemon-detected parent branch as its base.
 async fn working_tree_review(
     ops: &mut Ops,
     located: &nitsd::ops::Located,
-    fallback_base: &str,
     dir_name: &str,
 ) -> anyhow::Result<ReviewId> {
     let reviews = ops.reviews(located.workspace.id).await?;
@@ -822,42 +831,31 @@ async fn working_tree_review(
                 .any(|t| t.repo_id == located.repo.id && t.head == RefSpec::WorkingTree)
     });
     let review_id = if let Some(r) = existing {
-        eprintln!("review: {} \"{}\"", r.id, r.title);
+        let base = r
+            .targets
+            .iter()
+            .find(|target| target.repo_id == located.repo.id && target.head == RefSpec::WorkingTree)
+            .map(|target| ref_label(&target.base))
+            .unwrap_or_else(|| "unknown".into());
+        eprintln!("review: {} \"{}\" (base: {base})", r.id, r.title);
         r.id
     } else {
-        {
-            let target = nits_protocol::ReviewTarget {
-                repo_id: located.repo.id,
-                base: RefSpec::Upstream,
-                head: RefSpec::WorkingTree,
-            };
-            let targets = nits_protocol::NonEmpty::singleton(target);
-            let created = ops
-                .create_review(located.workspace.id, dir_name.to_owned(), targets)
-                .await;
-            let (id, _) = if let Ok(created) = created {
-                created
-            } else {
-                {
-                    // No upstream configured: fall back to the default branch.
-                    let target = nits_protocol::ReviewTarget {
-                        repo_id: located.repo.id,
-                        base: RefSpec::Branch {
-                            name: fallback_base.to_owned(),
-                        },
-                        head: RefSpec::WorkingTree,
-                    };
-                    ops.create_review(
-                        located.workspace.id,
-                        dir_name.to_owned(),
-                        nits_protocol::NonEmpty::singleton(target),
-                    )
-                    .await?
-                }
-            };
-            eprintln!("review: {id} \"{dir_name}\" (created)");
-            id
-        }
+        let base = ops.default_base(located.repo.id).await?;
+        let base_label = ref_label(&base);
+        let target = nits_protocol::ReviewTarget {
+            repo_id: located.repo.id,
+            base,
+            head: RefSpec::WorkingTree,
+        };
+        let (id, _) = ops
+            .create_review(
+                located.workspace.id,
+                dir_name.to_owned(),
+                nits_protocol::NonEmpty::singleton(target),
+            )
+            .await?;
+        eprintln!("review: {id} \"{dir_name}\" (created, base: {base_label})");
+        id
     };
     Ok(review_id)
 }
@@ -874,22 +872,6 @@ fn repo_root(from: &Path) -> Option<PathBuf> {
             return None;
         }
     }
-}
-
-/// `origin/HEAD`'s target, else `main`.
-fn default_branch(root: &Path) -> String {
-    std::process::Command::new("git")
-        .args(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])
-        .current_dir(root)
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .and_then(|o| {
-            String::from_utf8(o.stdout)
-                .ok()
-                .and_then(|s| s.trim().strip_prefix("origin/").map(str::to_owned))
-        })
-        .unwrap_or_else(|| "main".into())
 }
 
 fn web_identity(cli: &Cli) -> nits_client_host::Identity {

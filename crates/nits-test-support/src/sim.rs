@@ -372,6 +372,7 @@ impl Sim {
                     ),
                     Request::ListWorkspaces
                     | Request::ListReviews { .. }
+                    | Request::DefaultBase { .. }
                     | Request::GetReview { .. }
                     | Request::ListFiles { .. }
                     | Request::ResolveTargets { .. }
@@ -458,6 +459,7 @@ impl Sim {
                 },
             ),
             Request::ListReviews { .. }
+            | Request::DefaultBase { .. }
             | Request::GetReview { .. }
             | Request::ResolveTargets { .. }
             | Request::ListCommits { .. }

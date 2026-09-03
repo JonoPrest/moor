@@ -229,6 +229,12 @@ pub enum Request {
     ListReviews {
         workspace_id: WorkspaceId,
     },
+    /// Detect the branch a working-tree review should use as its base.
+    /// Detection runs beside the repository, in the daemon, so local and
+    /// remote clients behave identically.
+    DefaultBase {
+        repo_id: RepoId,
+    },
     GetReview {
         review_id: ReviewId,
     },
@@ -336,6 +342,7 @@ impl Request {
             | Request::BlobRender { .. } => ResponseShape::Stream,
             Request::ListWorkspaces
             | Request::ListReviews { .. }
+            | Request::DefaultBase { .. }
             | Request::GetReview { .. }
             | Request::ReviewSnapshot { .. }
             | Request::ListFiles { .. }
@@ -376,6 +383,9 @@ pub enum Response {
     },
     Reviews {
         reviews: Vec<Review>,
+    },
+    DefaultBase {
+        base: RefSpec,
     },
     Review {
         review: Review,
