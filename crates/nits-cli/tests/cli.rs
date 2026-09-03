@@ -6,7 +6,10 @@ use std::sync::Arc;
 
 use assert_cmd::Command;
 use futures_util::{SinkExt as _, StreamExt as _};
-use nits_protocol::BuildInfo;
+use nits_protocol::{
+    BuildInfo, ClientMsg, Envelope, ProtocolVersion, Request, Response, RpcError, SchemaVersion,
+    ServerMsg,
+};
 use nits_review_core::DataDir;
 use nits_test_support::{RepoBuilder, TestRepo, files};
 use nitsd::Daemon;
@@ -51,6 +54,99 @@ impl Harness {
 }
 
 static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+async fn serve_older_protocol_until_shutdown(
+    listener: tokio::net::UnixListener,
+    socket: PathBuf,
+) -> [ProtocolVersion; 2] {
+    let older = ProtocolVersion::new(
+        ProtocolVersion::CURRENT.major,
+        ProtocolVersion::CURRENT.minor.saturating_sub(1),
+        0,
+    );
+
+    let (read, mut write, hello) = loop {
+        let (first, _) = listener.accept().await.unwrap();
+        let (mut read, write) = nitsd::transport::byte_stream(first);
+        if let Some(hello) = nitsd::transport::recv_msg::<_, ClientMsg>(&mut read)
+            .await
+            .unwrap()
+        {
+            break (read, write, hello);
+        }
+    };
+    assert_eq!(hello.v, ProtocolVersion::CURRENT);
+    nitsd::transport::send_msg(
+        &mut write,
+        &Envelope {
+            v: hello.v,
+            msg: ServerMsg::Rejected {
+                error: RpcError::UnsupportedProtocol {
+                    requested: hello.v,
+                    supported: vec![older],
+                },
+            },
+        },
+    )
+    .await
+    .unwrap();
+    drop((read, write));
+
+    let (mut read, mut write, hello) = loop {
+        let (second, _) = listener.accept().await.unwrap();
+        let (mut read, write) = nitsd::transport::byte_stream(second);
+        if let Some(hello) = nitsd::transport::recv_msg::<_, ClientMsg>(&mut read)
+            .await
+            .unwrap()
+        {
+            break (read, write, hello);
+        }
+    };
+    assert_eq!(hello.v, older);
+    nitsd::transport::send_msg(
+        &mut write,
+        &Envelope {
+            v: older,
+            msg: ServerMsg::Welcome {
+                protocol: older,
+                daemon: BuildInfo {
+                    name: "older-nitsd".into(),
+                    version: "previous".into(),
+                },
+                schema: SchemaVersion::CURRENT,
+                upgrade: None,
+            },
+        },
+    )
+    .await
+    .unwrap();
+    let request = nitsd::transport::recv_msg::<_, ClientMsg>(&mut read)
+        .await
+        .unwrap()
+        .unwrap();
+    let id = match request.msg {
+        ClientMsg::Request {
+            id,
+            request: Request::Shutdown,
+        } => id,
+        other => panic!("expected shutdown request, got {other:?}"),
+    };
+    nitsd::transport::send_msg(
+        &mut write,
+        &Envelope {
+            v: older,
+            msg: ServerMsg::Response {
+                id,
+                response: Response::ShuttingDown,
+            },
+        },
+    )
+    .await
+    .unwrap();
+    drop((read, write, listener));
+    std::fs::remove_file(socket).unwrap();
+    [ProtocolVersion::CURRENT, older]
+}
 
 fn start() -> Harness {
     let dir = tempfile::tempdir().unwrap();
@@ -269,6 +365,72 @@ fn errors_are_reported_not_panicked() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("not running"));
+}
+
+/// Lifecycle control can deliberately speak the newest compatible protocol
+/// advertised by an older daemon. That lets an upgraded binary stop it, then
+/// start its own daemon on the released socket.
+#[test]
+fn upgraded_cli_stops_an_older_protocol_before_starting_its_daemon() {
+    let dir = tempfile::tempdir().unwrap();
+    let data = dir.path().join("data");
+    let socket = std::env::temp_dir().join(format!(
+        "nits-old-protocol-{}-{}.sock",
+        std::process::id(),
+        N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let listener = {
+        let _guard = rt.enter();
+        tokio::net::UnixListener::bind(&socket).unwrap()
+    };
+    let older = rt.spawn(serve_older_protocol_until_shutdown(
+        listener,
+        socket.clone(),
+    ));
+    let nits = || {
+        let mut command = Command::cargo_bin("nits").unwrap();
+        command
+            .env("NITS_DATA_DIR", &data)
+            .env("NITS_SOCKET", &socket)
+            .env("NITS_CONFIG", dir.path().join("no-config.toml"))
+            .env("NITS_USER", "ada")
+            .env_remove("NITS_AGENT");
+        command
+    };
+
+    nits()
+        .args(["daemon", "stop"])
+        .assert()
+        .success()
+        .stdout("stopping\n");
+    let attempts = rt.block_on(older).unwrap();
+    assert_eq!(attempts[0], ProtocolVersion::CURRENT);
+    assert!(ProtocolVersion::CURRENT.can_serve(attempts[1]));
+
+    nits()
+        .args(["daemon", "start"])
+        .assert()
+        .success()
+        .stdout("started\n");
+    nits()
+        .args(["daemon", "status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("running (nitsd"));
+    nits()
+        .args(["daemon", "stop"])
+        .assert()
+        .success()
+        .stdout("stopping\n");
+    let start = std::time::Instant::now();
+    while std::os::unix::net::UnixStream::connect(&socket).is_ok() {
+        assert!(start.elapsed() < std::time::Duration::from_secs(10));
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
 }
 
 /// Contexts live in the config file and are always selected per process
