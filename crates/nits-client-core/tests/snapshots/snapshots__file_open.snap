@@ -994,6 +994,308 @@ expression: core.view()
       "label": "submit"
     }
   ],
+  "bindings": [
+    {
+      "keys": "?",
+      "command": "ToggleHelp",
+      "label": "help"
+    },
+    {
+      "keys": "tab",
+      "command": "NextPanel",
+      "label": "next panel"
+    },
+    {
+      "keys": "t",
+      "command": "FileSearch",
+      "label": "find file"
+    },
+    {
+      "keys": "ctrl+p",
+      "command": "FileSearch",
+      "label": "find file"
+    },
+    {
+      "keys": "meta+p",
+      "command": "FileSearch",
+      "label": "find file"
+    },
+    {
+      "keys": "F",
+      "command": "ContentSearch",
+      "label": "find in files"
+    },
+    {
+      "keys": ":",
+      "command": "ActionPalette",
+      "label": "actions"
+    },
+    {
+      "keys": "1",
+      "command": "TabFiles",
+      "label": "files changed"
+    },
+    {
+      "keys": "2",
+      "command": "TabConversation",
+      "label": "conversation"
+    },
+    {
+      "keys": "3",
+      "command": "TabBrowse",
+      "label": "browse"
+    },
+    {
+      "keys": "s",
+      "command": "ToggleLayout",
+      "label": "split/unified"
+    },
+    {
+      "keys": "w",
+      "command": "ToggleWhitespace",
+      "label": "whitespace"
+    },
+    {
+      "keys": "g f",
+      "command": "NextFile",
+      "label": "next file"
+    },
+    {
+      "keys": "g F",
+      "command": "PrevFile",
+      "label": "previous file"
+    },
+    {
+      "keys": "g e",
+      "command": "FocusTree",
+      "label": "focus tree"
+    },
+    {
+      "keys": "g d",
+      "command": "FocusDiff",
+      "label": "focus diff"
+    },
+    {
+      "keys": "g t",
+      "command": "FocusThreads",
+      "label": "focus threads"
+    },
+    {
+      "keys": "g m",
+      "command": "FocusCommits",
+      "label": "focus commits"
+    },
+    {
+      "keys": "space a",
+      "command": "ScopeAll",
+      "label": "all changes"
+    },
+    {
+      "keys": "space c",
+      "command": "ScopeByCommit",
+      "label": "by commit"
+    },
+    {
+      "keys": "space w",
+      "command": "ScopeWorktree",
+      "label": "worktree"
+    },
+    {
+      "keys": "space s",
+      "command": "ToggleLayout",
+      "label": "split/unified"
+    },
+    {
+      "keys": "space h",
+      "command": "ToggleWhitespace",
+      "label": "whitespace"
+    },
+    {
+      "keys": "space b",
+      "command": "ToggleSidebar",
+      "label": "toggle sidebar"
+    },
+    {
+      "keys": "space C",
+      "command": "Commits",
+      "label": "commits"
+    },
+    {
+      "keys": "esc",
+      "command": "Back",
+      "label": "back"
+    },
+    {
+      "keys": "ctrl+shift+c",
+      "command": "Connect",
+      "label": "connect"
+    },
+    {
+      "keys": "ctrl+shift+d",
+      "command": "Disconnect",
+      "label": "disconnect"
+    },
+    {
+      "keys": "j",
+      "command": "MoveDown",
+      "label": "down"
+    },
+    {
+      "keys": "k",
+      "command": "MoveUp",
+      "label": "up"
+    },
+    {
+      "keys": "down",
+      "command": "MoveDown",
+      "label": "down"
+    },
+    {
+      "keys": "up",
+      "command": "MoveUp",
+      "label": "up"
+    },
+    {
+      "keys": "ctrl+d",
+      "command": "PageDown",
+      "label": "page down"
+    },
+    {
+      "keys": "ctrl+u",
+      "command": "PageUp",
+      "label": "page up"
+    },
+    {
+      "keys": "pagedown",
+      "command": "PageDown",
+      "label": "page down"
+    },
+    {
+      "keys": "pageup",
+      "command": "PageUp",
+      "label": "page up"
+    },
+    {
+      "keys": "g g",
+      "command": "GoTop",
+      "label": "top"
+    },
+    {
+      "keys": "G",
+      "command": "GoBottom",
+      "label": "bottom"
+    },
+    {
+      "keys": "n",
+      "command": "NextHunk",
+      "label": "next hunk"
+    },
+    {
+      "keys": "p",
+      "command": "PrevHunk",
+      "label": "previous hunk"
+    },
+    {
+      "keys": "] f",
+      "command": "NextFile",
+      "label": "next file"
+    },
+    {
+      "keys": "[ f",
+      "command": "PrevFile",
+      "label": "previous file"
+    },
+    {
+      "keys": "] c",
+      "command": "NextComment",
+      "label": "next comment"
+    },
+    {
+      "keys": "[ c",
+      "command": "PrevComment",
+      "label": "previous comment"
+    },
+    {
+      "keys": "c",
+      "command": "Comment",
+      "label": "comment"
+    },
+    {
+      "keys": "v",
+      "command": "ToggleViewed",
+      "label": "mark viewed"
+    },
+    {
+      "keys": "y",
+      "command": "CopyPath",
+      "label": "copy path"
+    },
+    {
+      "keys": "x",
+      "command": "ExpandContext",
+      "label": "expand context"
+    },
+    {
+      "keys": "C",
+      "command": "ToggleFileCollapse",
+      "label": "fold file"
+    },
+    {
+      "keys": "X",
+      "command": "ExpandFile",
+      "label": "expand full file"
+    },
+    {
+      "keys": "V",
+      "command": "VisualMode",
+      "label": "select lines"
+    },
+    {
+      "keys": "z u",
+      "command": "ExpandUp",
+      "label": "expand up"
+    },
+    {
+      "keys": "z d",
+      "command": "ExpandDown",
+      "label": "expand down"
+    },
+    {
+      "keys": "z c",
+      "command": "CommentOnFile",
+      "label": "comment on file"
+    },
+    {
+      "keys": "h",
+      "command": "SideBase",
+      "label": "target removed side"
+    },
+    {
+      "keys": "l",
+      "command": "SideHead",
+      "label": "target added side"
+    },
+    {
+      "keys": "z z",
+      "command": "CenterView",
+      "label": "centre the view"
+    },
+    {
+      "keys": "z t",
+      "command": "ViewTop",
+      "label": "row to top"
+    },
+    {
+      "keys": "z b",
+      "command": "ViewBottom",
+      "label": "row to bottom"
+    },
+    {
+      "keys": "enter",
+      "command": "Open",
+      "label": "open"
+    }
+  ],
   "help": null,
   "copy_target": "src/lib.rs",
   "connection": {

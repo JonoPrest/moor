@@ -973,6 +973,168 @@ expression: core.view()
       "label": "submit"
     }
   ],
+  "bindings": [
+    {
+      "keys": "?",
+      "command": "ToggleHelp",
+      "label": "help"
+    },
+    {
+      "keys": "tab",
+      "command": "NextPanel",
+      "label": "next panel"
+    },
+    {
+      "keys": "t",
+      "command": "FileSearch",
+      "label": "find file"
+    },
+    {
+      "keys": "ctrl+p",
+      "command": "FileSearch",
+      "label": "find file"
+    },
+    {
+      "keys": "meta+p",
+      "command": "FileSearch",
+      "label": "find file"
+    },
+    {
+      "keys": "F",
+      "command": "ContentSearch",
+      "label": "find in files"
+    },
+    {
+      "keys": ":",
+      "command": "ActionPalette",
+      "label": "actions"
+    },
+    {
+      "keys": "1",
+      "command": "TabFiles",
+      "label": "files changed"
+    },
+    {
+      "keys": "2",
+      "command": "TabConversation",
+      "label": "conversation"
+    },
+    {
+      "keys": "3",
+      "command": "TabBrowse",
+      "label": "browse"
+    },
+    {
+      "keys": "s",
+      "command": "ToggleLayout",
+      "label": "split/unified"
+    },
+    {
+      "keys": "w",
+      "command": "ToggleWhitespace",
+      "label": "whitespace"
+    },
+    {
+      "keys": "g f",
+      "command": "NextFile",
+      "label": "next file"
+    },
+    {
+      "keys": "g F",
+      "command": "PrevFile",
+      "label": "previous file"
+    },
+    {
+      "keys": "g e",
+      "command": "FocusTree",
+      "label": "focus tree"
+    },
+    {
+      "keys": "g d",
+      "command": "FocusDiff",
+      "label": "focus diff"
+    },
+    {
+      "keys": "g t",
+      "command": "FocusThreads",
+      "label": "focus threads"
+    },
+    {
+      "keys": "g m",
+      "command": "FocusCommits",
+      "label": "focus commits"
+    },
+    {
+      "keys": "space a",
+      "command": "ScopeAll",
+      "label": "all changes"
+    },
+    {
+      "keys": "space c",
+      "command": "ScopeByCommit",
+      "label": "by commit"
+    },
+    {
+      "keys": "space w",
+      "command": "ScopeWorktree",
+      "label": "worktree"
+    },
+    {
+      "keys": "space s",
+      "command": "ToggleLayout",
+      "label": "split/unified"
+    },
+    {
+      "keys": "space h",
+      "command": "ToggleWhitespace",
+      "label": "whitespace"
+    },
+    {
+      "keys": "space b",
+      "command": "ToggleSidebar",
+      "label": "toggle sidebar"
+    },
+    {
+      "keys": "space C",
+      "command": "Commits",
+      "label": "commits"
+    },
+    {
+      "keys": "esc",
+      "command": "Back",
+      "label": "back"
+    },
+    {
+      "keys": "ctrl+shift+c",
+      "command": "Connect",
+      "label": "connect"
+    },
+    {
+      "keys": "ctrl+shift+d",
+      "command": "Disconnect",
+      "label": "disconnect"
+    },
+    {
+      "keys": "j",
+      "command": "MoveDown",
+      "label": "down"
+    },
+    {
+      "keys": "k",
+      "command": "MoveUp",
+      "label": "up"
+    },
+    {
+      "keys": "?",
+      "command": "ToggleHelp",
+      "label": "help"
+    },
+    {
+      "keys": "esc",
+      "command": "Back",
+      "label": "back"
+    }
+  ],
   "help": {
     "groups": [
       {
