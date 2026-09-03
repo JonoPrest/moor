@@ -310,6 +310,11 @@ pub struct ViewModel {
     /// One hint per bound command, for button tooltips (derived from the
     /// keymap, never hand-written).
     pub chrome: Vec<Hint>,
+    /// Every binding that applies where the focus is, aliases included.
+    /// A host that must decide what a key means before the core answers
+    /// resolves against this rather than guessing from `hints` (primary
+    /// only) or `chrome` (one per command, no context).
+    pub bindings: Vec<Hint>,
     /// The `?` overlay while open.
     pub help: Option<HelpView>,
     /// What `y` would copy from where the focus is (UI-DESIGN §Chrome).

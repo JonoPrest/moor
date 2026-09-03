@@ -866,6 +866,7 @@ enum_fixture!(
             mode: Mode::Normal,
             leader: "space".into(),
             chrome: vec![local::<Hint>()?],
+            bindings: vec![local::<Hint>()?],
         },
         ViewPatch::Help {
             help: Some(local::<HelpView>()?),
@@ -920,6 +921,7 @@ struct_fixture!(
         pending_label: None,
         leader: "space".into(),
         chrome: vec![local::<Hint>()?],
+        bindings: vec![local::<Hint>()?],
         help: None,
         copy_target: Some(path("src/lib.rs")?),
         connection: ConnectionView::Subscribed,

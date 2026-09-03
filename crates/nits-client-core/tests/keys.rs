@@ -1885,3 +1885,47 @@ fn the_view_says_what_y_would_copy_from_here() {
     assert!(rendered(&effects).is_empty());
     assert_eq!(core.view().copy_target.as_ref(), Some(&focused));
 }
+
+#[test]
+fn the_view_lists_the_bindings_that_apply_where_the_focus_is() {
+    // A host that must decide what a key means before the core answers
+    // resolves against this. `hints` is primary bindings only (`y` is not
+    // one) and `chrome` is one entry per command with no context, so
+    // either would have `y` copying on a focused thread, where the
+    // keymap binds nothing and the core refuses the key.
+    let mut core = ready();
+    let bound = |core: &ClientCore, command: nits_client_core::Command| {
+        core.view().bindings.iter().any(|b| b.command == command)
+    };
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::Tree { index: 2 },
+    }))
+    .unwrap();
+    assert!(bound(&core, nits_client_core::Command::CopyPath));
+    assert!(
+        !core
+            .view()
+            .hints
+            .iter()
+            .any(|h| h.command == nits_client_core::Command::CopyPath),
+        "`y` is not a primary binding, so the hint bar does not carry it"
+    );
+
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::Thread { index: 0 },
+    }))
+    .unwrap();
+    assert!(
+        !bound(&core, nits_client_core::Command::CopyPath),
+        "the thread keymap binds no copy, and the core refuses the key there"
+    );
+    assert!(press(&mut core, "y").is_err());
+    // The chrome, by contrast, carries `y` everywhere — which is why the
+    // shell must not resolve against it.
+    assert!(
+        core.view()
+            .chrome
+            .iter()
+            .any(|h| h.command == nits_client_core::Command::CopyPath)
+    );
+}

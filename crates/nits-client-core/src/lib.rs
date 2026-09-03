@@ -999,6 +999,11 @@ impl ClientCore {
             self.view.chrome = chrome;
             sections.push(ViewSection::Hints);
         }
+        let bindings = self.keymap.applicable_bindings(focus.context());
+        if bindings != self.view.bindings {
+            self.view.bindings = bindings;
+            sections.push(ViewSection::Hints);
+        }
         let leader = self.keymap.leader().to_string();
         if leader != self.view.leader {
             self.view.leader = leader;

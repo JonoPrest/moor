@@ -86,6 +86,9 @@ pub enum ViewPatch {
         mode: Mode,
         leader: String,
         chrome: Vec<Hint>,
+        /// Every binding applicable where the focus is (§6.4).
+        #[serde(default)]
+        bindings: Vec<Hint>,
     },
     Help {
         help: Option<HelpView>,
@@ -173,6 +176,7 @@ impl ViewModel {
                 mode: self.mode,
                 leader: self.leader.clone(),
                 chrome: self.chrome.clone(),
+                bindings: self.bindings.clone(),
             },
             ViewSection::Help => ViewPatch::Help {
                 help: self.help.clone(),
@@ -260,7 +264,9 @@ impl ViewModel {
                 mode,
                 leader,
                 chrome,
+                bindings,
             } => {
+                self.bindings = bindings;
                 self.hints = hints;
                 self.pending_keys = pending;
                 self.pending_label = pending_label;

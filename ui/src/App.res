@@ -78,11 +78,11 @@ module Pending = {
   }
 }
 
-/// The bindings that apply where the focus is. `hints` are the focused
-/// context's, so a per-context override is honoured; `chrome` carries one
-/// entry per command for the rest.
-let bindingsFor = (model: View.ViewModel.t): array<View.Hint.t> =>
-  Array.concat(model.hints, model.chrome)
+/// The bindings that apply where the focus is: the core's own applicable
+/// set, aliases included. Not `hints` (primary bindings only, so `y` is
+/// absent) and not `chrome` (one entry per command, no context, so `y`
+/// would appear to be bound where it is not).
+let bindingsFor = (model: View.ViewModel.t): array<View.Hint.t> => model.bindings
 
 /// Keys outside text inputs become chords for the core; text inputs handle
 /// their own keys and stop propagation.
@@ -155,21 +155,50 @@ module Shell = {
     let modelRef = React.useRef(model)
     modelRef.current = model
     let pending = React.useRef(Pending.make())
+    // Chords this shell has sent that the core has not answered yet. The
+    // core applies keys in order, so `j` then `y` copies the file `j`
+    // moved to — a target read before that answer arrives would be the
+    // previous file, and the shell would disagree with the command
+    // stream. While anything is in flight the copy waits for the next
+    // model instead of guessing.
+    let inFlight = React.useRef(0)
+    let deferredCopy = React.useRef(false)
+    React.useEffect1(() => {
+      inFlight.current = 0
+      if deferredCopy.current {
+        deferredCopy.current = false
+        switch model.copyTarget {
+        | Some(path) => copy(path)
+        | None => ()
+        }
+      }
+      None
+    }, [model])
     React.useEffect0(() => {
       let handler = ev =>
         onKeyDown(
           core,
           ~onChord=chord => {
             let m = modelRef.current
-            // The keydown IS the gesture, so the copy happens now, from
-            // the prefix this shell has typed rather than from the core's
-            // answer to the previous key. `copyTarget` arrives in the
-            // same patch as the focus it belongs to, so it names the file
-            // the reader can see — which is the one they meant.
-            switch (Pending.step(pending.current, bindingsFor(m), chord), m.copyTarget) {
-            | (Some(CopyPath), Some(path)) => copy(path)
-            | (Some(_), _) | (None, _) => ()
+            // The keydown IS the gesture, so the copy happens now — from
+            // the prefix this shell has typed (the core's `pendingKeys`
+            // is its answer to the previous key, a round trip behind) and
+            // from the bindings that actually apply where the focus is.
+            switch Pending.step(pending.current, bindingsFor(m), chord) {
+            | Some(CopyPath) =>
+              if inFlight.current > 0 {
+                // Earlier keys are still unanswered: what they move the
+                // focus to is what `y` must copy, so wait for it.
+                deferredCopy.current = true
+              } else {
+                switch m.copyTarget {
+                | Some(path) => copy(path)
+                | None => ()
+                }
+              }
+            | Some(_) | None => ()
             }
+            inFlight.current = inFlight.current + 1
           },
           ev,
         )

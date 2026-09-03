@@ -1073,17 +1073,105 @@ describe("Copy path", () => {
     expect(App.Pending.step(p, sequence, chord("x")))->toEqual(None)
     expect(App.Pending.step(p, bindings, chord("y")))->toEqual(Some(View.Command.CopyPath))
 
-    // A per-context override wins: `hints` are the focused context's
-    // bindings and come first.
+    // The bindings come from the core's applicable set for the focused
+    // context — not from `hints` (primary only, so `y` is absent) and not
+    // from `chrome` (one per command, no context, so `y` would look bound
+    // on a focused thread, where the core refuses it).
     let m = Fixtures.parse(View.ViewModel.schema, "client", "ViewModel", "default")
-    let contextual: View.ViewModel.t = {
+    let onAThread: View.ViewModel.t = {
       ...m,
-      hints: [{keys: "c", command: CopyPath, label: "copy path"}],
+      bindings: [{keys: "enter", command: Open, label: "open"}],
+      hints: [{keys: "enter", command: Open, label: "open"}],
       chrome: [{keys: "y", command: CopyPath, label: "copy path"}],
     }
     let p = App.Pending.make()
-    expect(App.Pending.step(p, App.bindingsFor(contextual), chord("c")))->toEqual(
+    expect(App.Pending.step(p, App.bindingsFor(onAThread), chord("y")))->toEqual(None)
+    let onATree: View.ViewModel.t = {
+      ...m,
+      bindings: [{keys: "y", command: CopyPath, label: "copy path"}],
+      hints: [],
+      chrome: [{keys: "y", command: CopyPath, label: "copy path"}],
+    }
+    let p = App.Pending.make()
+    expect(App.Pending.step(p, App.bindingsFor(onATree), chord("y")))->toEqual(
       Some(View.Command.CopyPath),
     )
+  })
+})
+
+// Key events, dispatched at the window the way the shell listens for them.
+%%raw(`
+function pressKey(key) {
+  globalThis.window.dispatchEvent(new globalThis.KeyboardEvent("keydown", {key, bubbles: true}))
+}
+`)
+@val external pressKey: string => unit = "pressKey"
+/// React 19's `act`, so a model pushed outside an event is flushed.
+@module("react") external act: (unit => unit) => unit = "act"
+
+describe("Copying from the keyboard, through the shell", () => {
+  // The core applies keys in order, so `j` then `y` copies the file `j`
+  // moved to. The shell cannot know that until the core answers, so a
+  // copy with keys still in flight waits for the next model rather than
+  // reading a target the command stream has already moved past.
+  let model = (~target, ~bindings): View.ViewModel.t => {
+    let base = Fixtures.parse(View.ViewModel.schema, "client", "ViewModel", "default")
+    {...base, copyTarget: Some(target), bindings, hints: [], chrome: []}
+  }
+
+  let keymap: array<View.Hint.t> = [
+    {keys: "y", command: CopyPath, label: "copy path"},
+    {keys: "j", command: MoveDown, label: "down"},
+  ]
+
+  let mount = (initial: View.ViewModel.t) => {
+    let push = ref(_ => ())
+    let core: Core.t = {
+      dispatch: _ => (),
+      key: _ => (),
+      subscribe: listener => {
+        push := listener
+        listener(initial)
+        () => ()
+      },
+      attach: () => (),
+    }
+    (render(<App.Shell core />), push)
+  }
+
+  testAsync("with nothing in flight, `y` copies what the core says now", async () => {
+    installClipboard("ok")
+    let (_, _) = mount(model(~target="src/a.rs", ~bindings=keymap))
+    pressKey("y")
+    await flush()
+    expect(copiedPaths())->toEqual(["src/a.rs"])
+    cleanup()
+  })
+
+  testAsync("`j` then `y` copies where `j` landed, not where it started", async () => {
+    installClipboard("ok")
+    let (_, push) = mount(model(~target="before.rs", ~bindings=keymap))
+    pressKey("j")
+    pressKey("y")
+    await flush()
+    expect(copiedPaths())->toEqual([])
+    // The core's answer to `j` arrives: `y` copies that file.
+    act(() => push.contents(model(~target="after.rs", ~bindings=keymap)))
+    await flush()
+    expect(copiedPaths())->toEqual(["after.rs"])
+    cleanup()
+  })
+
+  testAsync("a key the focused context does not bind copies nothing", async () => {
+    installClipboard("ok")
+    // A thread is focused: the keymap binds no copy there, and the core
+    // would refuse the key.
+    let (_, _) = mount(
+      model(~target="src/a.rs", ~bindings=[{keys: "enter", command: Open, label: "open"}]),
+    )
+    pressKey("y")
+    await flush()
+    expect(copiedPaths())->toEqual([])
+    cleanup()
   })
 })

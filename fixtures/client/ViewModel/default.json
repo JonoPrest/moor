@@ -1,5 +1,12 @@
 {
   "action_palette": false,
+  "bindings": [
+    {
+      "command": "NextFile",
+      "keys": "] f",
+      "label": "next file"
+    }
+  ],
   "browse_ref": null,
   "chrome": [
     {

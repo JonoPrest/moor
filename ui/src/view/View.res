@@ -453,6 +453,8 @@ module ViewModel = {
     @as("pending_label") pendingLabel: @s.null option<string>,
     leader: string,
     chrome: array<Hint.t>,
+    /// Every binding that applies where the focus is, aliases included.
+    bindings: array<Hint.t>,
     help: @s.null option<HelpView.t>,
     /// What `y` would copy from where the focus is; the shell copies it
     /// during the gesture that asks for it.
@@ -497,6 +499,7 @@ module ViewModel = {
     pendingLabel: None,
     leader: "space",
     chrome: [],
+    bindings: [],
     help: None,
     copyTarget: None,
     connection: Disconnected({}),
@@ -562,6 +565,7 @@ module ViewPatch = {
         mode: Mode.t,
         leader: string,
         chrome: array<Hint.t>,
+        bindings: array<Hint.t>,
       })
     | @as("Help") Help({help: @s.null option<HelpView.t>})
     | @as("Draft")
@@ -595,7 +599,7 @@ module ViewPatch = {
     | CommitStepper({stepper}) => {...model, stepper}
     | Progress({progress}) => {...model, progress}
     | Focus({focus, tab, scroll, copyTarget}) => {...model, focus, tab, scroll, copyTarget}
-    | Hints({hints, pending, pendingLabel, mode, leader, chrome}) => {
+    | Hints({hints, pending, pendingLabel, mode, leader, chrome, bindings}) => {
         ...model,
         hints,
         pendingKeys: pending,
@@ -603,6 +607,7 @@ module ViewPatch = {
         mode,
         leader,
         chrome,
+        bindings,
       }
     | Help({help}) => {...model, help}
     | Draft({draft, pendingRefresh}) => {...model, draft, pendingRefresh}

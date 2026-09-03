@@ -918,6 +918,23 @@ impl Keymap {
         out
     }
 
+    /// Every binding that applies where the focus is — not just the
+    /// primary ones the hint bar shows, and not one per command. A host
+    /// that has to decide what a key means before the core answers (the
+    /// clipboard needs the gesture that asked for it) resolves against
+    /// this; anything less makes it guess, and a guess is a key doing
+    /// something the core would not have done.
+    #[must_use]
+    pub fn applicable_bindings(&self, context: Context) -> Vec<Hint> {
+        self.applicable(context)
+            .map(|b| Hint {
+                keys: b.keys.to_string(),
+                command: b.command,
+                label: label(b.command).to_owned(),
+            })
+            .collect()
+    }
+
     /// The hint bar while a sequence is pending (UI-DESIGN: the zellij-style
     /// group bar): every applicable binding that starts with `pressed`,
     /// keyed by the chords still to type.
