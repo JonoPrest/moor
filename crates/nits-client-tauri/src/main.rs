@@ -90,26 +90,23 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    static ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    use clap::CommandFactory as _;
 
     #[test]
-    fn config_path_is_parsed_from_the_environment() {
-        let _guard = ENV.lock().unwrap();
-        let previous = std::env::var_os("NITS_CONFIG");
-        // SAFETY: this is the only test in this test binary that reads or
-        // writes NITS_CONFIG, and the mutex keeps future copies serialized.
-        unsafe { std::env::set_var("NITS_CONFIG", "/tmp/team-nits.toml") };
-        let options = Args::try_parse_from(["nits-desktop"])
+    fn config_environment_binding_feeds_the_typed_path() {
+        let command = Args::command();
+        let config = command
+            .get_arguments()
+            .find(|argument| argument.get_id() == "config")
+            .unwrap();
+        assert_eq!(config.get_env(), Some(std::ffi::OsStr::new("NITS_CONFIG")));
+
+        // clap turns either this flag or the environment binding above into
+        // the same typed field; exercise its path into EndpointSource.
+        let options = Args::try_parse_from(["nits-desktop", "--config", "/tmp/team-nits.toml"])
             .unwrap()
             .endpoint_options()
             .unwrap();
-        match previous {
-            // SAFETY: same serialized environment access as above.
-            Some(value) => unsafe { std::env::set_var("NITS_CONFIG", value) },
-            // SAFETY: same serialized environment access as above.
-            None => unsafe { std::env::remove_var("NITS_CONFIG") },
-        }
         assert_eq!(
             options.source,
             EndpointSource::Named {
