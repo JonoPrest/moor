@@ -1302,6 +1302,16 @@ expression: core.view()
       "label": "target added side"
     },
     {
+      "keys": "left",
+      "command": "SideBase",
+      "label": "target removed side"
+    },
+    {
+      "keys": "right",
+      "command": "SideHead",
+      "label": "target added side"
+    },
+    {
       "keys": "z z",
       "command": "CenterView",
       "label": "centre the view"

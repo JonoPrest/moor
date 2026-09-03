@@ -1191,9 +1191,9 @@ fn comment_on_a_modified_row_anchors_to_the_focused_side() {
     assert_eq!(blob_oid, blob(11));
     assert_eq!(lines.start().get(), 5);
 
-    // `h` moves onto the red half of the same row: same row, base blob.
+    // Left is an alias of `h`: same row, base blob.
     let mut core = on_row(MODIFIED_ROW, Side::Head);
-    press(&mut core, "h").unwrap();
+    press(&mut core, "left").unwrap();
     assert_eq!(
         core.view().focus,
         Focus::Diff {
@@ -1217,26 +1217,58 @@ fn comment_on_a_modified_row_anchors_to_the_focused_side() {
 }
 
 #[test]
+fn vim_and_arrow_bindings_select_the_same_side_of_a_modified_row() {
+    for (key, from, to, command) in [
+        ("h", Side::Head, Side::Base, Command::SideBase),
+        ("left", Side::Head, Side::Base, Command::SideBase),
+        ("l", Side::Base, Side::Head, Command::SideHead),
+        ("right", Side::Base, Side::Head, Command::SideHead),
+    ] {
+        let mut core = on_row(MODIFIED_ROW, from);
+        press(&mut core, key).unwrap();
+        assert_eq!(
+            core.view().focus,
+            Focus::Diff {
+                row: MODIFIED_ROW,
+                side: to
+            },
+            "{key}"
+        );
+        assert_eq!(
+            core.view().last_key.as_ref().and_then(|last| last.command),
+            Some(command),
+            "{key} must resolve to the typed side-selection command"
+        );
+    }
+}
+
+#[test]
 fn a_row_with_one_cell_has_no_other_side_to_move_to() {
     // An added row has no base cell, a removed row no head cell.
-    let mut core = on_row(ADDED_ROW, Side::Head);
-    assert!(press(&mut core, "h").is_err());
-    assert_eq!(
-        core.view().focus,
-        Focus::Diff {
-            row: ADDED_ROW,
-            side: Side::Head
-        }
-    );
-    let mut core = on_row(REMOVED_ROW, Side::Base);
-    assert!(press(&mut core, "l").is_err());
-    assert_eq!(
-        core.view().focus,
-        Focus::Diff {
-            row: REMOVED_ROW,
-            side: Side::Base
-        }
-    );
+    for key in ["h", "left"] {
+        let mut core = on_row(ADDED_ROW, Side::Head);
+        assert!(press(&mut core, key).is_err(), "{key}");
+        assert_eq!(
+            core.view().focus,
+            Focus::Diff {
+                row: ADDED_ROW,
+                side: Side::Head
+            },
+            "{key}"
+        );
+    }
+    for key in ["l", "right"] {
+        let mut core = on_row(REMOVED_ROW, Side::Base);
+        assert!(press(&mut core, key).is_err(), "{key}");
+        assert_eq!(
+            core.view().focus,
+            Focus::Diff {
+                row: REMOVED_ROW,
+                side: Side::Base
+            },
+            "{key}"
+        );
+    }
 }
 
 /// The rows of `chunk()`: the expander sits at index 148, between the

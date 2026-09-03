@@ -253,8 +253,9 @@ Everything explicitly asked for, so no shell or rewrite loses them.
 - ✓ A modified row is TWO comment targets, not one: the removed (red)
   cell anchors to base, the added (green) cell to head. The focus
   carries the side (`Focus::Diff { row, side }`); `h`/`l` move between
-  the halves, the mouse hit-tests the cell it is over, and a drag or
-  Visual selection keeps the side it started on. A thread's marker hangs
+  the halves, with Left/Right as aliases. The mouse hit-tests the cell it
+  is over, and a drag or Visual selection keeps the side it started on. A
+  thread's marker hangs
   on the cell its anchor names.
 - ✓ The viewport follows the focused row: a motion that would take the
   cursor past the edge scrolls by as little as it can, keeping 3 rows of

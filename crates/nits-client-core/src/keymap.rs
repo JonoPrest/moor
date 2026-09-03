@@ -154,9 +154,9 @@ pub enum Command {
     ExpandDown,
     /// Comment on the open file (`z c`, file-level anchor).
     CommentOnFile,
-    /// Target the removed (left) half of the focused row (`h`).
+    /// Target the removed (left) half of the focused row (`h`/Left).
     SideBase,
-    /// Target the added (right) half of the focused row (`l`).
+    /// Target the added (right) half of the focused row (`l`/Right).
     SideHead,
     /// Put the focused row in the middle of the viewport (`z z`).
     CenterView,
@@ -635,9 +635,12 @@ impl Keymap {
             b(X::Diff, keys!("z u"), C::ExpandUp, false),
             b(X::Diff, keys!("z d"), C::ExpandDown, false),
             b(X::Diff, keys!("z c"), C::CommentOnFile, false),
-            // A modified row is two commentable cells: h/l pick which.
+            // A modified row is two commentable cells: h/l are canonical;
+            // the arrows are non-primary aliases of the same commands.
             b(X::Diff, keys!("h"), C::SideBase, false),
             b(X::Diff, keys!("l"), C::SideHead, false),
+            b(X::Diff, keys!("left"), C::SideBase, false),
+            b(X::Diff, keys!("right"), C::SideHead, false),
             // The scroll family moves the view, not the cursor.
             b(X::Diff, keys!("z z"), C::CenterView, false),
             b(X::Diff, keys!("z t"), C::ViewTop, false),
