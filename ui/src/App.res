@@ -198,8 +198,9 @@ module Shell = {
           // A verdict this shell never saw (two keys inside one batch)
           // drops the copy rather than guessing at it.
           awaitingCopy.current = awaitingCopy.current->Array.filter(wanted => wanted > seq)
-          if answered &&
-            model.lastKey->Option.flatMap(k => k.command) == Some(View.Command.CopyPath) {
+          if (
+            answered && model.lastKey->Option.flatMap(k => k.command) == Some(View.Command.CopyPath)
+          ) {
             switch model.copyTarget {
             | Some(path) => copy(path)
             | None => ()
