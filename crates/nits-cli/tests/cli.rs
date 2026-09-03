@@ -265,7 +265,7 @@ fn errors_are_reported_not_panicked() {
     let mut c = Command::cargo_bin("nits").unwrap();
     c.env("NITS_SOCKET", "/tmp/definitely-not-a-nitsd.sock")
         .env("NITS_CONFIG", h.dir.path().join("no-config.toml"))
-        .args(["--no-autostart", "workspace", "list"])
+        .args(["--start-policy", "require-running", "workspace", "list"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("not running"));
@@ -341,7 +341,7 @@ fn contexts_and_daemon_lifecycle() {
         format!("box\t{}\tstopped", ctx_desc(&data, &socket))
     );
     nits()
-        .args(["--no-autostart", "workspace", "list"])
+        .args(["--start-policy", "require-running", "workspace", "list"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("not running"));
@@ -563,8 +563,8 @@ fn browser_ui_connects_to_named_ssh_and_websocket_contexts() {
 /// parsed value is read: a global `--ws` reaching a `ServeArgs` whose field
 /// was also called `ws` panics with "Mismatch between definition and access"
 /// at run time, in front of a user. Help output does not build far enough to
-/// catch it, so this parses for real. `--no-autostart` makes `daemon stdio`
-/// exit 3 against a socket nothing is listening on, doing nothing else.
+/// catch it, so this parses for real. `--start-policy require-running` makes
+/// `daemon stdio` exit 3 against a socket nothing is listening on.
 #[test]
 fn the_daemon_subcommands_parse_their_flags() {
     let dir = tempfile::tempdir().unwrap();
@@ -573,7 +573,7 @@ fn the_daemon_subcommands_parse_their_flags() {
         .env("NITS_CONFIG", dir.path().join("no-config.toml"))
         .env_remove("NITS_SOCKET")
         .env_remove("NITS_WS")
-        .args(["daemon", "stdio", "--no-autostart"])
+        .args(["daemon", "stdio", "--start-policy", "require-running"])
         .args(["--ws-listen", "127.0.0.1:7699"])
         .args(["--idle-exit", "60"])
         .args(["--data-dir", dir.path().to_str().unwrap()])

@@ -241,7 +241,7 @@ fn dial_ssh(target: &SshTarget, start: StartPolicy) -> Result<FramedConnection, 
     if start == StartPolicy::RequireRunning {
         // Exits 3 rather than waking a daemon, so a client can probe or stop
         // a remote without starting one.
-        cmd.arg("--no-autostart");
+        cmd.args(["--start-policy", "require-running"]);
     }
     cmd.kill_on_drop(true);
     let mut child = cmd

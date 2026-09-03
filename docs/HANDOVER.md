@@ -476,7 +476,7 @@ both hidden-or-documented subcommands of the one `nits` binary.
   aliased onto `bin` — it names a binary that cannot serve — it becomes
   `Legacy`, which `connect` refuses with the exact edit to make; both keys
   at once is a config error rather than a silent winner.
-  `--no-autostart` replaced `--stdio-if-running`.
+  `--start-policy require-running` replaced `--stdio-if-running`.
 - `daemon serve|stdio` take `--ws-listen`, not `--ws`: the global `--ws`
   is the client side, a URL to connect to.
 - Packaging: one tarball/formula/PKGBUILD/deb/rpm, no `Depends: nitsd`,

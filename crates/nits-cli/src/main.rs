@@ -41,9 +41,9 @@ struct Cli {
     /// Ad-hoc local context: data dir (socket at `<data-dir>/nitsd.sock`).
     #[arg(long, env = "NITS_DATA_DIR", global = true)]
     data_dir: Option<PathBuf>,
-    /// Fail instead of starting the daemon when it is not running.
-    #[arg(long, global = true)]
-    no_autostart: bool,
+    /// Whether a connection may start a managed daemon when needed.
+    #[arg(long, value_enum, default_value_t = StartPolicyArg::StartIfNeeded, global = true)]
+    start_policy: StartPolicyArg,
     /// Port for the served web UI (default: a free port).
     #[arg(long, env = "NITS_PORT", default_value_t = 0)]
     port: u16,
@@ -79,6 +79,23 @@ enum Ui {
     Web,
     Desktop,
     Headless,
+}
+
+/// CLI spelling of the daemon lifecycle policy. The transport-level enum
+/// stays independent of clap; this adapter converts once at the boundary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum StartPolicyArg {
+    StartIfNeeded,
+    RequireRunning,
+}
+
+impl From<StartPolicyArg> for contexts::StartPolicy {
+    fn from(value: StartPolicyArg) -> Self {
+        match value {
+            StartPolicyArg::StartIfNeeded => Self::StartIfNeeded,
+            StartPolicyArg::RequireRunning => Self::RequireRunning,
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -203,8 +220,8 @@ enum DaemonCmd {
     #[command(hide = true)]
     Serve(ServeArgs),
     /// Pipe stdin/stdout to this machine's daemon, starting one if nothing
-    /// answers; `--no-autostart` exits 3 instead. What `ssh host nits
-    /// daemon stdio` runs for an ssh context.
+    /// answers; `--start-policy require-running` exits 3 instead. What
+    /// `ssh host nits daemon stdio` runs for an ssh context.
     #[command(hide = true)]
     Stdio(ServeArgs),
 }
@@ -426,18 +443,10 @@ fn identity(cli: &Cli) -> Identity {
 }
 
 async fn connect(cli: &Cli, ctx: &Context) -> anyhow::Result<Ops> {
-    let client = contexts::connect(ctx, identity(cli), start_policy(cli.no_autostart))
+    let client = contexts::connect(ctx, identity(cli), cli.start_policy.into())
         .await
         .with_context(|| format!("connecting to {}", ctx.describe()))?;
     Ok(Ops::new(client))
-}
-
-fn start_policy(no_autostart: bool) -> contexts::StartPolicy {
-    if no_autostart {
-        contexts::StartPolicy::RequireRunning
-    } else {
-        contexts::StartPolicy::StartIfNeeded
-    }
 }
 
 /// The daemon's own logs go to stderr, which `spawn_detached` points at
@@ -472,12 +481,12 @@ fn serve_opts(spec: &nitsd::launch::DaemonSpec, args: &ServeArgs) -> nitsd::serv
 }
 
 /// `nits mcp`: the MCP stdio server, on the context the global flags chose.
-async fn mcp(ctx: &Context, no_autostart: bool) -> anyhow::Result<()> {
+async fn mcp(ctx: &Context, start: contexts::StartPolicy) -> anyhow::Result<()> {
     init_daemon_logging();
     nits_mcp::serve_stdio(
         nits_mcp::Endpoint {
             context: ctx.clone(),
-            start: start_policy(no_autostart),
+            start,
         },
         nits_mcp::server::AgentIdentity::from_env(),
         BuildInfo {
@@ -669,10 +678,10 @@ async fn main() -> anyhow::Result<()> {
     }
     let (name, ctx) = resolve_context(&cli, &cfg)?;
     if let Some(Cmd::Daemon(c)) = cli.cmd {
-        return daemon_cmd(&cfg, &name, &ctx, c, json, cli.no_autostart).await;
+        return daemon_cmd(&cfg, &name, &ctx, c, json, cli.start_policy.into()).await;
     }
     if let Some(Cmd::Mcp) = cli.cmd {
-        return mcp(&ctx, cli.no_autostart).await;
+        return mcp(&ctx, cli.start_policy.into()).await;
     }
     let ops = connect(&cli, &ctx).await?;
     let Some(cmd) = cli.cmd else {
@@ -740,7 +749,7 @@ async fn open_ui(cli: &Cli, ctx: &Context, mut ops: Ops) -> anyhow::Result<()> {
     // The bridge owns a ClientCore and therefore its own daemon connection.
     // Release the command client's SSH proxy before the host dials another.
     drop(ops);
-    let endpoint = contexts::DaemonEndpoint::resolve(ctx, start_policy(cli.no_autostart))?;
+    let endpoint = contexts::DaemonEndpoint::resolve(ctx, cli.start_policy.into())?;
     let host = nits_client_host::host_config(
         endpoint,
         web_identity(cli),
@@ -1268,7 +1277,7 @@ async fn daemon_cmd(
     ctx: &Context,
     cmd: DaemonCmd,
     json: bool,
-    no_autostart: bool,
+    start: contexts::StartPolicy,
 ) -> anyhow::Result<()> {
     match cmd {
         // Being the daemon, and reaching it over a pipe. Both need a place
@@ -1281,7 +1290,7 @@ async fn daemon_cmd(
         DaemonCmd::Stdio(args) => {
             init_daemon_logging();
             let opts = serve_opts(&ctx_local(ctx, name)?, &args);
-            match nitsd::serve::stdio(opts, !no_autostart).await? {
+            match nitsd::serve::stdio(opts, start == contexts::StartPolicy::StartIfNeeded).await? {
                 nitsd::serve::StdioOutcome::Proxied => Ok(()),
                 // Not an error: the caller asked whether one was running.
                 nitsd::serve::StdioOutcome::NotRunning => std::process::exit(3),
@@ -1369,5 +1378,21 @@ mod tests {
     #[test]
     fn the_command_definition_is_valid() {
         <Cli as clap::CommandFactory>::command().debug_assert();
+    }
+
+    #[test]
+    fn start_policy_is_parsed_as_an_exhaustive_choice() {
+        let default = Cli::try_parse_from(["nits", "workspace", "list"]).unwrap();
+        assert_eq!(default.start_policy, StartPolicyArg::StartIfNeeded);
+
+        let required = Cli::try_parse_from([
+            "nits",
+            "--start-policy",
+            "require-running",
+            "workspace",
+            "list",
+        ])
+        .unwrap();
+        assert_eq!(required.start_policy, StartPolicyArg::RequireRunning);
     }
 }
