@@ -1369,6 +1369,74 @@ describe("Commented lines and the inline composer", () => {
       />,
     )
 
+  test("a unified context row shows a base anchor's marker on its one cell", () => {
+    // The single rendered cell stands for both sides, so a thread
+    // anchored to the base line of an unchanged row still has to show
+    // its marker there.
+    let row = Fixtures.parse(Render.Row.schema, "protocol", "Row", "Context")
+    let {container} = render(
+      <Row
+        row layout=Unified index=0 focused=false threads=[{thread: "t1", side: Base, place: Anchor}]
+      />,
+    )
+    expect(Element.querySelector(container, ".cell-right .cell-threads"))->not_->toBeNull
+    cleanup()
+    // In split layout the two cells are distinct, so it belongs to the
+    // left one only.
+    let {container} = render(
+      <Row
+        row layout=Split index=0 focused=false threads=[{thread: "t1", side: Base, place: Anchor}]
+      />,
+    )
+    expect(Element.querySelector(container, ".cell-left .cell-threads"))->not_->toBeNull
+    expect(Element.querySelector(container, ".cell-right .cell-threads"))->toBeNull
+  })
+
+  test("the three cell states compose rather than replacing each other", () => {
+    // Commented, selected and being-drafted-about can all be true at
+    // once; each contributes a layer of one shadow (see app.css §cells),
+    // so the classes have to survive together.
+    let base = Fixtures.parse(View.DiffView.schema, "client", "DiffView", "default")
+    let row = Fixtures.parse(View.DiffRow.schema, "client", "DiffRow", "default")
+    let d: View.DiffView.t = {
+      ...base,
+      firstRow: 121,
+      lastRow: 121,
+      missing: [],
+      collapsed: false,
+      rows: [
+        {
+          ...row,
+          index: 121,
+          threads: [{thread: "t1", side: Head, place: Anchor}],
+          drafted: Some((Anchor, Head)),
+        },
+      ],
+    }
+    let {container} = render(
+      <FileDiff
+        diff=d
+        layout=Split
+        focus={Diff({row: 121, side: Head})}
+        threads=[]
+        draft=None
+        pendingRefresh=false
+        isOpen=true
+        visual={{start: 121, end_: 121, side: Head}}
+        dispatch={_ => ()}
+      />,
+    )
+    let cell =
+      Element.querySelector(container, "[data-row-index=\"121\"] .cell-right")
+      ->Nullable.toOption
+      ->Option.getExn
+    let className = Element.className(cell)
+    expect(className)->toContain("cell-commented")
+    expect(className)->toContain("cell-selected")
+    expect(className)->toContain("cell-drafting")
+    expect(className)->toContain("cell-focused")
+  })
+
   test("every line of a range is marked, and the card's row is the last", () => {
     let {container} = mount(~diff=diff(~drafted=false), ~draft=None, ~dispatch=fn())
     let commented = Element.querySelectorAll(container, ".cell-commented")
@@ -1412,5 +1480,90 @@ describe("Commented lines and the inline composer", () => {
   test("a review-level draft still docks", () => {
     let draft: View.Draft.t = {anchor: Review({}), replyTo: None}
     expect(View.Draft.isDocked(draft))->toBe(true)
+  })
+})
+
+describe("The shell's composer placement", () => {
+  // Through the real shell, not by mounting a component with props its
+  // caller does not pass: that is exactly how Browse ended up with the
+  // docked composer while the diff view had an inline one.
+  let shell = (model: View.ViewModel.t) => {
+    let core: Core.t = {
+      dispatch: _ => (),
+      key: _ => (),
+      subscribe: listener => {
+        listener(model)
+        () => ()
+      },
+      attach: () => (),
+    }
+    render(<App.Shell core />)
+  }
+
+  let lineDraft: View.Draft.t = {
+    anchor: Lines({
+      repoId: "r",
+      path: "src/a.rs",
+      side: Head,
+      blobOid: "b",
+      lines: {start: 9, end_: 9},
+      contextHash: "0",
+    }),
+    replyTo: None,
+  }
+
+  let withDraft = (~tab: View.Tab.t, ~draft): View.ViewModel.t => {
+    let base = Fixtures.parse(View.ViewModel.schema, "client", "ViewModel", "default")
+    let diff = Fixtures.parse(View.DiffView.schema, "client", "DiffView", "default")
+    let row = Fixtures.parse(View.DiffRow.schema, "client", "DiffRow", "default")
+    {
+      ...base,
+      tab,
+      draft,
+      diff: Some({
+        ...diff,
+        collapsed: false,
+        missing: [],
+        firstRow: 121,
+        lastRow: 121,
+        rows: [{...row, index: 121, drafted: Some((Anchor, Head))}],
+      }),
+      diffs: [],
+    }
+  }
+
+  test("a line draft does not dock, in either tab", () => {
+    // Browse used to mount `DiffView` without the draft and then dock
+    // every draft below it, so a line comment there was composed at the
+    // bottom of the page whatever the diff view did.
+    [View.Tab.FilesChanged, Browse]->Array.forEach(
+      tab => {
+        let {container} = shell(withDraft(~tab, ~draft=Some(lineDraft)))
+        expect(Array.length(Element.querySelectorAll(container, ".app-center > .composer")))->toBe(
+          0,
+        )
+        cleanup()
+      },
+    )
+    // (The inline composer itself is asserted in the row tests above;
+    // jsdom has no layout, so Browse's virtualizer renders no rows here.)
+  })
+
+  test("a review-level draft still docks, in both tabs", () => {
+    let review: View.Draft.t = {anchor: Review({}), replyTo: None}
+    [View.Tab.FilesChanged, Browse]->Array.forEach(
+      tab => {
+        let {container} = shell(withDraft(~tab, ~draft=Some(review)))
+        let composers = Element.querySelectorAll(container, ".composer")
+        expect(Array.length(composers))->toBe(1)
+        let row = Element.querySelector(container, "[data-row-index=\"121\"]")->Nullable.toOption
+        switch row {
+        | Some(el) =>
+          expect(Element.querySelector(Element.parentElement(el), ".composer"))->toBeNull
+        | None => ()
+        }
+        cleanup()
+      },
+    )
   })
 })

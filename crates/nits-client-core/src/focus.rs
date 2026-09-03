@@ -523,7 +523,18 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
             let _ = diff;
             let wanted = |r: &crate::diff::DiffRow| match command {
                 Command::NextHunk | Command::PrevHunk => matches!(r.row, Row::HunkHeader { .. }),
-                Command::NextComment | Command::PrevComment => !r.threads.is_empty(),
+                // One stop per thread: the row its card hangs under. A
+                // three-line thread marks three rows, and stopping on all
+                // of them would make `] c` walk the same comment twice
+                // before reaching the next.
+                // One stop per thread: the row its card hangs under. A
+                // three-line thread marks three rows, and stopping on all
+                // of them would make `] c` walk the same comment twice
+                // before reaching the next.
+                Command::NextComment | Command::PrevComment => r
+                    .threads
+                    .iter()
+                    .any(|t| t.place == crate::diff::RowPlace::Anchor),
                 Command::MoveDown
                 | Command::MoveUp
                 | Command::PageDown

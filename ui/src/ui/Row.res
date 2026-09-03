@@ -164,7 +164,7 @@ let make = (
   }
   // The 💬 marker hangs where the card is; every line of a range is
   // marked as commented so the stretch reads as one thing.
-  let threadsOn = (side: Domain.Side.t) =>
+  let anchorsOn = (side: Domain.Side.t) =>
     threads
     ->Array.filter((t: View.RowThread.t) => t.side == side && t.place == Anchor)
     ->Array.length
@@ -201,7 +201,7 @@ let make = (
       }}
       commented={commentedOn(side) || (oneCellBothSides && commentedOn(other(side)))}
       drafting={draftingOn(side) || (oneCellBothSides && draftingOn(other(side)))}
-      threads={threadsOn(side)}
+      threads={anchorsOn(side) + (oneCellBothSides ? anchorsOn(other(side)) : 0)}
       onClick={() => onClick(side)}
       onMouseDown={() => onMouseDown(side)}
       onMouseEnter={() => onMouseEnter(side)}
