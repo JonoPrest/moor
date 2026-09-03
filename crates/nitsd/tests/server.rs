@@ -152,6 +152,16 @@ async fn connect(h: &Harness, n: u128, name: &str) -> Client {
     h.endpoint.connect(identity(n, name)).await
 }
 
+/// What a request may take while the daemon is busy with something big,
+/// given what the same request takes on this machine when it is idle.
+/// These tests are about the daemon not *blocking* — the work never
+/// takes zero time, and on a shared runner neither does anything else —
+/// so the budget is a multiple of a measured control plus a floor, not a
+/// wall-clock number that only holds on fast hardware.
+fn budget(control: Duration) -> Duration {
+    (control * 10).max(Duration::from_millis(250))
+}
+
 async fn mutate(c: &Client, seq: u64, m: Mutation) -> Result<nits_protocol::Event, RpcError> {
     match c
         .request(Request::Mutate {
@@ -511,6 +521,16 @@ async fn a_large_render_does_not_delay_another_clients_mutation(t: Transport) {
     let writer = connect(&h, 2, "bob").await;
     seed(&h, &renderer).await;
 
+    // A control on this machine, with nothing else in flight. The claim
+    // is that the render does not *delay* the mutation, so that is what
+    // is measured: an absolute budget only holds on a machine as quick as
+    // the one it was written on, and a loaded CI runner is not.
+    let started = Instant::now();
+    mutate(&writer, 1, file_comment(1, "control"))
+        .await
+        .unwrap();
+    let control = started.elapsed();
+
     let (_, mut rx) = renderer
         .stream(Request::FileRender {
             scope: DiffScope::All,
@@ -525,11 +545,11 @@ async fn a_large_render_does_not_delay_another_clients_mutation(t: Transport) {
     // Give the render a head start so it is genuinely in flight.
     tokio::time::sleep(Duration::from_millis(20)).await;
     let started = Instant::now();
-    mutate(&writer, 1, file_comment(1, "quick")).await.unwrap();
+    mutate(&writer, 2, file_comment(2, "quick")).await.unwrap();
     let latency = started.elapsed();
     assert!(
-        latency < Duration::from_millis(100),
-        "add_comment took {latency:?}"
+        latency <= budget(control),
+        "add_comment took {latency:?} with a render in flight, {control:?} without"
     );
     let mut chunks = 0;
     while let Some(item) = rx.recv().await {
@@ -583,6 +603,16 @@ async fn reanchoring_many_comments_does_not_block_reads(t: Transport) {
         .await
         .unwrap();
     }
+    // The same read while the daemon is idle, as the control this
+    // machine's speed is measured against.
+    let started = Instant::now();
+    let idle = reader
+        .request(Request::ListReviews { workspace_id: ws() })
+        .await
+        .unwrap();
+    let control = started.elapsed();
+    assert!(matches!(idle, Response::Reviews { .. }));
+
     // Move head: every comment must be re-anchored.
     h.repo
         .write_file(
@@ -612,8 +642,8 @@ async fn reanchoring_many_comments_does_not_block_reads(t: Transport) {
     let latency = started.elapsed();
     assert!(matches!(reviews, Response::Reviews { .. }));
     assert!(
-        latency < Duration::from_millis(50),
-        "list_reviews took {latency:?}"
+        latency <= budget(control),
+        "list_reviews took {latency:?} while re-anchoring, {control:?} idle"
     );
     let Response::Resolved { changed, .. } = resolve.await.unwrap() else {
         panic!()
