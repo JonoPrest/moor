@@ -12,7 +12,11 @@ struct Args {
     /// Named context from the config file; the default context when absent.
     #[arg(value_name = "CONTEXT", conflicts_with_all = ["socket", "ws", "data_dir"])]
     context: Option<String>,
-    #[arg(long, conflicts_with_all = ["socket", "ws", "data_dir"])]
+    #[arg(
+        long,
+        env = "NITS_CONFIG",
+        conflicts_with_all = ["socket", "ws", "data_dir"]
+    )]
     config: Option<PathBuf>,
     #[arg(long, conflicts_with = "ws")]
     socket: Option<PathBuf>,
@@ -80,5 +84,38 @@ fn main() {
     if let Err(e) = nits_client_tauri::run(options) {
         eprintln!("nits-desktop: {e}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    static ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn config_path_is_parsed_from_the_environment() {
+        let _guard = ENV.lock().unwrap();
+        let previous = std::env::var_os("NITS_CONFIG");
+        // SAFETY: this is the only test in this test binary that reads or
+        // writes NITS_CONFIG, and the mutex keeps future copies serialized.
+        unsafe { std::env::set_var("NITS_CONFIG", "/tmp/team-nits.toml") };
+        let options = Args::try_parse_from(["nits-desktop"])
+            .unwrap()
+            .endpoint_options()
+            .unwrap();
+        match previous {
+            // SAFETY: same serialized environment access as above.
+            Some(value) => unsafe { std::env::set_var("NITS_CONFIG", value) },
+            // SAFETY: same serialized environment access as above.
+            None => unsafe { std::env::remove_var("NITS_CONFIG") },
+        }
+        assert_eq!(
+            options.source,
+            EndpointSource::Named {
+                context: None,
+                config: Some(PathBuf::from("/tmp/team-nits.toml"))
+            }
+        );
     }
 }
