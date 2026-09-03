@@ -112,6 +112,29 @@ fn default_base_uses_the_parent_of_a_stacked_branch() {
 }
 
 #[test]
+fn default_base_ranks_the_branch_when_a_tag_has_the_same_name() {
+    let t = RepoBuilder::new()
+        .commit("base", files!["a.txt" => "base\n"])
+        .build()
+        .unwrap();
+    t.git(&["branch", "candidate", "main"]).unwrap();
+    t.git(&["checkout", "-q", "-b", "parent"]).unwrap();
+    t.git(&["commit", "-q", "--allow-empty", "-m", "parent"])
+        .unwrap();
+    t.git(&["tag", "candidate"]).unwrap();
+    t.git(&["checkout", "-q", "-b", "child"]).unwrap();
+    t.git(&["commit", "-q", "--allow-empty", "-m", "child"])
+        .unwrap();
+
+    assert_eq!(
+        Repo::open(t.path()).unwrap().default_base().unwrap(),
+        RefSpec::Branch {
+            name: "parent".into()
+        }
+    );
+}
+
+#[test]
 fn default_base_does_not_treat_a_child_branch_as_the_trunks_parent() {
     let t = RepoBuilder::new()
         .commit("base", files!["a.txt" => "base\n"])

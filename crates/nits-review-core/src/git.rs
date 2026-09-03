@@ -58,6 +58,10 @@ impl LocalBranch {
         &self.0
     }
 
+    fn qualified(&self) -> String {
+        format!("refs/heads/{}", self.0)
+    }
+
     fn into_ref_spec(self) -> RefSpec {
         RefSpec::Branch { name: self.0 }
     }
@@ -194,13 +198,11 @@ impl Repo {
     }
 
     fn local_branches(&self) -> Result<Vec<LocalBranch>, GitError> {
-        let out = self.git(
-            &["for-each-ref", "--format=%(refname:short)", "refs/heads/"],
-            &[],
-        )?;
+        let out = self.git(&["for-each-ref", "--format=%(refname)", "refs/heads/"], &[])?;
         let mut branches: Vec<LocalBranch> = String::from_utf8_lossy(&out)
             .lines()
-            .filter_map(|line| LocalBranch::new(line.trim().to_owned()))
+            .filter_map(|line| line.trim().strip_prefix("refs/heads/"))
+            .filter_map(|name| LocalBranch::new(name.to_owned()))
             .collect();
         branches.sort();
         Ok(branches)
@@ -211,7 +213,7 @@ impl Repo {
         current: &LocalBranch,
         branches: &[LocalBranch],
     ) -> Result<Option<LocalBranch>, GitError> {
-        let reference = format!("refs/heads/{}", current.as_str());
+        let reference = current.qualified();
         let Some(out) = self.git_probe(&["reflog", "show", "--format=%gs", &reference])? else {
             return Ok(None);
         };
@@ -249,18 +251,19 @@ impl Repo {
             if current == Some(branch) {
                 continue;
             }
-            let branch_tip = self.rev_parse_commit(branch.as_str())?;
+            let branch_ref = branch.qualified();
+            let branch_tip = self.rev_parse_commit(&branch_ref)?;
             // A descendant of HEAD is not an ancestor candidate. A second
             // branch at the exact same commit is retained: that is common
             // immediately after cutting a stacked branch.
             if branch_tip != head
                 && self
-                    .git_probe(&["merge-base", "--is-ancestor", "HEAD", branch.as_str()])?
+                    .git_probe(&["merge-base", "--is-ancestor", "HEAD", &branch_ref])?
                     .is_some()
             {
                 continue;
             }
-            let Some(merge_base) = self.git_probe(&["merge-base", branch.as_str(), "HEAD"])? else {
+            let Some(merge_base) = self.git_probe(&["merge-base", &branch_ref, "HEAD"])? else {
                 continue;
             };
             let merge_base = String::from_utf8_lossy(&merge_base).trim().to_owned();
