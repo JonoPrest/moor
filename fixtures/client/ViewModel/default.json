@@ -27,6 +27,7 @@
     "truncated": false
   },
   "conversation": [],
+  "copy_target": "src/lib.rs",
   "diff": {
     "collapsed": false,
     "content": {

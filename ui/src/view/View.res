@@ -454,6 +454,9 @@ module ViewModel = {
     leader: string,
     chrome: array<Hint.t>,
     help: @s.null option<HelpView.t>,
+    /// What `y` would copy from where the focus is; the shell copies it
+    /// during the gesture that asks for it.
+    @as("copy_target") copyTarget: @s.null option<string>,
     connection: ConnectionView.t,
     @as("last_error") lastError: @s.null option<Rpc.RpcError.t>,
     workspaces: array<Domain.Workspace.t>,
@@ -495,6 +498,7 @@ module ViewModel = {
     leader: "space",
     chrome: [],
     help: None,
+    copyTarget: None,
     connection: Disconnected({}),
     lastError: None,
     workspaces: [],
@@ -543,7 +547,13 @@ module ViewPatch = {
     | @as("Conversation") Conversation({conversation: array<ThreadView.t>})
     | @as("CommitStepper") CommitStepper({stepper: @s.null option<CommitStepper.t>})
     | @as("Progress") Progress({progress: Progress.t})
-    | @as("Focus") Focus({focus: Focus.t, tab: Tab.t, scroll: @s.null option<ScrollIntent.t>})
+    | @as("Focus")
+    Focus({
+        focus: Focus.t,
+        tab: Tab.t,
+        scroll: @s.null option<ScrollIntent.t>,
+        @as("copy_target") copyTarget: @s.null option<string>,
+      })
     | @as("Hints")
     Hints({
         hints: array<Hint.t>,
@@ -584,7 +594,7 @@ module ViewPatch = {
     | Conversation({conversation}) => {...model, conversation}
     | CommitStepper({stepper}) => {...model, stepper}
     | Progress({progress}) => {...model, progress}
-    | Focus({focus, tab, scroll}) => {...model, focus, tab, scroll}
+    | Focus({focus, tab, scroll, copyTarget}) => {...model, focus, tab, scroll, copyTarget}
     | Hints({hints, pending, pendingLabel, mode, leader, chrome}) => {
         ...model,
         hints,

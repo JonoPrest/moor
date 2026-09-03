@@ -857,6 +857,7 @@ enum_fixture!(
             },
             tab: Tab::FilesChanged,
             scroll: Some(local::<ScrollIntent>()?),
+            copy_target: Some(path("src/lib.rs")?),
         },
         ViewPatch::Hints {
             hints: vec![local::<Hint>()?],
@@ -920,6 +921,7 @@ struct_fixture!(
         leader: "space".into(),
         chrome: vec![local::<Hint>()?],
         help: None,
+        copy_target: Some(path("src/lib.rs")?),
         connection: ConnectionView::Subscribed,
         last_error: None,
         workspaces: vec![proto::<Workspace>()?],

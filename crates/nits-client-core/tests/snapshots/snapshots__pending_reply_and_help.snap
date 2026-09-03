@@ -1212,6 +1212,7 @@ expression: core.view()
     ],
     "conflicts": []
   },
+  "copy_target": null,
   "connection": {
     "type": "Subscribed"
   },

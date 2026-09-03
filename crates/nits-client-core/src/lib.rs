@@ -62,7 +62,7 @@ pub use explorer::{
 };
 pub use focus::{
     Focus, FocusKind, NoTarget, PAGE_ROWS, Realign, VisualAnchor, clamp as clamp_focus,
-    visible_nodes,
+    target_file_of, visible_nodes,
 };
 pub use ids::IdSeed;
 pub use keymap::{
@@ -933,6 +933,14 @@ impl ClientCore {
             self.view.focus = focus;
             sections.push(ViewSection::Focus);
         }
+        // What `y` would copy from here. Derived, not remembered: the
+        // shell reads it during the gesture, so it must always be current
+        // for the focus rather than for the last copy.
+        let copy_target = focus::target_file_of(&self.view, focus).map(|f| f.path);
+        if copy_target != self.view.copy_target {
+            self.view.copy_target = copy_target;
+            sections.push(ViewSection::Focus);
+        }
         // The Visual selection spans the anchor and the focused row.
         let visual = match (self.visual_anchor, focus) {
             (Some(anchor), Focus::Diff { row, .. }) => Some(crate::view::VisualView {
@@ -1792,6 +1800,12 @@ impl ClientCore {
                 };
                 Ok(self.apply_prefs(prefs, true))
             }
+            // The clipboard is the shell's, and a write only works inside
+            // the gesture that asked for it, so the shell copies during
+            // the click or key press — reading `ViewModel::copy_target`,
+            // which is this same decision made here. The action stays so
+            // the command is binding-reachable and other hosts can send
+            // it; there is nothing left for the core to do with it.
             Action::CopyPath { path: _ } => Ok(Vec::new()),
             Action::ScrollView { align } => {
                 let Focus::Diff { row, .. } = self.view.focus else {

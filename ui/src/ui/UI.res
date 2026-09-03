@@ -61,6 +61,20 @@ module Button = {
   }
 }
 
+/// Copy a file's path, wherever a header shows one. The click is the
+/// mouse alias of `y`: it dispatches the same action, so the core decides
+/// what is copied and says so once (`ViewModel.notice`).
+module CopyPath = {
+  @react.component
+  let make = (~path: string, ~chrome: array<View.Hint.t>=[], ~dispatch: Action.t => unit) =>
+    <Button
+      label="⧉"
+      kind=Ghost
+      title=?{Chrome.tip(chrome, CopyPath)}
+      onClick={() => dispatch(CopyPath({path: path}))}
+    />
+}
+
 module Kbd = {
   /// `space` renders as the ␣ glyph everywhere a key is shown.
   @react.component

@@ -74,6 +74,10 @@ pub enum ViewPatch {
         /// its `seq` changes.
         #[serde(default)]
         scroll: Option<ScrollIntent>,
+        /// What `y` would copy from here; the shell copies it during the
+        /// gesture that asks for it.
+        #[serde(default)]
+        copy_target: Option<nits_protocol::RepoPath>,
     },
     Hints {
         hints: Vec<Hint>,
@@ -160,6 +164,7 @@ impl ViewModel {
                 focus: self.focus,
                 tab: self.tab,
                 scroll: self.scroll,
+                copy_target: self.copy_target.clone(),
             },
             ViewSection::Hints => ViewPatch::Hints {
                 hints: self.hints.clone(),
@@ -237,10 +242,16 @@ impl ViewModel {
             ViewPatch::Conversation { conversation } => self.conversation = conversation,
             ViewPatch::CommitStepper { stepper } => self.stepper = stepper,
             ViewPatch::Progress { progress } => self.progress = progress,
-            ViewPatch::Focus { focus, tab, scroll } => {
+            ViewPatch::Focus {
+                focus,
+                tab,
+                scroll,
+                copy_target,
+            } => {
                 self.focus = focus;
                 self.tab = tab;
                 self.scroll = scroll;
+                self.copy_target = copy_target;
             }
             ViewPatch::Hints {
                 hints,

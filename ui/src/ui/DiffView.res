@@ -117,6 +117,7 @@ let make = (
   <section className="diff-panel panel" role="grid" ariaLabel=title>
     <header className="panel-header file-header">
       <span className="file-path mono"> {React.string(title)} </span>
+      <UI.CopyPath path={diff.file.path} chrome dispatch />
       stats
       <UI.Button
         label="expand file"

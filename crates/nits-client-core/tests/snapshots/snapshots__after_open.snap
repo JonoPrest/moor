@@ -995,6 +995,7 @@ expression: core.view()
     }
   ],
   "help": null,
+  "copy_target": "src/lib.rs",
   "connection": {
     "type": "Subscribed"
   },

@@ -2,8 +2,8 @@
 //! names the sections that changed.
 
 use nits_protocol::{
-    Anchor, ClientSeq, DiffScope, EventBody, RenderOpts, ResolvedTarget, Review, ReviewId,
-    ReviewSnapshot, RpcError, Side, ThreadId, TreeOid, ViewSection, Workspace,
+    Anchor, ClientSeq, DiffScope, EventBody, RenderOpts, RepoPath, ResolvedTarget, Review,
+    ReviewId, ReviewSnapshot, RpcError, Side, ThreadId, TreeOid, ViewSection, Workspace,
 };
 
 use crate::cache::RenderKey;
@@ -312,6 +312,12 @@ pub struct ViewModel {
     pub chrome: Vec<Hint>,
     /// The `?` overlay while open.
     pub help: Option<HelpView>,
+    /// What `y` would copy from where the focus is (UI-DESIGN §Chrome).
+    /// The clipboard is the shell's and a write only works inside the
+    /// gesture that asked for it, so the shell reads this and copies
+    /// during the key or click rather than after a round trip — the core
+    /// still owns *which file* that is.
+    pub copy_target: Option<RepoPath>,
     pub connection: ConnectionView,
     /// Last request error the daemon returned; cleared on (re)subscribe.
     pub last_error: Option<RpcError>,

@@ -27,9 +27,66 @@ module KeyEvent = {
   @val @scope("window") external unlisten: (string, t => unit) => unit = "removeEventListener"
 }
 
+/// The chord's text, as the keymap spells a binding (`y`, `ctrl+p`).
+let chordText = (chord: Keys.KeyChord.t): string => {
+  let key = switch chord.key {
+  | Char({c}) => c == " " ? "space" : c
+  | Named({key}) => Keys.NamedKeyName.of_(key)
+  }
+  (chord.mods.ctrl ? "ctrl+" : "") ++
+  (chord.mods.alt ? "alt+" : "") ++
+  (chord.mods.shift ? "shift+" : "") ++
+  (chord.mods.meta ? "meta+" : "") ++
+  key
+}
+
+/// The pending chord prefix, tracked in the shell rather than read back
+/// from the model. The shell sends the chords, so it knows what has been
+/// typed the instant it happens; `pendingKeys` in the view is the core's
+/// answer to the *previous* key and arrives a round trip later, which is
+/// exactly one keystroke too late to decide anything about this one.
+module Pending = {
+  type t = {mutable keys: array<string>}
+
+  let make = (): t => {keys: []}
+
+  /// What `chord` completes, given what is already pending, and what is
+  /// pending afterwards: a chord that finishes a binding or matches
+  /// nothing clears the prefix; one that begins a longer binding extends
+  /// it. Bindings come from the table, so a rebinding is followed.
+  let step = (p: t, bindings: array<View.Hint.t>, chord: Keys.KeyChord.t): option<
+    View.Command.t,
+  > => {
+    let typed = Array.concat(p.keys, [chordText(chord)])
+    let text = typed->Array.join(" ")
+    let exact = bindings->Array.find(h => h.keys == text)
+    let prefix = bindings->Array.some(h => h.keys->String.startsWith(text ++ " "))
+    switch (exact, prefix) {
+    | (Some(h), _) => {
+        p.keys = []
+        Some(h.command)
+      }
+    | (None, true) => {
+        p.keys = typed
+        None
+      }
+    | (None, false) => {
+        p.keys = []
+        None
+      }
+    }
+  }
+}
+
+/// The bindings that apply where the focus is. `hints` are the focused
+/// context's, so a per-context override is honoured; `chrome` carries one
+/// entry per command for the rest.
+let bindingsFor = (model: View.ViewModel.t): array<View.Hint.t> =>
+  Array.concat(model.hints, model.chrome)
+
 /// Keys outside text inputs become chords for the core; text inputs handle
 /// their own keys and stop propagation.
-let onKeyDown = (core: Core.t, ev: KeyEvent.t) => {
+let onKeyDown = (core: Core.t, ~onChord: Keys.KeyChord.t => unit, ev: KeyEvent.t) => {
   let key = KeyEvent.key(ev)
   let editing = switch KeyEvent.target(ev)->Nullable.toOption {
   | Some(el) => {
@@ -55,6 +112,7 @@ let onKeyDown = (core: Core.t, ev: KeyEvent.t) => {
         if swallowed->Array.includes(key) || search || printable {
           KeyEvent.preventDefault(ev)
         }
+        onChord(chord)
         core.key(chord)
       }
     | None => ()
@@ -83,8 +141,38 @@ module Shell = {
       }
       None
     }, [model.connection])
+    // Copying happens here, in the gesture that asks for it: a clipboard
+    // write needs transient user activation, which a round trip through
+    // the core spends, and one host serves every attached browser, so
+    // nothing about a copy should travel through the shared view at all.
+    // The core still decides WHICH file — `model.copyTarget`.
+    let (toast, setToast) = React.useState(() => None)
+    // One writer for the shell, so a slow write that settles after a
+    // later one cannot overwrite what the reader is now looking at.
+    let writer = React.useRef(Clipboard.latest())
+    let copy = (path: string) =>
+      writer.current(path, (text, failed) => setToast(_ => Some((text, failed))))
+    let modelRef = React.useRef(model)
+    modelRef.current = model
+    let pending = React.useRef(Pending.make())
     React.useEffect0(() => {
-      let handler = ev => onKeyDown(core, ev)
+      let handler = ev =>
+        onKeyDown(
+          core,
+          ~onChord=chord => {
+            let m = modelRef.current
+            // The keydown IS the gesture, so the copy happens now, from
+            // the prefix this shell has typed rather than from the core's
+            // answer to the previous key. `copyTarget` arrives in the
+            // same patch as the focus it belongs to, so it names the file
+            // the reader can see — which is the one they meant.
+            switch (Pending.step(pending.current, bindingsFor(m), chord), m.copyTarget) {
+            | (Some(CopyPath), Some(path)) => copy(path)
+            | (Some(_), _) | (None, _) => ()
+            }
+          },
+          ev,
+        )
       KeyEvent.listen("keydown", handler)
       Some(() => KeyEvent.unlisten("keydown", handler))
     })
@@ -136,10 +224,10 @@ module Shell = {
       }
       None
     }, [key])
-    // `y`: the clipboard is the shell's; copy here, the core no-ops.
     let dispatch = (action: Action.t) => {
       switch action {
-      | CopyPath({path}) => FileDiff.writeText(path)
+      // Inside the click, for the same reason as the key press above.
+      | CopyPath({path}) => copy(path)
       | _ => ()
       }
       core.dispatch(action)
@@ -289,6 +377,7 @@ module Shell = {
           }}
         </div>
       </div>
+      <Toast message=toast />
       <WhichKey pendingKeys=model.pendingKeys pendingLabel=model.pendingLabel hints=model.hints />
       <HintBar
         hints=model.hints

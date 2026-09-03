@@ -292,6 +292,13 @@ fn file_of_node(node: &TreeNode) -> Option<FileRef> {
 
 /// The file a command applies to: the open one from the diff, or the
 /// focused tree file.
+/// The file `focus` is on, for the commands that act on a whole file
+/// (`y`, comment-on-file, viewed).
+#[must_use]
+pub fn target_file_of(view: &ViewModel, focus: Focus) -> Option<FileRef> {
+    target_file(view, focus)
+}
+
 fn target_file(view: &ViewModel, focus: Focus) -> Option<FileRef> {
     match focus {
         Focus::Diff { .. } => view.diff.as_ref().map(|d| d.file.clone()),

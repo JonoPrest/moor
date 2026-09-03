@@ -1846,3 +1846,42 @@ fn a_realign_belongs_to_the_render_that_asked_for_it() {
         "a.rs's pending realign leaves b.rs's cursor where it is"
     );
 }
+
+#[test]
+fn the_view_says_what_y_would_copy_from_here() {
+    // The clipboard is the shell's and a write only works inside the
+    // gesture that asks for it, so the shell cannot wait for a round trip
+    // to learn the path. The core still decides *which* file it is.
+    let mut core = ready();
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::Tree { index: 2 },
+    }))
+    .unwrap();
+    let focused = nits_client_core::visible_nodes(core.view())
+        .get(2)
+        .and_then(|n| match n {
+            nits_client_core::TreeNode::File { path, .. } => Some(path.clone()),
+            nits_client_core::TreeNode::Dir { .. } => None,
+        })
+        .expect("a file is focused");
+    assert_eq!(core.view().copy_target.as_ref(), Some(&focused));
+
+    // It follows the focus rather than the last copy: moving to a review
+    // with no file leaves nothing to copy.
+    let effects = core
+        .handle(Input::User(Action::SetFocus {
+            focus: Focus::ReviewList { index: 0 },
+        }))
+        .unwrap();
+    assert!(rendered(&effects).contains(&ViewSection::Focus));
+    assert_eq!(core.view().copy_target, None);
+
+    // `y` itself is a no-op in the core: the shell has already copied.
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::Tree { index: 2 },
+    }))
+    .unwrap();
+    let effects = press(&mut core, "y").unwrap();
+    assert!(rendered(&effects).is_empty());
+    assert_eq!(core.view().copy_target.as_ref(), Some(&focused));
+}

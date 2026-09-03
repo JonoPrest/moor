@@ -21,6 +21,7 @@ let lineOn = (row: Render.Row.t, side: Domain.Side.t): option<int> =>
   }
 
 @val @scope(("navigator", "clipboard")) external writeText: string => unit = "writeText"
+@send external scrollIntoView: (Dom.element, {"block": string}) => unit = "scrollIntoView"
 
 type drag = {side: Domain.Side.t, start: int, current: int}
 
@@ -108,14 +109,7 @@ let make = (
           {React.string(collapsed ? "▸" : "▾")}
         </button>
         <span className="file-path mono"> {React.string(diff.file.path)} </span>
-        <button
-          type_="button"
-          className="btn btn-ghost"
-          title="copy file path"
-          onClick={_ => writeText(diff.file.path)}
-        >
-          {React.string("⧉")}
-        </button>
+        <UI.CopyPath path={diff.file.path} chrome dispatch />
         stats
         {diff.fileThreads->Array.length > 0
           ? <span className="tree-threads">

@@ -916,3 +916,172 @@ describe("Scroll.plan", () => {
     expect(step)->toEqual(Scroll.Skip)
   })
 })
+
+// jsdom has no clipboard, and the interesting cases are the ones that do
+// not look like success: an absent API and a refused write.
+%%raw(`
+function installSlowClipboard(delays) {
+  globalThis.__copied = []
+  let i = 0
+  Object.defineProperty(globalThis.navigator, "clipboard", {
+    configurable: true,
+    value: {
+      writeText: (text) => {
+        const ms = delays[i++] ?? 0
+        return new Promise((resolve) => setTimeout(() => {
+          globalThis.__copied.push(text)
+          resolve()
+        }, ms))
+      },
+    },
+  })
+}
+function installClipboard(mode) {
+  globalThis.__copied = []
+  const value =
+    mode === "missing"
+      ? undefined
+      : {
+          writeText: (text) => {
+            if (mode === "refuse") return Promise.reject(new Error("denied"))
+            globalThis.__copied.push(text)
+            return Promise.resolve()
+          },
+        }
+  Object.defineProperty(globalThis.navigator, "clipboard", {configurable: true, value})
+}
+function copiedPaths() {
+  return globalThis.__copied || []
+}
+function flush() {
+  return new Promise((resolve) => setTimeout(resolve, 0))
+}
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+`)
+
+@val external installClipboard: string => unit = "installClipboard"
+@val external installSlowClipboard: array<int> => unit = "installSlowClipboard"
+@val external copiedPaths: unit => array<string> = "copiedPaths"
+@val external flush: unit => promise<unit> = "flush"
+@val external sleep: int => promise<unit> = "sleep"
+
+describe("Copy path", () => {
+  let chrome: array<View.Hint.t> = [{keys: "y", command: CopyPath, label: "copy path"}]
+
+  test("both file headers offer copy, and the tooltip comes from the keymap", () => {
+    let dispatch = fn()
+    let base = Fixtures.parse(View.DiffView.schema, "client", "DiffView", "default")
+    // Browse (DiffView) had no copy affordance at all.
+    let {container} = render(
+      <DiffView diff=base layout=Unified focus={Diff({row: 0, side: Head})} chrome dispatch />,
+    )
+    let copy =
+      Element.querySelector(container, "[title=\"copy path (y)\"]")
+      ->Nullable.toOption
+      ->Option.getExn
+    FireEvent.click(copy)
+    expect(dispatch)->toHaveBeenLastCalledWith(Action.CopyPath({path: base.file.path}))
+    cleanup()
+    // Rebound: the tooltip follows the keymap rather than a literal `y`.
+    let rebound: array<View.Hint.t> = [{keys: "ctrl+y", command: CopyPath, label: "copy path"}]
+    let {container} = render(
+      <DiffView diff=base layout=Unified focus={Diff({row: 0, side: Head})} chrome=rebound dispatch />,
+    )
+    expect(Element.querySelector(container, "[title=\"copy path (ctrl+y)\"]"))->not_->toBeNull
+  })
+
+  testAsync("a write that lands, one that is refused, and no clipboard at all", async () => {
+    installClipboard("ok")
+    let outcome = await Clipboard.write("src/a.rs")
+    expect(outcome)->toEqual(Ok())
+    expect(copiedPaths())->toEqual(["src/a.rs"])
+    expect(Clipboard.message("src/a.rs", outcome))->toBe("Copied src/a.rs")
+
+    installClipboard("refuse")
+    let outcome = await Clipboard.write("src/a.rs")
+    expect(outcome)->toEqual(Error(Clipboard.Refused))
+    expect(copiedPaths())->toEqual([])
+    expect(Clipboard.message("src/a.rs", outcome))->toContain("refused")
+
+    // An insecure context has no clipboard object at all: the binding
+    // must not throw where a promise rejection would have been caught.
+    installClipboard("missing")
+    let outcome = await Clipboard.write("src/a.rs")
+    expect(outcome)->toEqual(Error(Clipboard.Unavailable))
+    expect(Clipboard.message("src/a.rs", outcome))->toContain("no clipboard")
+  })
+
+  testAsync("the toast shows, then dismisses itself", async () => {
+    let {container, rerender} = render(<Toast message=None />)
+    expect(Element.querySelector(container, ".toast"))->toBeNull
+    rerender(<Toast message={Some(("Copied src/a.rs", false))} />)
+    expect(Element.textContent(Screen.getByTextRe(/Copied/)))->toContain("src/a.rs")
+    // A failure is styled as one, and neither sits there for the session.
+    rerender(<Toast message={Some(("Could not copy — the clipboard refused", true))} />)
+    let el = Element.querySelector(container, ".toast")->Nullable.toOption->Option.getExn
+    expect(Element.className(el))->toContain("toast-error")
+    await sleep(Toast.dismissAfterMs + 20)
+    expect(Element.querySelector(container, ".toast"))->toBeNull
+  })
+
+  testAsync("overlapping copies show the newest result, not the slowest", async () => {
+    // Two clicks in a row: the first write settles last, and must not
+    // overwrite what the second one already told the reader.
+    installSlowClipboard([40, 0])
+    let shown = ref([])
+    let writer = Clipboard.latest()
+    writer("first.rs", (text, _) => shown := Array.concat(shown.contents, [text]))
+    writer("second.rs", (text, _) => shown := Array.concat(shown.contents, [text]))
+    await sleep(80)
+    expect(shown.contents)->toEqual(["Copied second.rs"])
+  })
+
+  test("the shell tracks its own chord prefix, so it cannot lag the keys", () => {
+    // The core's `pendingKeys` is its answer to the *previous* key and
+    // arrives a round trip later — one keystroke too late to decide
+    // anything about this one. The shell sends the chords, so it tracks
+    // the prefix itself.
+    let chord = (c: string): Keys.KeyChord.t => {
+      key: Char({c: c}),
+      mods: {ctrl: false, alt: false, shift: false, meta: false},
+    }
+    let bindings: array<View.Hint.t> = [
+      {keys: "y", command: CopyPath, label: "copy path"},
+      {keys: "g g", command: GoTop, label: "top"},
+    ]
+    let p = App.Pending.make()
+    expect(App.Pending.step(p, bindings, chord("y")))->toEqual(Some(View.Command.CopyPath))
+    expect(App.Pending.step(p, bindings, chord("j")))->toEqual(None)
+
+    // A sequence typed faster than the round trip: the second chord still
+    // completes it, because the prefix never left this shell.
+    let sequence: array<View.Hint.t> = [{keys: "g y", command: CopyPath, label: "copy path"}]
+    let p = App.Pending.make()
+    expect(App.Pending.step(p, sequence, chord("g")))->toEqual(None)
+    expect(App.Pending.step(p, sequence, chord("y")))->toEqual(Some(View.Command.CopyPath))
+    // And a bare `y` under that binding runs nothing, so nothing is copied.
+    let p = App.Pending.make()
+    expect(App.Pending.step(p, sequence, chord("y")))->toEqual(None)
+    // A chord that matches no binding clears the prefix rather than
+    // leaving it to swallow the next key.
+    let p = App.Pending.make()
+    expect(App.Pending.step(p, sequence, chord("g")))->toEqual(None)
+    expect(App.Pending.step(p, sequence, chord("x")))->toEqual(None)
+    expect(App.Pending.step(p, bindings, chord("y")))->toEqual(Some(View.Command.CopyPath))
+
+    // A per-context override wins: `hints` are the focused context's
+    // bindings and come first.
+    let m = Fixtures.parse(View.ViewModel.schema, "client", "ViewModel", "default")
+    let contextual: View.ViewModel.t = {
+      ...m,
+      hints: [{keys: "c", command: CopyPath, label: "copy path"}],
+      chrome: [{keys: "y", command: CopyPath, label: "copy path"}],
+    }
+    let p = App.Pending.make()
+    expect(App.Pending.step(p, App.bindingsFor(contextual), chord("c")))->toEqual(
+      Some(View.Command.CopyPath),
+    )
+  })
+})
