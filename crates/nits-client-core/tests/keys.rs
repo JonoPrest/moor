@@ -1153,8 +1153,7 @@ fn on_row(row: u32, side: Side) -> ClientCore {
             path: path("src/a.rs"),
         },
         first_row: 0,
-        // Wide enough for the expander at row 148 to be in the window.
-        last_row: 199,
+        last_row: 59,
     }))
     .unwrap();
     core.handle(Input::User(Action::SetFocus {
@@ -1741,7 +1740,13 @@ fn the_cursor_keeps_its_line_when_a_gap_above_it_opens() {
     // the shifted window, in this pass rather than after the next input.
     match core.view().patch(ViewSection::Focus) {
         nits_client_core::ViewPatch::Focus { focus, .. } => {
-            assert_eq!(focus, Focus::Diff { row: 180 });
+            assert_eq!(
+                focus,
+                Focus::Diff {
+                    row: 180,
+                    side: Side::Head
+                }
+            );
         }
         other => panic!("expected a focus patch, got {other:?}"),
     }
@@ -1817,11 +1822,14 @@ fn a_realign_belongs_to_the_render_that_asked_for_it() {
     // cursor somewhere in it. b.rs holds the same line numbers five rows
     // earlier, so a realign that is not bound to the render it was
     // recorded for would drag this cursor when b.rs's rows arrive.
-    let core = &mut on_row(160);
+    let core = &mut on_row(160, Side::Head);
     press(core, "z u").unwrap();
     let wanted = request_b_rs(core);
     core.handle(Input::User(Action::SetFocus {
-        focus: Focus::Diff { row: 100 },
+        focus: Focus::Diff {
+            row: 100,
+            side: Side::Head,
+        },
     }))
     .unwrap();
     deliver_b_rs(core, wanted);
@@ -1831,7 +1839,10 @@ fn a_realign_belongs_to_the_render_that_asked_for_it() {
     );
     assert_eq!(
         core.view().focus,
-        Focus::Diff { row: 100 },
+        Focus::Diff {
+            row: 100,
+            side: Side::Head
+        },
         "a.rs's pending realign leaves b.rs's cursor where it is"
     );
 }
