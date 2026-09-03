@@ -19,6 +19,10 @@ module Screen = {
   external getByTextRe: RegExp.t => element = "getByText"
 }
 
+module Document = {
+  @val @scope("document") external activeElement: Nullable.t<element> = "activeElement"
+}
+
 module FireEvent = {
   @module("@testing-library/react") @scope("fireEvent")
   external click: element => unit = "click"
@@ -42,4 +46,7 @@ module Element = {
   @send external getAttribute: (element, string) => Nullable.t<string> = "getAttribute"
   @send external hasAttribute: (element, string) => bool = "hasAttribute"
   @get external parentElement: element => element = "parentElement"
+  @get external scrollTop: element => int = "scrollTop"
+  @set external setScrollTop: (element, int) => unit = "scrollTop"
+  @get external value: element => string = "value"
 }

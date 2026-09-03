@@ -749,6 +749,89 @@ describe("Tabs", () => {
   })
 })
 
+describe("HelpOverlay", () => {
+  let entry = (~keys, ~command, ~label): View.HelpEntry.t => {
+    keys,
+    command,
+    label,
+    primary: false,
+    overridden: false,
+  }
+  let help: View.HelpView.t = {
+    groups: [
+      {
+        context: Diff,
+        entries: [
+          entry(~keys="u z", ~command=ExpandUp, ~label="zoom utility"),
+          entry(~keys="z u", ~command=ExpandUp, ~label="expand up"),
+          entry(~keys="z d", ~command=ExpandDown, ~label="expand down"),
+        ],
+      },
+      {
+        context: Tree,
+        entries: [entry(~keys="s", ~command=ToggleLayout, ~label="toggle layout")],
+      },
+    ],
+    conflicts: [],
+  }
+
+  test("autofocuses and fuzzy-ranks normalized chords without empty groups", () => {
+    let dispatch = fn()
+    let {container} = render(<HelpOverlay help dispatch />)
+    let input = Screen.getByPlaceholderText("filter…")
+    expect(Document.activeElement->Nullable.toOption)->toEqual(Some(input))
+
+    FireEvent.change(input, {"target": {"value": "zu"}})
+    let rows = Element.querySelectorAll(container, ".help-group tbody tr")
+    expect(Array.length(rows))->toBe(2)
+    expect(Element.textContent(rows->Array.getUnsafe(0)))->toContain("z u")
+    expect(Element.querySelectorAll(container, ".help-group")->Array.length)->toBe(1)
+
+    // Sparse subsequences match labels too, not only literal substrings.
+    FireEvent.change(input, {"target": {"value": "epu"}})
+    expect(Screen.getByText("expand up"))->toBeTruthy
+
+    FireEvent.change(input, {"target": {"value": "nothing"}})
+    expect(Screen.getByText("no shortcuts match"))->toBeTruthy
+    expect(Element.querySelectorAll(container, ".help-group")->Array.length)->toBe(0)
+
+    let panel = Element.querySelector(container, ".help-panel")->Nullable.toOption->Option.getExn
+    Element.setScrollTop(panel, 200)
+    FireEvent.change(input, {"target": {"value": ""}})
+    expect(Element.querySelectorAll(container, ".help-group tbody tr")->Array.length)->toBe(4)
+    expect(Element.querySelectorAll(container, ".help-group")->Array.length)->toBe(2)
+    expect(Element.scrollTop(panel))->toBe(0)
+  })
+
+  test("keeps search focus and query while navigation keys scroll", () => {
+    let dispatch = fn()
+    let {container} = render(<HelpOverlay help dispatch />)
+    let input = Screen.getByPlaceholderText("filter…")
+    let panel = Element.querySelector(container, ".help-panel")->Nullable.toOption->Option.getExn
+    FireEvent.change(input, {"target": {"value": "expand"}})
+    Element.setScrollTop(panel, 0)
+
+    FireEvent.keyDown(input, {"key": "ArrowDown", "ctrlKey": false})
+    FireEvent.keyDown(input, {"key": "j", "ctrlKey": false})
+    FireEvent.keyDown(input, {"key": "PageDown", "ctrlKey": false})
+    expect(Element.scrollTop(panel))->toBe(496)
+    FireEvent.keyDown(input, {"key": "ArrowUp", "ctrlKey": false})
+    FireEvent.keyDown(input, {"key": "k", "ctrlKey": false})
+    FireEvent.keyDown(input, {"key": "PageUp", "ctrlKey": false})
+    expect(Element.scrollTop(panel))->toBe(0)
+    expect(Element.value(input))->toBe("expand")
+    expect(Document.activeElement->Nullable.toOption)->toEqual(Some(input))
+  })
+
+  test("Escape closes help from the focused search input", () => {
+    let dispatch = fn()
+    render(<HelpOverlay help dispatch />)->ignore
+    let input = Screen.getByPlaceholderText("filter…")
+    FireEvent.keyDown(input, {"key": "Escape", "ctrlKey": false})
+    expect(dispatch)->toHaveBeenCalledWith(Action.ToggleHelp({}))
+  })
+})
+
 describe("Tree (rows)", () => {
   test("rows show line stats and thread badges, never a checkbox", () => {
     let dispatch = fn()
