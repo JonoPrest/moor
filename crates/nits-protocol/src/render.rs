@@ -167,6 +167,8 @@ pub struct GapRow {
 pub enum GapTableError {
     #[error("gap rows are not in row order")]
     Unordered,
+    #[error("gaps are not in gap order")]
+    UnorderedGaps,
     #[error("gap {0:?} appears more than once")]
     Duplicate(crate::domain::Gap),
 }
@@ -184,9 +186,17 @@ impl TryFrom<Vec<GapRow>> for GapTable {
     type Error = GapTableError;
 
     fn try_from(v: Vec<GapRow>) -> Result<Self, Self::Error> {
+        // Both keys ascend strictly, which is what the renderer emits: a
+        // gap precedes the group it is numbered for, so a later gap is
+        // always a later row. Checking adjacent pairs is then enough for
+        // uniqueness — comparing neighbours in a sequence that only ever
+        // increases rules out a repeat anywhere, adjacent or not.
         for w in v.windows(2) {
             if w[0].gap == w[1].gap {
                 return Err(GapTableError::Duplicate(w[0].gap));
+            }
+            if w[0].gap > w[1].gap {
+                return Err(GapTableError::UnorderedGaps);
             }
             if w[0].row >= w[1].row {
                 return Err(GapTableError::Unordered);
@@ -296,8 +306,14 @@ mod tests {
         assert_eq!(t.nearest(95, false), None, "nothing hidden below");
         assert_eq!(t.nearest(2, true), None, "nothing hidden above");
 
+        // Out of order by either key is refused; the gap column is
+        // checked first, since it is the one `nearest` names.
         assert_eq!(
             GapTable::try_from(vec![at(1, 40), at(0, 4)]),
+            Err(GapTableError::UnorderedGaps)
+        );
+        assert_eq!(
+            GapTable::try_from(vec![at(0, 40), at(1, 4)]),
             Err(GapTableError::Unordered)
         );
         assert_eq!(
@@ -308,6 +324,16 @@ mod tests {
         assert_eq!(
             GapTable::try_from(vec![at(0, 40), at(1, 40)]),
             Err(GapTableError::Unordered)
+        );
+        // A repeat that is not adjacent is a repeat all the same: the
+        // gap column ascends strictly, so it cannot come back.
+        assert_eq!(
+            GapTable::try_from(vec![at(1, 4), at(2, 40), at(1, 90)]),
+            Err(GapTableError::UnorderedGaps)
+        );
+        assert_eq!(
+            GapTable::try_from(vec![at(0, 4), at(2, 40), at(1, 90), at(2, 120)]),
+            Err(GapTableError::UnorderedGaps)
         );
         assert!(
             serde_json::from_str::<GapTable>(r#"[{"gap":1,"row":40},{"gap":0,"row":4}]"#).is_err()
