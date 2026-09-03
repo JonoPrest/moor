@@ -8,8 +8,8 @@ use std::collections::BTreeMap;
 
 use nits_client_core::{
     Action, Bytes, CacheConfig, CacheKey, CacheValue, ClientCore, Config, ConnectionView,
-    CoreError, DiskTier, Effect, FileRef, IdSeed, Input, PREFETCH_RADIUS, RenderKey,
-    TransportEvent,
+    CoreError, DiskTier, Effect, FileRef, Focus, IdSeed, Input, KeyChord, NamedKey,
+    PREFETCH_RADIUS, RenderKey, ScopeChoice, TransportEvent, resolve_command,
 };
 use nits_protocol::{
     Author, BlobOid, BuildInfo, ChangeKind, ChunkIndex, ClientId, ClientMsg, ClientSeq, CommitOid,
@@ -1981,9 +1981,62 @@ fn commit_stepper_lists_and_steps() {
         Err(CoreError::CommitOutOfRange(2))
     );
     let effects = core
-        .handle(Input::User(Action::StepCommit { selected: Some(1) }))
+        .handle(Input::User(Action::StepCommit { selected: Some(0) }))
         .unwrap();
     assert_eq!(rendered(&effects), vec![ViewSection::CommitStepper]);
+    assert_eq!(core.view().stepper.as_ref().unwrap().selected, Some(0));
+
+    // `enter` on a focused commit selects the commit as the diff scope,
+    // exactly like a click in the UI. Scope application keeps the stepper
+    // selection and the displayed diff synchronized.
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::CommitStepper { index: 1 },
+    }))
+    .unwrap();
+    let second = CommitOid::new(Oid::from_bytes([2; 20]));
+    assert_eq!(
+        resolve_command(&core, nits_client_core::Command::Open),
+        Ok(Action::SetScope {
+            scope: ScopeChoice::Commit {
+                repo_id: repo_id(),
+                oid: second,
+            },
+        })
+    );
+    let effects = core
+        .handle(Input::Key(KeyChord::named(NamedKey::Enter)))
+        .unwrap();
+    assert_eq!(
+        requests(&effects)
+            .into_iter()
+            .map(|(_, request)| request)
+            .collect::<Vec<_>>(),
+        vec![Request::ListFiles {
+            review_id: review_id(),
+            scope: DiffScope::Commit {
+                repo_id: repo_id(),
+                oid: second,
+            },
+        }]
+    );
+    assert_eq!(
+        rendered(&effects),
+        vec![
+            ViewSection::ReviewList,
+            ViewSection::Diff,
+            ViewSection::Tree,
+            ViewSection::Progress,
+            ViewSection::CommitStepper,
+            ViewSection::Hints,
+        ]
+    );
+    assert_eq!(
+        core.view().scope,
+        DiffScope::Commit {
+            repo_id: repo_id(),
+            oid: second,
+        }
+    );
     assert_eq!(core.view().stepper.as_ref().unwrap().selected, Some(1));
     // Closing the review drops the stepper.
     core.handle(Input::User(Action::CloseReview)).unwrap();
@@ -1992,7 +2045,6 @@ fn commit_stepper_lists_and_steps() {
 
 #[test]
 fn scope_switching_refetches_files_and_steps_commits() {
-    use nits_client_core::{ScopeChoice, resolve_command};
     let mut core = subscribed(local());
     assert_eq!(
         core.handle(Input::User(Action::SetScope {

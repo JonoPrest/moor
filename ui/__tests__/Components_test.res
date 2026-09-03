@@ -211,7 +211,7 @@ describe("Tree", () => {
 })
 
 describe("Stepper", () => {
-  test("shows the selected commit's body, committer and parents", () => {
+  test("shows commit details and a click selects that commit's diff scope", () => {
     let dispatch = fn()
     let stepper = Fixtures.parse(View.CommitStepper.schema, "client", "CommitStepper", "default")
     let {container} = render(<Stepper stepper focus={CommitStepper({index: 0})} dispatch />)
@@ -220,8 +220,16 @@ describe("Stepper", () => {
     expect(Element.querySelector(container, ".commit-panel .commit-oid"))->not_->toBeNull
     let items = Element.querySelectorAll(container, ".stepper-commit")
     expect(Element.hasAttribute(items->Array.getUnsafe(0), "data-focused"))->toBe(true)
-    FireEvent.doubleClick(items->Array.getUnsafe(0))
-    expect(dispatch)->toHaveBeenLastCalledWith(Action.StepCommit({selected: Some(0)}))
+    FireEvent.click(items->Array.getUnsafe(0))
+    expect(dispatch)->toHaveBeenCalledWith(
+      Action.SetFocus({focus: View.Focus.CommitStepper({index: 0})}),
+    )
+    let commit = stepper.commits->Array.getUnsafe(0)
+    expect(dispatch)->toHaveBeenLastCalledWith(
+      Action.SetScope({
+        scope: Action.ScopeChoice.Commit({repoId: stepper.repoId, oid: commit.oid}),
+      }),
+    )
   })
 })
 

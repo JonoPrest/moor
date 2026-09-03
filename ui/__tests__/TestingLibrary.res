@@ -23,8 +23,6 @@ module FireEvent = {
   @module("@testing-library/react") @scope("fireEvent")
   external click: element => unit = "click"
   @module("@testing-library/react") @scope("fireEvent")
-  external doubleClick: element => unit = "doubleClick"
-  @module("@testing-library/react") @scope("fireEvent")
   external keyDown: (element, {"key": string, "ctrlKey": bool}) => unit = "keyDown"
   @module("@testing-library/react") @scope("fireEvent")
   external change: (element, {"target": {"value": string}}) => unit = "change"
