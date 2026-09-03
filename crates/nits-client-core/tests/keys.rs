@@ -827,10 +827,12 @@ fn sequences_resolve_and_expire() {
     }))
     .unwrap();
     assert_eq!(core.view().focus, Focus::Composer);
-    assert!(
-        core.handle(Input::Key(KeyChord::char('j')))
-            .unwrap()
-            .is_empty()
+    // Text for the host's editor, not a command: the only thing the core
+    // has to say about it is that it counted the key (a host acting on a
+    // key before the answer arrives correlates against that count).
+    assert_eq!(
+        rendered(&core.handle(Input::Key(KeyChord::char('j'))).unwrap()),
+        vec![ViewSection::Hints]
     );
     // Esc discards and focus returns to the tree.
     press(&mut core, "esc").unwrap();
@@ -1881,8 +1883,10 @@ fn the_view_says_what_y_would_copy_from_here() {
         focus: Focus::Tree { index: 2 },
     }))
     .unwrap();
+    // The only patch is the key count: the copy itself happened in the
+    // shell, inside the gesture.
     let effects = press(&mut core, "y").unwrap();
-    assert!(rendered(&effects).is_empty());
+    assert_eq!(rendered(&effects), vec![ViewSection::Hints]);
     assert_eq!(core.view().copy_target.as_ref(), Some(&focused));
 }
 
@@ -1928,4 +1932,36 @@ fn the_view_lists_the_bindings_that_apply_where_the_focus_is() {
             .iter()
             .any(|h| h.command == nits_client_core::Command::CopyPath)
     );
+}
+
+#[test]
+fn every_key_the_core_acts_on_is_counted() {
+    // A host that acts on a key before the core answers compares this
+    // count against what it has sent. A command that changes nothing
+    // still has to be counted, or the count stalls on it and the host
+    // waits for ever; a key the context does not bind stays a typed
+    // error and is not counted, and the host — resolving against the
+    // same bindings — does not count that one either.
+    let mut core = ready();
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::Tree { index: 2 },
+    }))
+    .unwrap();
+    let start = core.view().keys_handled;
+
+    // `y` is a no-op in the core (the shell has already copied) and is
+    // still counted, with a patch to carry the count.
+    let effects = press(&mut core, "y").unwrap();
+    assert_eq!(core.view().keys_handled, start + 1);
+    assert!(rendered(&effects).contains(&ViewSection::Hints));
+
+    // A prefix and the chord completing it are two.
+    press(&mut core, "g").ok();
+    press(&mut core, "g").ok();
+    assert_eq!(core.view().keys_handled, start + 3);
+
+    // An unbound key stays an error, and stays uncounted.
+    let before = core.view().keys_handled;
+    assert!(core.handle(Input::Key(KeyChord::char('q'))).is_err());
+    assert_eq!(core.view().keys_handled, before);
 }

@@ -455,6 +455,9 @@ module ViewModel = {
     chrome: array<Hint.t>,
     /// Every binding that applies where the focus is, aliases included.
     bindings: array<Hint.t>,
+    /// How many keys the core has seen; a shell that acts on a key
+    /// before the core answers compares this against what it has sent.
+    @as("keys_handled") keysHandled: int,
     help: @s.null option<HelpView.t>,
     /// What `y` would copy from where the focus is; the shell copies it
     /// during the gesture that asks for it.
@@ -500,6 +503,7 @@ module ViewModel = {
     leader: "space",
     chrome: [],
     bindings: [],
+    keysHandled: 0,
     help: None,
     copyTarget: None,
     connection: Disconnected({}),
@@ -566,6 +570,7 @@ module ViewPatch = {
         leader: string,
         chrome: array<Hint.t>,
         bindings: array<Hint.t>,
+        @as("keys_handled") keysHandled: int,
       })
     | @as("Help") Help({help: @s.null option<HelpView.t>})
     | @as("Draft")
@@ -599,7 +604,7 @@ module ViewPatch = {
     | CommitStepper({stepper}) => {...model, stepper}
     | Progress({progress}) => {...model, progress}
     | Focus({focus, tab, scroll, copyTarget}) => {...model, focus, tab, scroll, copyTarget}
-    | Hints({hints, pending, pendingLabel, mode, leader, chrome, bindings}) => {
+    | Hints({hints, pending, pendingLabel, mode, leader, chrome, bindings, keysHandled}) => {
         ...model,
         hints,
         pendingKeys: pending,
@@ -608,6 +613,7 @@ module ViewPatch = {
         leader,
         chrome,
         bindings,
+        keysHandled,
       }
     | Help({help}) => {...model, help}
     | Draft({draft, pendingRefresh}) => {...model, draft, pendingRefresh}

@@ -571,6 +571,10 @@ pub struct ClientCore {
     /// Visual mode (UI-DESIGN: modal keys): the diff row and side `V` was
     /// pressed on; the other end of the selection is the focused row.
     visual_anchor: Option<VisualAnchor>,
+    /// Keys seen, whatever each turned out to mean. The view carries it
+    /// so a host can tell whether what it is looking at accounts for the
+    /// keys it has sent (§6.4).
+    keys_handled: u64,
     /// A re-render is in flight that will renumber the rows (opening a
     /// gap inserts lines above the ones below it). The line the cursor
     /// was on is remembered so the focus and the viewport can follow the
@@ -630,6 +634,7 @@ impl ClientCore {
             browse: None,
             visual_anchor: None,
             realign: None,
+            keys_handled: 0,
         }
     }
 
@@ -691,7 +696,19 @@ impl ClientCore {
                 // it waits until the user continues or cancels.
                 Vec::new()
             }
-            Input::Key(chord) => self.key(chord)?,
+            // Every key the core acts on is counted, including one that
+            // resolves to a command changing nothing: a host that must
+            // act on a key before the core answers (the clipboard needs
+            // the gesture that asked for it) can only tell that its view
+            // accounts for that key by counting. A key the context does
+            // not bind stays a typed error and is not counted — the host
+            // resolves against the same bindings, so it does not count
+            // that one either.
+            Input::Key(chord) => {
+                let effects = self.key(chord)?;
+                self.keys_handled = self.keys_handled.wrapping_add(1);
+                effects
+            }
         };
         // One `Render` per input: the union of every section touched, in
         // first-touched order, after every other effect.
@@ -1002,6 +1019,10 @@ impl ClientCore {
         let bindings = self.keymap.applicable_bindings(focus.context());
         if bindings != self.view.bindings {
             self.view.bindings = bindings;
+            sections.push(ViewSection::Hints);
+        }
+        if self.keys_handled != self.view.keys_handled {
+            self.view.keys_handled = self.keys_handled;
             sections.push(ViewSection::Hints);
         }
         let leader = self.keymap.leader().to_string();

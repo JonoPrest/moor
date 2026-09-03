@@ -89,6 +89,10 @@ pub enum ViewPatch {
         /// Every binding applicable where the focus is (§6.4).
         #[serde(default)]
         bindings: Vec<Hint>,
+        /// Keys the core has seen, for a host that must act before it
+        /// answers (§6.4).
+        #[serde(default)]
+        keys_handled: u64,
     },
     Help {
         help: Option<HelpView>,
@@ -177,6 +181,7 @@ impl ViewModel {
                 leader: self.leader.clone(),
                 chrome: self.chrome.clone(),
                 bindings: self.bindings.clone(),
+                keys_handled: self.keys_handled,
             },
             ViewSection::Help => ViewPatch::Help {
                 help: self.help.clone(),
@@ -265,8 +270,10 @@ impl ViewModel {
                 leader,
                 chrome,
                 bindings,
+                keys_handled,
             } => {
                 self.bindings = bindings;
+                self.keys_handled = keys_handled;
                 self.hints = hints;
                 self.pending_keys = pending;
                 self.pending_label = pending_label;

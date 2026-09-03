@@ -1054,24 +1054,33 @@ describe("Copy path", () => {
       {keys: "g g", command: GoTop, label: "top"},
     ]
     let p = App.Pending.make()
-    expect(App.Pending.step(p, bindings, chord("y")))->toEqual(Some(View.Command.CopyPath))
-    expect(App.Pending.step(p, bindings, chord("j")))->toEqual(None)
+    expect(App.Pending.step(p, bindings, chord("y")))->toEqual(
+      App.Pending.Runs(View.Command.CopyPath),
+    )
+    // `j` binds nothing in this table and nothing is pending: the core
+    // calls that an unbound key and does not count it, so neither does
+    // the shell.
+    expect(App.Pending.step(p, bindings, chord("j")))->toEqual(App.Pending.Unbound)
 
     // A sequence typed faster than the round trip: the second chord still
     // completes it, because the prefix never left this shell.
     let sequence: array<View.Hint.t> = [{keys: "g y", command: CopyPath, label: "copy path"}]
     let p = App.Pending.make()
-    expect(App.Pending.step(p, sequence, chord("g")))->toEqual(None)
-    expect(App.Pending.step(p, sequence, chord("y")))->toEqual(Some(View.Command.CopyPath))
+    expect(App.Pending.step(p, sequence, chord("g")))->toEqual(App.Pending.Prefix)
+    expect(App.Pending.step(p, sequence, chord("y")))->toEqual(
+      App.Pending.Runs(View.Command.CopyPath),
+    )
     // And a bare `y` under that binding runs nothing, so nothing is copied.
     let p = App.Pending.make()
-    expect(App.Pending.step(p, sequence, chord("y")))->toEqual(None)
+    expect(App.Pending.step(p, sequence, chord("y")))->toEqual(App.Pending.Unbound)
     // A chord that matches no binding clears the prefix rather than
     // leaving it to swallow the next key.
     let p = App.Pending.make()
-    expect(App.Pending.step(p, sequence, chord("g")))->toEqual(None)
-    expect(App.Pending.step(p, sequence, chord("x")))->toEqual(None)
-    expect(App.Pending.step(p, bindings, chord("y")))->toEqual(Some(View.Command.CopyPath))
+    expect(App.Pending.step(p, sequence, chord("g")))->toEqual(App.Pending.Prefix)
+    expect(App.Pending.step(p, sequence, chord("x")))->toEqual(App.Pending.Prefix)
+    expect(App.Pending.step(p, bindings, chord("y")))->toEqual(
+      App.Pending.Runs(View.Command.CopyPath),
+    )
 
     // The bindings come from the core's applicable set for the focused
     // context — not from `hints` (primary only, so `y` is absent) and not
@@ -1085,7 +1094,9 @@ describe("Copy path", () => {
       chrome: [{keys: "y", command: CopyPath, label: "copy path"}],
     }
     let p = App.Pending.make()
-    expect(App.Pending.step(p, App.bindingsFor(onAThread), chord("y")))->toEqual(None)
+    expect(App.Pending.step(p, App.bindingsFor(onAThread), chord("y")))->toEqual(
+      App.Pending.Unbound,
+    )
     let onATree: View.ViewModel.t = {
       ...m,
       bindings: [{keys: "y", command: CopyPath, label: "copy path"}],
@@ -1094,7 +1105,7 @@ describe("Copy path", () => {
     }
     let p = App.Pending.make()
     expect(App.Pending.step(p, App.bindingsFor(onATree), chord("y")))->toEqual(
-      Some(View.Command.CopyPath),
+      App.Pending.Runs(View.Command.CopyPath),
     )
   })
 })
@@ -1110,21 +1121,26 @@ function pressKey(key) {
 @module("react") external act: (unit => unit) => unit = "act"
 
 describe("Copying from the keyboard, through the shell", () => {
-  // The core applies keys in order, so `j` then `y` copies the file `j`
-  // moved to. The shell cannot know that until the core answers, so a
-  // copy with keys still in flight waits for the next model rather than
-  // reading a target the command stream has already moved past.
-  let model = (~target, ~bindings): View.ViewModel.t => {
+  // The core applies keys in order and counts every one it sees, so the
+  // shell can tell whether the view it is holding accounts for the keys
+  // it has sent. A model arriving is not an acknowledgement — a command
+  // that changes nothing emits no patch — so the count is what matters.
+  let model = (~target, ~keysHandled): View.ViewModel.t => {
     let base = Fixtures.parse(View.ViewModel.schema, "client", "ViewModel", "default")
-    {...base, copyTarget: Some(target), bindings, hints: [], chrome: []}
+    {
+      ...base,
+      copyTarget: Some(target),
+      keysHandled,
+      bindings: [
+        {keys: "y", command: CopyPath, label: "copy path"},
+        {keys: "j", command: MoveDown, label: "down"},
+      ],
+      hints: [],
+      chrome: [],
+    }
   }
 
-  let keymap: array<View.Hint.t> = [
-    {keys: "y", command: CopyPath, label: "copy path"},
-    {keys: "j", command: MoveDown, label: "down"},
-  ]
-
-  let mount = (initial: View.ViewModel.t) => {
+  let mount = initial => {
     let push = ref(_ => ())
     let core: Core.t = {
       dispatch: _ => (),
@@ -1139,36 +1155,62 @@ describe("Copying from the keyboard, through the shell", () => {
     (render(<App.Shell core />), push)
   }
 
-  testAsync("with nothing in flight, `y` copies what the core says now", async () => {
+  testAsync("`y` copies the current target when the core is caught up", async () => {
     installClipboard("ok")
-    let (_, _) = mount(model(~target="src/a.rs", ~bindings=keymap))
+    let (_, _) = mount(model(~target="src/a.rs", ~keysHandled=0))
     pressKey("y")
     await flush()
     expect(copiedPaths())->toEqual(["src/a.rs"])
     cleanup()
   })
 
-  testAsync("`j` then `y` copies where `j` landed, not where it started", async () => {
+  testAsync("`y` twice copies twice, though neither key changes the view", async () => {
+    // `CopyPath` is a no-op in the core, so the second `y` gets no patch
+    // of its own: a shell that waited for one would copy once.
     installClipboard("ok")
-    let (_, push) = mount(model(~target="before.rs", ~bindings=keymap))
+    let (_, push) = mount(model(~target="src/a.rs", ~keysHandled=0))
+    pressKey("y")
+    await flush()
+    act(() => push.contents(model(~target="src/a.rs", ~keysHandled=1)))
+    pressKey("y")
+    await flush()
+    expect(copiedPaths())->toEqual(["src/a.rs", "src/a.rs"])
+    cleanup()
+  })
+
+  testAsync("two movements then `y` waits for both, not the first", async () => {
+    installClipboard("ok")
+    let (_, push) = mount(model(~target="before.rs", ~keysHandled=0))
+    pressKey("j")
     pressKey("j")
     pressKey("y")
     await flush()
     expect(copiedPaths())->toEqual([])
-    // The core's answer to `j` arrives: `y` copies that file.
-    act(() => push.contents(model(~target="after.rs", ~bindings=keymap)))
+    // The answer to the first `j` only: still not this key's view.
+    act(() => push.contents(model(~target="after-one.rs", ~keysHandled=1)))
     await flush()
-    expect(copiedPaths())->toEqual(["after.rs"])
+    expect(copiedPaths())->toEqual([])
+    // Both movements accounted for: now it copies, and copies that file.
+    act(() => push.contents(model(~target="after-two.rs", ~keysHandled=2)))
+    await flush()
+    expect(copiedPaths())->toEqual(["after-two.rs"])
     cleanup()
   })
 
   testAsync("a key the focused context does not bind copies nothing", async () => {
     installClipboard("ok")
+    let base = Fixtures.parse(View.ViewModel.schema, "client", "ViewModel", "default")
     // A thread is focused: the keymap binds no copy there, and the core
     // would refuse the key.
-    let (_, _) = mount(
-      model(~target="src/a.rs", ~bindings=[{keys: "enter", command: Open, label: "open"}]),
-    )
+    let onAThread: View.ViewModel.t = {
+      ...base,
+      copyTarget: Some("src/a.rs"),
+      keysHandled: 0,
+      bindings: [{keys: "enter", command: Open, label: "open"}],
+      hints: [],
+      chrome: [{keys: "y", command: CopyPath, label: "copy path"}],
+    }
+    let (_, _) = mount(onAThread)
     pressKey("y")
     await flush()
     expect(copiedPaths())->toEqual([])

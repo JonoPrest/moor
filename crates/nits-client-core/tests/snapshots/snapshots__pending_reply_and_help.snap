@@ -1135,6 +1135,7 @@ expression: core.view()
       "label": "back"
     }
   ],
+  "keys_handled": 2,
   "help": {
     "groups": [
       {

@@ -315,6 +315,11 @@ pub struct ViewModel {
     /// resolves against this rather than guessing from `hints` (primary
     /// only) or `chrome` (one per command, no context).
     pub bindings: Vec<Hint>,
+    /// How many keys the core has seen. A host that acts on a key before
+    /// the core answers compares this against what it has sent: equal
+    /// means this view accounts for every one of them. Keys that meant
+    /// nothing are counted too, or the count would stall on them.
+    pub keys_handled: u64,
     /// The `?` overlay while open.
     pub help: Option<HelpView>,
     /// What `y` would copy from where the focus is (UI-DESIGN §Chrome).

@@ -20,6 +20,7 @@
       "label": "next file"
     }
   ],
+  "keys_handled": 12,
   "leader": "space",
   "mode": "Normal",
   "pending": "g",

@@ -50,13 +50,16 @@ module Pending = {
 
   let make = (): t => {keys: []}
 
-  /// What `chord` completes, given what is already pending, and what is
-  /// pending afterwards: a chord that finishes a binding or matches
-  /// nothing clears the prefix; one that begins a longer binding extends
-  /// it. Bindings come from the table, so a rebinding is followed.
-  let step = (p: t, bindings: array<View.Hint.t>, chord: Keys.KeyChord.t): option<
-    View.Command.t,
-  > => {
+  /// What the core will make of `chord`, resolved against the same
+  /// bindings it uses: a command, the start of a longer one, or nothing
+  /// at all — which the core reports as an unbound key and does not
+  /// count, so neither does the shell.
+  type outcome =
+    | Runs(View.Command.t)
+    | Prefix
+    | Unbound
+
+  let step = (p: t, bindings: array<View.Hint.t>, chord: Keys.KeyChord.t): outcome => {
     let typed = Array.concat(p.keys, [chordText(chord)])
     let text = typed->Array.join(" ")
     let exact = bindings->Array.find(h => h.keys == text)
@@ -64,15 +67,18 @@ module Pending = {
     switch (exact, prefix) {
     | (Some(h), _) => {
         p.keys = []
-        Some(h.command)
+        Runs(h.command)
       }
     | (None, true) => {
         p.keys = typed
-        None
+        Prefix
       }
     | (None, false) => {
+        // A key that cancels a pending sequence is still one the core
+        // acts on; one typed with nothing pending is not.
+        let cancelled = Array.length(p.keys) > 0
         p.keys = []
-        None
+        cancelled ? Prefix : Unbound
       }
     }
   }
@@ -155,22 +161,24 @@ module Shell = {
     let modelRef = React.useRef(model)
     modelRef.current = model
     let pending = React.useRef(Pending.make())
-    // Chords this shell has sent that the core has not answered yet. The
-    // core applies keys in order, so `j` then `y` copies the file `j`
-    // moved to — a target read before that answer arrives would be the
-    // previous file, and the shell would disagree with the command
-    // stream. While anything is in flight the copy waits for the next
-    // model instead of guessing.
-    let inFlight = React.useRef(0)
-    let deferredCopy = React.useRef(false)
+    // Keys this shell has sent, counted against the core's own count of
+    // keys seen. The core applies keys in order, so `j` then `y` copies
+    // the file `j` moved to; a target read before the core has accounted
+    // for `j` is the previous file. A model is not an acknowledgement —
+    // a command that changes nothing emits no patch of its own — so the
+    // correlation is the count, not the arrival.
+    let sent = React.useRef(0)
+    let copyAfter = React.useRef(None)
     React.useEffect1(() => {
-      inFlight.current = 0
-      if deferredCopy.current {
-        deferredCopy.current = false
-        switch model.copyTarget {
-        | Some(path) => copy(path)
-        | None => ()
+      switch copyAfter.current {
+      | Some(n) if model.keysHandled >= n => {
+          copyAfter.current = None
+          switch model.copyTarget {
+          | Some(path) => copy(path)
+          | None => ()
+          }
         }
+      | Some(_) | None => ()
       }
       None
     }, [model])
@@ -184,21 +192,32 @@ module Shell = {
             // the prefix this shell has typed (the core's `pendingKeys`
             // is its answer to the previous key, a round trip behind) and
             // from the bindings that actually apply where the focus is.
-            switch Pending.step(pending.current, bindingsFor(m), chord) {
-            | Some(CopyPath) =>
-              if inFlight.current > 0 {
-                // Earlier keys are still unanswered: what they move the
-                // focus to is what `y` must copy, so wait for it.
-                deferredCopy.current = true
-              } else {
+            let outcome = Pending.step(pending.current, bindingsFor(m), chord)
+            // Only keys the core acts on are counted, on both sides: an
+            // unbound key is an error there and adds nothing to its
+            // count, so adding one here would stall this one for ever.
+            let before = sent.current
+            switch outcome {
+            | Runs(_) | Prefix => sent.current = sent.current + 1
+            | Unbound => ()
+            }
+            switch outcome {
+            | Runs(CopyPath) =>
+              if m.keysHandled >= before {
+                // The core has accounted for every key before this one,
+                // so this view is the one this key acts on: copy inside
+                // the gesture.
                 switch m.copyTarget {
                 | Some(path) => copy(path)
                 | None => ()
                 }
+              } else {
+                // Earlier keys are still unaccounted for; where they move
+                // the focus is what this key must copy.
+                copyAfter.current = Some(before)
               }
-            | Some(_) | None => ()
+            | Runs(_) | Prefix | Unbound => ()
             }
-            inFlight.current = inFlight.current + 1
           },
           ev,
         )
