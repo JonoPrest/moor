@@ -12,6 +12,7 @@ pub mod keys_file;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use nits_client_core::{
@@ -57,6 +58,23 @@ pub struct HostConfig {
     pub keys_file: Option<PathBuf>,
 }
 
+/// Resources shared by one or more independent host sessions.
+#[derive(Debug, Clone)]
+pub struct HostSettings {
+    pub endpoint: DaemonEndpoint,
+    pub kv: KvConfig,
+    pub cache: CacheConfig,
+    pub tick: Duration,
+    pub keys_file: Option<PathBuf>,
+}
+
+/// Identity and id entropy private to one [`ClientCore`].
+#[derive(Debug, Clone)]
+pub struct HostSession {
+    pub identity: Identity,
+    pub id_seed: IdSeed,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum HostError {
     #[error("kv store: {0}")]
@@ -65,6 +83,8 @@ pub enum HostError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum KvError {
+    #[error("the shared KV lock was poisoned")]
+    Poisoned,
     #[error(transparent)]
     Database(#[from] redb::DatabaseError),
     #[error(transparent)]
@@ -83,6 +103,105 @@ const KV_TABLE: redb::TableDefinition<'_, &str, &[u8]> = redb::TableDefinition::
 enum Kv {
     Memory(HashMap<String, Vec<u8>>),
     Redb(redb::Database),
+}
+
+/// One opened host KV store. Clones share the same in-memory map or redb
+/// handle, so several independent UI sessions can share preferences and
+/// content-addressed disk entries without opening a redb file twice.
+#[derive(Clone)]
+struct KvStore {
+    inner: Arc<Mutex<Kv>>,
+}
+
+impl std::fmt::Debug for KvStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KvStore").finish_non_exhaustive()
+    }
+}
+
+impl KvStore {
+    fn open(config: &KvConfig) -> Result<Self, KvError> {
+        Ok(Self {
+            inner: Arc::new(Mutex::new(Kv::open(config)?)),
+        })
+    }
+
+    fn get(&self, key: &str) -> Result<Option<Vec<u8>>, KvError> {
+        self.inner.lock().map_err(|_| KvError::Poisoned)?.get(key)
+    }
+
+    fn put(&self, key: &str, value: &[u8]) -> Result<(), KvError> {
+        self.inner
+            .lock()
+            .map_err(|_| KvError::Poisoned)?
+            .put(key, value)
+    }
+
+    fn remove(&self, key: &str) -> Result<(), KvError> {
+        self.inner
+            .lock()
+            .map_err(|_| KvError::Poisoned)?
+            .remove(key)
+    }
+}
+
+/// Prepared shared host resources. Opening this once and spawning several
+/// sessions shares only the KV backing; every spawn still owns its own core,
+/// transport and client identity.
+#[derive(Debug, Clone)]
+pub struct HostFactory {
+    endpoint: DaemonEndpoint,
+    kv: KvStore,
+    cache: CacheConfig,
+    tick: Duration,
+    keys_file: Option<PathBuf>,
+}
+
+impl HostFactory {
+    pub fn new(settings: HostSettings) -> Result<Self, HostError> {
+        Ok(Self {
+            kv: KvStore::open(&settings.kv)?,
+            endpoint: settings.endpoint,
+            cache: settings.cache,
+            tick: settings.tick,
+            keys_file: settings.keys_file,
+        })
+    }
+
+    /// Start one independent core and daemon connection on the current
+    /// runtime, backed by this factory's shared KV store.
+    #[must_use]
+    pub fn spawn(
+        &self,
+        session: HostSession,
+        shutdown: CancellationToken,
+    ) -> (Handle, mpsc::UnboundedReceiver<Vec<ViewPatch>>) {
+        let (actions_tx, actions_rx) = mpsc::unbounded_channel();
+        let (patches_tx, patches_rx) = mpsc::unbounded_channel();
+        let host = Host {
+            core: ClientCore::new(Config {
+                client_id: session.identity.client_id,
+                client: session.identity.client,
+                author: session.identity.author,
+                id_seed: session.id_seed,
+                cache: self.cache.clone(),
+            }),
+            endpoint: self.endpoint.clone(),
+            kv: self.kv.clone(),
+            tick: self.tick,
+            keys_file: self.keys_file.clone(),
+            writer: None,
+            connection: None,
+            patches: patches_tx,
+        };
+        tokio::spawn(host.run(actions_rx, shutdown));
+        (
+            Handle {
+                actions: actions_tx,
+            },
+            patches_rx,
+        )
+    }
 }
 
 impl Kv {
@@ -199,41 +318,27 @@ pub fn spawn(
         tick,
         keys_file,
     } = config;
-    let kv = Kv::open(&kv)?;
-    let (actions_tx, actions_rx) = mpsc::unbounded_channel();
-    let (patches_tx, patches_rx) = mpsc::unbounded_channel();
-    let host = Host {
-        core: ClientCore::new(Config {
-            client_id: identity.client_id,
-            client: identity.client,
-            author: identity.author,
-            id_seed,
-            cache,
-        }),
+    let factory = HostFactory::new(HostSettings {
         endpoint,
         kv,
+        cache,
         tick,
         keys_file,
-        writer: None,
-        patches: patches_tx,
-    };
-    tokio::spawn(host.run(actions_rx, shutdown));
-    Ok((
-        Handle {
-            actions: actions_tx,
-        },
-        patches_rx,
-    ))
+    })?;
+    Ok(factory.spawn(HostSession { identity, id_seed }, shutdown))
 }
 
 struct Host {
     core: ClientCore,
     endpoint: DaemonEndpoint,
-    kv: Kv,
+    kv: KvStore,
     tick: Duration,
     keys_file: Option<PathBuf>,
     /// Outbound frames while connected.
     writer: Option<mpsc::UnboundedSender<ClientMsg>>,
+    /// The dial plus framed connection. Aborted when this host ends so a
+    /// connection attempt (especially SSH) cannot outlive its browser tab.
+    connection: Option<tokio::task::JoinHandle<()>>,
     patches: mpsc::UnboundedSender<Vec<ViewPatch>>,
 }
 
@@ -283,6 +388,10 @@ impl Host {
                 }
             }
         }
+        self.writer = None;
+        if let Some(connection) = self.connection.take() {
+            connection.abort();
+        }
     }
 
     /// Run one input through the core and act on its effects. Rejections
@@ -301,12 +410,20 @@ impl Host {
     fn effect(&mut self, effect: Effect, incoming: &mpsc::UnboundedSender<Incoming>) {
         match effect {
             Effect::Connect => {
-                tokio::spawn(connect(self.endpoint.clone(), incoming.clone()));
+                if let Some(connection) = self.connection.take() {
+                    connection.abort();
+                }
+                self.connection = Some(tokio::spawn(connect(
+                    self.endpoint.clone(),
+                    incoming.clone(),
+                )));
             }
             Effect::Disconnect => {
-                // Dropping the sender ends the writer task, which closes the
-                // framed transport; the reader then reports `Disconnected`.
                 self.writer = None;
+                if let Some(connection) = self.connection.take() {
+                    connection.abort();
+                }
+                let _ = incoming.send(Incoming::Disconnected);
             }
             Effect::Send(msg) => {
                 if let Some(w) = &self.writer
@@ -401,32 +518,42 @@ where
     if incoming.send(Incoming::Connected(out_tx)).is_err() {
         return;
     }
-    let writer = tokio::spawn(async move {
+    // A byte-frame read is not cancellation-safe: dropping `recv_msg` after
+    // it consumed part of a length or payload would desynchronise the next
+    // read. Keep each direction in its own task. `JoinSet` aborts both tasks
+    // if this owning connection future is itself cancelled.
+    let mut sides = tokio::task::JoinSet::new();
+    sides.spawn(async move {
         while let Some(msg) = out_rx.recv().await {
             if transport::send_msg(&mut write, &Envelope::current(msg))
                 .await
                 .is_err()
             {
-                break;
+                return;
             }
         }
         let _ = write.close().await;
     });
-    loop {
-        match transport::recv_msg::<_, ServerMsg>(&mut read).await {
-            Ok(Some(env)) => {
-                if incoming.send(Incoming::Msg(env.msg)).is_err() {
-                    break;
+    let reader_incoming = incoming.clone();
+    sides.spawn(async move {
+        loop {
+            match transport::recv_msg::<_, ServerMsg>(&mut read).await {
+                Ok(Some(env)) => {
+                    if reader_incoming.send(Incoming::Msg(env.msg)).is_err() {
+                        return;
+                    }
+                }
+                Ok(None) => return,
+                Err(err) => {
+                    tracing::debug!(%err, "read failed");
+                    return;
                 }
             }
-            Ok(None) => break,
-            Err(err) => {
-                tracing::debug!(%err, "read failed");
-                break;
-            }
         }
-    }
-    writer.abort();
+    });
+    let _ = sides.join_next().await;
+    sides.abort_all();
+    while sides.join_next().await.is_some() {}
     let _ = incoming.send(Incoming::Disconnected);
 }
 
@@ -468,6 +595,7 @@ pub fn host_config(
 mod tests {
     use super::*;
     use nitsd::contexts::{StartPolicy, local_spec};
+    use tokio::io::AsyncWriteExt as _;
 
     fn identity() -> Identity {
         Identity {
@@ -526,5 +654,46 @@ mod tests {
         );
         assert_eq!(local.cache.disk, DiskTier::Disabled);
         assert_eq!(memory_remote.cache.disk, DiskTier::Disabled);
+    }
+
+    #[tokio::test]
+    async fn outbound_work_does_not_cancel_a_fragmented_inbound_frame() {
+        let (host, mut peer) = tokio::io::duplex(4096);
+        let (read, write) = transport::byte_stream(host);
+        let (incoming, mut received) = mpsc::unbounded_channel();
+        let connection = tokio::spawn(serve_framed(read, write, incoming));
+        let out = match received.recv().await.unwrap() {
+            Incoming::Connected(out) => out,
+            Incoming::Msg(_) | Incoming::Disconnected => panic!("connection did not start"),
+        };
+
+        let payload = serde_json::to_vec(&Envelope::current(ServerMsg::Rejected {
+            error: nits_protocol::RpcError::Cancelled,
+        }))
+        .unwrap();
+        let mut frame = u32::try_from(payload.len()).unwrap().to_be_bytes().to_vec();
+        frame.extend(payload);
+        peer.write_all(&frame[..2]).await.unwrap();
+        tokio::task::yield_now().await;
+        out.send(ClientMsg::Request {
+            id: nits_protocol::RequestId::new(1),
+            request: nits_protocol::Request::Shutdown,
+        })
+        .unwrap();
+        tokio::task::yield_now().await;
+        peer.write_all(&frame[2..]).await.unwrap();
+
+        let inbound = tokio::time::timeout(Duration::from_secs(1), received.recv())
+            .await
+            .expect("fragmented frame timed out")
+            .expect("connection ended during fragmented frame");
+        assert!(matches!(
+            inbound,
+            Incoming::Msg(ServerMsg::Rejected {
+                error: nits_protocol::RpcError::Cancelled
+            })
+        ));
+        drop(peer);
+        connection.await.unwrap();
     }
 }

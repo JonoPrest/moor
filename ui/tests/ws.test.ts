@@ -74,18 +74,34 @@ describe("CoreWs", () => {
     expect(JSON.stringify(model.connection)).not.toContain("Disconnected");
   });
 
-  it("reconnects after close and re-attaches", async () => {
+  it("resets session state, reconnects, and ignores its stale socket", async () => {
     vi.useFakeTimers();
     const core = CoreWs.make("ws://test", () => {});
     const first = FakeWebSocket.instances[0];
+    let model: any;
+    core.subscribe((m: any) => (model = m));
     first.open();
+    first.message([patchFixture("Connection"), patchFixture("Hints")]);
+    expect(JSON.stringify(model)).toContain("CopyPath");
     first.close();
+    expect(JSON.stringify(model)).toContain("Disconnected");
+    expect(JSON.stringify(model)).not.toContain("CopyPath");
+    core.attach();
     vi.advanceTimersByTime(1500);
     expect(FakeWebSocket.instances.length).toBe(2);
     const second = FakeWebSocket.instances[1];
     second.open();
     expect(JSON.parse(second.sent[0])).toEqual({ cmd: "attach" });
-    core.attach();
     expect(second.sent.length).toBe(2);
+    second.message([patchFixture("Connection")]);
+    const current = JSON.stringify(model);
+
+    // Neither a late frame nor another close callback from the replaced
+    // socket may mutate the new session or schedule a third connection.
+    first.message([patchFixture("Hints")]);
+    first.close();
+    vi.advanceTimersByTime(1500);
+    expect(JSON.stringify(model)).toBe(current);
+    expect(FakeWebSocket.instances.length).toBe(2);
   });
 });

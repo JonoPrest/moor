@@ -139,6 +139,7 @@ module Shell = {
     let deepLinked = React.useRef(false)
     React.useEffect1(() => {
       switch (model.connection, CoreWs.reviewParam()) {
+      | (Disconnected(_), _) => deepLinked.current = false
       | (Subscribed(_), Some(reviewId)) if !deepLinked.current => {
           deepLinked.current = true
           core.dispatch(OpenReview({reviewId: reviewId}))
@@ -149,9 +150,8 @@ module Shell = {
     }, [model.connection])
     // Copying happens here, in the gesture that asks for it: a clipboard
     // write needs transient user activation, which a round trip through
-    // the core spends, and one host serves every attached browser, so
-    // nothing about a copy should travel through the shared view at all.
-    // The core still decides WHICH file — `model.copyTarget`.
+    // the core spends. The core still decides WHICH file —
+    // `model.copyTarget` — and each browser socket owns that core.
     let (toast, setToast) = React.useState(() => None)
     // One writer for the shell, so a slow write that settles after a
     // later one cannot overwrite what the reader is now looking at.
@@ -178,22 +178,34 @@ module Shell = {
     React.useEffect1(() => {
       let seq = seqOf(model)
 
-      // Nothing of ours outstanding: adopt the core's count. It is
-      // shared — a reload attaches to a core mid-session, and the web
-      // bridge serves every browser from one — so where it has got to is
-      // never this shell's to assume.
-      if seq >= sent.current {
-        sent.current = seq
-      }
-      let answered = awaitingCopy.current->Array.some(wanted => wanted == seq)
+      switch (model.connection, model.lastKey) {
+      | (Disconnected(_), None) => {
+          // CoreWs reconnects to a fresh host/core. Forget every verdict
+          // belonging to the ended session before its sequence restarts.
+          sent.current = 0
+          awaitingCopy.current = []
+          pending.current.keys = []
+        }
+      | _ => {
+          // Nothing of ours outstanding: adopt the core's count. A UI can
+          // still remount against the same Tauri/core session, so where it
+          // has got to is never this shell's to assume.
+          if seq >= sent.current {
+            sent.current = seq
+          }
+          let answered = awaitingCopy.current->Array.some(wanted => wanted == seq)
 
-      // A verdict this shell never saw (two keys inside one batch) drops
-      // the copy rather than guessing at it.
-      awaitingCopy.current = awaitingCopy.current->Array.filter(wanted => wanted > seq)
-      if answered && model.lastKey->Option.flatMap(k => k.command) == Some(View.Command.CopyPath) {
-        switch model.copyTarget {
-        | Some(path) => copy(path)
-        | None => ()
+          // A verdict this shell never saw (two keys inside one batch)
+          // drops the copy rather than guessing at it.
+          awaitingCopy.current = awaitingCopy.current->Array.filter(wanted => wanted > seq)
+          if (
+            answered && model.lastKey->Option.flatMap(k => k.command) == Some(View.Command.CopyPath)
+          ) {
+            switch model.copyTarget {
+            | Some(path) => copy(path)
+            | None => ()
+            }
+          }
         }
       }
       None

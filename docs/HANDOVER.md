@@ -10,9 +10,9 @@ state since its filtered list is UI-side. Found and fixed en route: the
 App key handler now preventDefaults printable chars, because the chord
 that opens a text input (`t`/`F`/`:`) used to also type itself into the
 autofocused input (queries like "Fhandover"). All three flows verified
-headlessly. Note for future browser testing: `nits --port …` keeps ONE
-client core per process, so state persists across page loads — restart
-the server between Playwright runs.
+headlessly. Current browser sessions no longer share that old process-wide
+core: every WebSocket has a fresh core and daemon connection, and a reload
+resets navigation/key state while retaining only shared preferences.
 
 The `z` Expand group is also in (Commands ExpandUp/ExpandDown/
 CommentOnFile bound `z u`/`z d`/`z c` in Diff, group label "Expand";

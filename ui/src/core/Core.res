@@ -28,6 +28,14 @@ module Store = {
     store.listeners->Array.forEach(l => l(store.model))
   }
 
+  /// A browser WebSocket reconnects to a fresh host/core. Clear the old
+  /// session before its replacement attaches so key sequence numbers and
+  /// navigational state cannot cross that boundary.
+  let reset = (store: t) => {
+    store.model = View.ViewModel.empty
+    store.listeners->Array.forEach(l => l(store.model))
+  }
+
   let subscribe = (store: t, listener: View.ViewModel.t => unit): unsubscribe => {
     store.listeners = store.listeners->Array.concat([listener])
     listener(store.model)

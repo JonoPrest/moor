@@ -339,7 +339,16 @@ The UI is a renderer over `ViewModel` and a source of `Action`s. It never talks 
 
 ### 6.2 Adapters
 
-`Core.res` defines `dispatch: Action.t => unit` and `subscribe: (ViewModel.t => unit) => unsubscribe`. Two implementations, chosen at startup: `CoreTauri.res` (`invoke`/`listen`) and `CoreWasm.res` (wasm-bindgen exports).
+`Core.res` defines `dispatch: Action.t => unit` and `subscribe: (ViewModel.t => unit) => unsubscribe`. Two implementations are chosen at startup: `CoreTauri.res` (`invoke`/`listen`) and `CoreWs.res` (JSON commands and patch batches over a browser WebSocket).
+
+The browser bridge prepares process resources once, then gives every
+WebSocket its own `ClientCore`, typed client identity/id seed, host task and
+daemon connection. Navigation, focus, cursor and key-verdict state therefore
+belong to one tab. Only the host KV is shared, for preferences and
+content-addressed entries; its redb handle is opened once rather than once per
+tab. Closing a socket cancels its connection (including an owned SSH child),
+and reconnecting creates a fresh session whose empty model replaces the old
+one before attach.
 
 ### 6.3 Type bridge
 
