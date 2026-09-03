@@ -450,6 +450,10 @@
     outline: 1px solid var(--color-focus);
     outline-offset: -1px;
   }
+  .stepper-selected {
+    background: var(--color-diff-hunk-bg);
+    font-weight: 600;
+  }
   .tree-header {
     @apply text-[11px] font-semibold tracking-wide text-muted uppercase;
   }
@@ -645,12 +649,6 @@
   }
   .tab-placeholder {
     @apply flex flex-1 items-center justify-center text-muted;
-  }
-  .scope-control {
-    @apply flex items-center gap-1;
-  }
-  .scope-position {
-    @apply ml-1 font-mono text-xs text-muted;
   }
   .review-header-toggles {
     @apply ml-auto flex items-center gap-2;

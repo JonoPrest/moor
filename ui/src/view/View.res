@@ -328,7 +328,7 @@ module CommitStepper = {
   type t = {
     @as("repo_id") repoId: repoId,
     commits: array<StepperCommit.t>,
-    selected: @s.null option<int>,
+    @as("has_worktree") hasWorktree: bool,
   }
 }
 

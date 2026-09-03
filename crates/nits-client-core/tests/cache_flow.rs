@@ -392,6 +392,10 @@ fn item(core: &mut ClientCore, id: RequestId, item: StreamItem) -> Vec<Effect> {
 /// Open a review over a local daemon: the full `OpenReview` stream with two
 /// files, `a.rs` (10 chunks) and `b.rs` (1 chunk), first chunks included.
 fn open_streamed(core: &mut ClientCore) -> Vec<Effect> {
+    open_streamed_with(core, snapshot(1, 2))
+}
+
+fn open_streamed_with(core: &mut ClientCore, snapshot: ReviewSnapshot) -> Vec<Effect> {
     let effects = core
         .handle(Input::User(Action::OpenReview {
             review_id: review_id(),
@@ -406,13 +410,7 @@ fn open_streamed(core: &mut ClientCore) -> Vec<Effect> {
         }
     );
     let mut all = Vec::new();
-    all.extend(item(
-        core,
-        id,
-        StreamItem::ReviewSnapshot {
-            snapshot: snapshot(1, 2),
-        },
-    ));
+    all.extend(item(core, id, StreamItem::ReviewSnapshot { snapshot }));
     all.extend(item(
         core,
         id,
@@ -1975,22 +1973,16 @@ fn commit_stepper_lists_and_steps() {
     let stepper = core.view().stepper.as_ref().unwrap();
     assert_eq!(stepper.commits.len(), 2);
     assert_eq!(stepper.commits[1].subject, "second");
-    assert_eq!(stepper.selected, None);
+    assert!(!stepper.has_worktree);
     assert_eq!(
         core.handle(Input::User(Action::StepCommit { selected: Some(2) })),
         Err(CoreError::CommitOutOfRange(2))
     );
-    let effects = core
-        .handle(Input::User(Action::StepCommit { selected: Some(0) }))
-        .unwrap();
-    assert_eq!(rendered(&effects), vec![ViewSection::CommitStepper]);
-    assert_eq!(core.view().stepper.as_ref().unwrap().selected, Some(0));
-
     // `enter` on a focused commit selects the commit as the diff scope,
-    // exactly like a click in the UI. Scope application keeps the stepper
-    // selection and the displayed diff synchronized.
+    // exactly like a click in the UI. Index zero is the aggregate row, so
+    // the second commit is the third selectable row.
     core.handle(Input::User(Action::SetFocus {
-        focus: Focus::CommitStepper { index: 1 },
+        focus: Focus::CommitStepper { index: 2 },
     }))
     .unwrap();
     let second = CommitOid::new(Oid::from_bytes([2; 20]));
@@ -2026,7 +2018,6 @@ fn commit_stepper_lists_and_steps() {
             ViewSection::Diff,
             ViewSection::Tree,
             ViewSection::Progress,
-            ViewSection::CommitStepper,
             ViewSection::Hints,
         ]
     );
@@ -2037,10 +2028,109 @@ fn commit_stepper_lists_and_steps() {
             oid: second,
         }
     );
-    assert_eq!(core.view().stepper.as_ref().unwrap().selected, Some(1));
+    // The aggregate row resolves through the same typed scope action and
+    // therefore follows a scope selected by any shortcut or pointer.
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::CommitStepper { index: 0 },
+    }))
+    .unwrap();
+    assert_eq!(
+        resolve_command(&core, nits_client_core::Command::Open),
+        Ok(Action::SetScope {
+            scope: ScopeChoice::All,
+        })
+    );
+    let effects = core
+        .handle(Input::Key(KeyChord::named(NamedKey::Enter)))
+        .unwrap();
+    assert!(requests(&effects).iter().any(|(_, request)| *request
+        == Request::ListFiles {
+            review_id: review_id(),
+            scope: DiffScope::All,
+        }));
+    assert_eq!(core.view().scope, DiffScope::All);
     // Closing the review drops the stepper.
     core.handle(Input::User(Action::CloseReview)).unwrap();
     assert!(core.view().stepper.is_none());
+}
+
+#[test]
+fn commit_stepper_worktree_row_selects_the_worktree_scope() {
+    let mut core = subscribed(local());
+    let mut worktree_snapshot = snapshot(1, 2);
+    worktree_snapshot.review.targets = NonEmpty::singleton(ReviewTarget {
+        repo_id: repo_id(),
+        base: RefSpec::Branch {
+            name: "main".into(),
+        },
+        head: RefSpec::WorkingTree,
+    });
+    worktree_snapshot.resolved = Some(NonEmpty::singleton(ResolvedTarget {
+        repo_id: repo_id(),
+        base: ResolvedRef {
+            tree: tree_oid(1),
+            source: ResolvedSource::Commit {
+                oid: CommitOid::new(Oid::from_bytes([1; 20])),
+            },
+        },
+        head: ResolvedRef {
+            tree: tree_oid(2),
+            source: ResolvedSource::WorkingTree {
+                dirty: vec![path("a.rs")],
+                branch: Some("feature".into()),
+            },
+        },
+    }));
+    open_streamed_with(&mut core, worktree_snapshot);
+    let effects = core
+        .handle(Input::User(Action::ListCommits { repo_id: repo_id() }))
+        .unwrap();
+    let id = requests(&effects)[0].0;
+    let sig = nits_protocol::Sig {
+        name: "ada".into(),
+        email: "ada@example.com".into(),
+        time: Timestamp::from_millis(5),
+        offset_minutes: 0,
+    };
+    core.handle(Input::Server(ServerMsg::Response {
+        id,
+        response: Response::Commits {
+            commits: vec![nits_protocol::CommitInfo {
+                oid: CommitOid::new(Oid::from_bytes([2; 20])),
+                parents: Vec::new(),
+                tree: tree_oid(2),
+                author: sig.clone(),
+                committer: sig,
+                subject: "one commit".into(),
+                body: String::new(),
+            }],
+        },
+    }))
+    .unwrap();
+    assert!(core.view().stepper.as_ref().unwrap().has_worktree);
+    core.handle(Input::User(Action::SetFocus {
+        // All changes, one commit, then the working tree.
+        focus: Focus::CommitStepper { index: 2 },
+    }))
+    .unwrap();
+    assert_eq!(
+        resolve_command(&core, nits_client_core::Command::Open),
+        Ok(Action::SetScope {
+            scope: ScopeChoice::Worktree { repo_id: repo_id() },
+        })
+    );
+    let effects = core
+        .handle(Input::Key(KeyChord::named(NamedKey::Enter)))
+        .unwrap();
+    assert!(requests(&effects).iter().any(|(_, request)| *request
+        == Request::ListFiles {
+            review_id: review_id(),
+            scope: DiffScope::Worktree { repo_id: repo_id() },
+        }));
+    assert_eq!(
+        core.view().scope,
+        DiffScope::Worktree { repo_id: repo_id() }
+    );
 }
 
 #[test]
@@ -2104,7 +2194,6 @@ fn scope_switching_refetches_files_and_steps_commits() {
             }
         }
     );
-    assert_eq!(core.view().stepper.as_ref().unwrap().selected, Some(0));
     // The scoped answer carries the step's targets; the header follows them.
     let step_targets = vec![ResolvedTarget {
         repo_id: repo_id(),
@@ -2169,7 +2258,6 @@ fn scope_switching_refetches_files_and_steps_commits() {
         core.view().resolved_targets,
         resolved(1, 2).into_iter().collect::<Vec<_>>()
     );
-    assert_eq!(core.view().stepper.as_ref().unwrap().selected, None);
 }
 
 #[test]

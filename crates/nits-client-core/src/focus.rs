@@ -138,7 +138,10 @@ fn extent(view: &ViewModel, context: Context) -> usize {
             nits_protocol::RenderContent::Binary => 0,
         }),
         Context::Thread => view.threads.len(),
-        Context::CommitStepper => view.stepper.as_ref().map_or(0, |s| s.commits.len()),
+        Context::CommitStepper => view
+            .stepper
+            .as_ref()
+            .map_or(0, crate::diff::CommitStepper::row_count),
         Context::Composer | Context::Help | Context::Global => 0,
     }
 }
@@ -794,13 +797,27 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
             }
             Focus::CommitStepper { index } => {
                 let stepper = view.stepper.as_ref().ok_or_else(nothing)?;
-                let commit = stepper.commits.get(index).ok_or_else(nothing)?;
-                Ok(Action::SetScope {
-                    scope: ScopeChoice::Commit {
-                        repo_id: stepper.repo_id,
-                        oid: commit.oid,
-                    },
-                })
+                if index == 0 {
+                    return Ok(Action::SetScope {
+                        scope: ScopeChoice::All,
+                    });
+                }
+                if let Some(commit) = stepper.commits.get(index - 1) {
+                    return Ok(Action::SetScope {
+                        scope: ScopeChoice::Commit {
+                            repo_id: stepper.repo_id,
+                            oid: commit.oid,
+                        },
+                    });
+                }
+                if stepper.has_worktree && index == stepper.commits.len() + 1 {
+                    return Ok(Action::SetScope {
+                        scope: ScopeChoice::Worktree {
+                            repo_id: stepper.repo_id,
+                        },
+                    });
+                }
+                Err(nothing())
             }
             Focus::Composer | Focus::Help => Err(nothing()),
         },

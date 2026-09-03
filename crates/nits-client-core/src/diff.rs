@@ -157,18 +157,22 @@ pub struct StepperCommit {
     pub committer_time: Timestamp,
 }
 
-/// Commits of one repo of the review, oldest first, with a cursor.
+/// Commits of one repo of the review, newest first.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CommitStepper {
     pub repo_id: RepoId,
     pub commits: Vec<StepperCommit>,
-    /// Index into `commits`; `None` shows the whole range.
-    pub selected: Option<usize>,
+    /// Whether this review has the working-tree step after its commits.
+    pub has_worktree: bool,
 }
 
 impl CommitStepper {
-    pub(crate) fn from_commits(repo_id: RepoId, commits: &[CommitInfo]) -> Self {
+    pub(crate) fn from_commits(
+        repo_id: RepoId,
+        commits: &[CommitInfo],
+        has_worktree: bool,
+    ) -> Self {
         Self {
             repo_id,
             commits: commits
@@ -184,8 +188,13 @@ impl CommitStepper {
                     committer_time: c.committer.time,
                 })
                 .collect(),
-            selected: None,
+            has_worktree,
         }
+    }
+
+    /// Number of selectable rows: aggregate, commits, then working tree.
+    pub(crate) fn row_count(&self) -> usize {
+        1 + self.commits.len() + usize::from(self.has_worktree)
     }
 }
 

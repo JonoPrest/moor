@@ -285,24 +285,63 @@ describe("Tree", () => {
 })
 
 describe("Stepper", () => {
-  test("shows commit details and a click selects that commit's diff scope", () => {
+  test("selects aggregate and commit scopes from the same list", () => {
     let dispatch = fn()
     let stepper = Fixtures.parse(View.CommitStepper.schema, "client", "CommitStepper", "default")
-    let {container} = render(<Stepper stepper focus={CommitStepper({index: 0})} dispatch />)
-    expect(Element.querySelector(container, ".commit-panel .commit-subject"))->not_->toBeNull
-    expect(Element.querySelector(container, ".commit-body"))->not_->toBeNull
-    expect(Element.querySelector(container, ".commit-panel .commit-oid"))->not_->toBeNull
+    let {container} = render(
+      <Stepper
+        stepper scope={Domain.DiffScope.All({})} focus={CommitStepper({index: 0})} dispatch
+      />,
+    )
     let items = Element.querySelectorAll(container, ".stepper-commit")
+    expect(Array.length(items))->toBe(Array.length(stepper.commits) + 2)
+    expect(Element.textContent(items->Array.getUnsafe(0)))->toContain("All changes")
     expect(Element.hasAttribute(items->Array.getUnsafe(0), "data-focused"))->toBe(true)
     FireEvent.click(items->Array.getUnsafe(0))
     expect(dispatch)->toHaveBeenCalledWith(
       Action.SetFocus({focus: View.Focus.CommitStepper({index: 0})}),
     )
+    expect(dispatch)->toHaveBeenLastCalledWith(Action.SetScope({scope: Action.ScopeChoice.All({})}))
     let commit = stepper.commits->Array.getUnsafe(0)
+    FireEvent.click(items->Array.getUnsafe(1))
+    expect(dispatch)->toHaveBeenCalledWith(
+      Action.SetFocus({focus: View.Focus.CommitStepper({index: 1})}),
+    )
     expect(dispatch)->toHaveBeenLastCalledWith(
       Action.SetScope({
         scope: Action.ScopeChoice.Commit({repoId: stepper.repoId, oid: commit.oid}),
       }),
+    )
+    FireEvent.click(items->Array.getUnsafe(Array.length(items) - 1))
+    expect(dispatch)->toHaveBeenLastCalledWith(
+      Action.SetScope({scope: Action.ScopeChoice.Worktree({repoId: stepper.repoId})}),
+    )
+    cleanup()
+    let {container} = render(
+      <Stepper
+        stepper
+        scope={Domain.DiffScope.Commit({repoId: stepper.repoId, oid: commit.oid})}
+        focus={CommitStepper({index: 1})}
+        dispatch
+      />,
+    )
+    let items = Element.querySelectorAll(container, ".stepper-commit")
+    expect(Element.className(items->Array.getUnsafe(1)))->toContain("stepper-selected")
+    expect(Element.querySelector(container, ".commit-panel .commit-subject"))->not_->toBeNull
+    expect(Element.querySelector(container, ".commit-body"))->not_->toBeNull
+    expect(Element.querySelector(container, ".commit-panel .commit-oid"))->not_->toBeNull
+    cleanup()
+    let {container} = render(
+      <Stepper
+        stepper
+        scope={Domain.DiffScope.Worktree({repoId: stepper.repoId})}
+        focus={CommitStepper({index: Array.length(stepper.commits) + 1})}
+        dispatch
+      />,
+    )
+    let items = Element.querySelectorAll(container, ".stepper-commit")
+    expect(Element.className(items->Array.getUnsafe(Array.length(items) - 1)))->toContain(
+      "stepper-selected",
     )
   })
 })
@@ -679,13 +718,13 @@ describe("ReviewHeader", () => {
   })
 })
 
-describe("ScopeControl", () => {
-  test("shows the scope, toggles worktree, enters by-commit, shows the step", () => {
+describe("ReviewHeader scope", () => {
+  test("keeps the working-tree toggle without a redundant scope selector", () => {
     let dispatch = fn()
     let review = Fixtures.parse(Domain.Review.schema, "protocol", "Review", "default")
     let ws = Fixtures.parse(Domain.Workspace.schema, "protocol", "Workspace", "default")
     let prefs = View.ViewModel.empty.prefs
-    let render_ = (scope, stepper) =>
+    let render_ = scope =>
       render(
         <ReviewHeader
           reviews=[review]
@@ -694,39 +733,19 @@ describe("ScopeControl", () => {
           openReview=Some(review.id)
           prefs
           scope
-          ?stepper
           dispatch
         />,
       )
-    let _ = render_(Domain.DiffScope.All({}), None)
-    let all = Screen.getByText("All changes")
-    expect(Element.hasAttribute(all, "data-active"))->toBe(true)
+    let {container} = render_(Domain.DiffScope.All({}))
+    expect(Element.querySelector(container, "[aria-label=\"diff scope\"]"))->toBeNull
+    expect(Array.length(Screen.queryAllByText("All changes")))->toBe(0)
+    expect(Array.length(Screen.queryAllByText("By commit")))->toBe(0)
     expect(Element.hasAttribute(Screen.getByText("+ working tree"), "data-active"))->toBe(true)
     FireEvent.click(Screen.getByText("+ working tree"))
     expect(dispatch)->toHaveBeenLastCalledWith(Action.SetScope({scope: Committed({})}))
-    FireEvent.click(Screen.getByText("By commit"))
-    expect(dispatch)->toHaveBeenLastCalledWith(Action.SetScope({scope: ByCommit({})}))
     cleanup()
-    // Committed: worktree toggle shown but off.
-    let _ = render_(Domain.DiffScope.Committed({}), None)
+    let _ = render_(Domain.DiffScope.Committed({}))
     expect(Element.hasAttribute(Screen.getByText("+ working tree"), "data-active"))->toBe(false)
-    cleanup()
-    // By-commit at a commit: position indicator from the stepper.
-    let stepper = Fixtures.parse(View.CommitStepper.schema, "client", "CommitStepper", "default")
-    let oid = (stepper.commits->Array.getUnsafe(0)).oid
-    let repoId = stepper.repoId
-    let {container} = render_(Domain.DiffScope.Commit({repoId, oid}), Some(stepper))
-    expect(Element.hasAttribute(Screen.getByText("By commit"), "data-active"))->toBe(true)
-    expect(Array.length(Screen.queryAllByText("+ working tree")))->toBe(0)
-    let position =
-      Element.querySelector(container, ".scope-position")->Nullable.toOption->Option.getExn
-    expect(Element.textContent(position))->toContain("of")
-    cleanup()
-    // The worktree step names itself.
-    let {container} = render_(Domain.DiffScope.Worktree({repoId: repoId}), Some(stepper))
-    let position =
-      Element.querySelector(container, ".scope-position")->Nullable.toOption->Option.getExn
-    expect(Element.textContent(position))->toBe("worktree")
   })
 })
 

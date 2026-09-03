@@ -347,7 +347,7 @@ module Shell = {
           : <aside className={"app-left" ++ (treeFocused ? " app-left-expanded" : "")}>
               <div className="app-left-tree"> left </div>
               {switch model.stepper {
-              | Some(stepper) => <Stepper stepper focus=model.focus dispatch />
+              | Some(stepper) => <Stepper stepper scope=model.scope focus=model.focus dispatch />
               | None => React.null
               }}
               <button
@@ -367,7 +367,6 @@ module Shell = {
             openReview=model.openReview
             prefs=model.prefs
             scope=model.scope
-            stepper=?model.stepper
             chrome=model.chrome
             connection=model.connection
             progress=model.progress

@@ -598,7 +598,7 @@ fn every_action_is_reachable_from_a_binding() {
         .unwrap();
     with_stepper
         .handle(Input::User(Action::SetFocus {
-            focus: Focus::CommitStepper { index: 0 },
+            focus: Focus::CommitStepper { index: 1 },
         }))
         .unwrap();
     states.push(with_stepper);
