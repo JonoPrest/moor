@@ -856,6 +856,32 @@ fn sequences_resolve_and_expire() {
 }
 
 #[test]
+fn pending_diff_expand_group_lists_every_continuation() {
+    let mut core = ready();
+    assert!(matches!(core.view().focus, Focus::Diff { .. }));
+    core.handle(Input::Key(KeyChord::char('z'))).unwrap();
+    assert_eq!(core.view().pending_keys, "z");
+    assert_eq!(core.view().pending_label.as_deref(), Some("Expand/scroll"));
+    assert_eq!(core.view().hints.len(), 6);
+    for (keys, command) in [
+        ("u", Command::ExpandUp),
+        ("d", Command::ExpandDown),
+        ("c", Command::CommentOnFile),
+        ("z", Command::CenterView),
+        ("t", Command::ViewTop),
+        ("b", Command::ViewBottom),
+    ] {
+        assert!(
+            core.view()
+                .hints
+                .iter()
+                .any(|hint| hint.keys == keys && hint.command == command),
+            "pending z group omitted {keys}"
+        );
+    }
+}
+
+#[test]
 fn diff_focus_scrolls_the_viewport_and_navigates_hunks_and_comments() {
     let mut core = ready();
     core.handle(Input::User(Action::Viewport {
@@ -965,13 +991,50 @@ fn help_and_hints_follow_focus_and_help_is_never_empty() {
     assert!(rendered(&effects).contains(&ViewSection::Help));
     assert_eq!(core.view().focus, Focus::Help);
     let help = core.view().help.as_ref().unwrap();
-    assert_eq!(help.groups[0].context, Context::Help);
+    assert_eq!(
+        help.groups[0].context,
+        Context::Tree,
+        "help describes the context focused when it opened"
+    );
     assert!(help.conflicts.is_empty());
     press(&mut core, "?").unwrap();
     assert!(core.view().help.is_none());
     assert_eq!(core.view().focus, Focus::Tree { index: 0 });
     // Hints changed with the context and back.
     assert_eq!(core.view().hints, hints_tree);
+
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::Diff {
+            row: 0,
+            side: Side::Head,
+        },
+    }))
+    .unwrap();
+    press(&mut core, "?").unwrap();
+    let diff_help = &core.view().help.as_ref().unwrap().groups[0];
+    assert_eq!(diff_help.context, Context::Diff);
+    for (keys, command) in [
+        ("z u", Command::ExpandUp),
+        ("z d", Command::ExpandDown),
+        ("z c", Command::CommentOnFile),
+        ("z z", Command::CenterView),
+        ("z t", Command::ViewTop),
+        ("z b", Command::ViewBottom),
+    ] {
+        assert!(
+            diff_help
+                .entries
+                .iter()
+                .any(|entry| entry.keys == keys && entry.command == command),
+            "Diff help omitted {keys}"
+        );
+    }
+    press(&mut core, "?").unwrap();
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::Tree { index: 0 },
+    }))
+    .unwrap();
+
     // A keys config from the KV re-derives the hints: `open` rebinds to
     // `o` across normal mode.
     let mut normal = std::collections::BTreeMap::new();

@@ -558,7 +558,10 @@ pub struct ClientCore {
     /// Chords of a sequence in progress, and when it started.
     chords: Vec<KeyChord>,
     chord_started: Millis,
-    help_open: bool,
+    /// Context whose bindings the open help overlay describes. `None`
+    /// means help is closed; retaining the origin keeps moving focus into
+    /// `Help` from replacing the commands the reader asked to inspect.
+    help_context: Option<keymap::Context>,
     /// Focus to return to when the composer or help closes.
     focus_return: Option<Focus>,
     /// `SetScope { ByCommit }` is waiting for its `ListCommits` answer.
@@ -628,7 +631,7 @@ impl ClientCore {
             keymap: Keymap::default_table(),
             chords: Vec::new(),
             chord_started: 0,
-            help_open: false,
+            help_context: None,
             focus_return: None,
             by_commit_pending: false,
             file_collapse: std::collections::BTreeMap::new(),
@@ -1052,7 +1055,7 @@ impl ClientCore {
             self.view.leader = leader;
             sections.push(ViewSection::Hints);
         }
-        let help = self.help_open.then(|| self.keymap.help(focus.context()));
+        let help = self.help_context.map(|context| self.keymap.help(context));
         if help != self.view.help {
             self.view.help = help;
             sections.push(ViewSection::Help);
@@ -2126,11 +2129,11 @@ impl ClientCore {
                 Ok(effects)
             }
             Action::ToggleHelp => {
-                if self.help_open {
-                    self.help_open = false;
+                if self.help_context.is_some() {
+                    self.help_context = None;
                     self.leave();
                 } else {
-                    self.help_open = true;
+                    self.help_context = Some(self.view.focus.context());
                     self.enter(Focus::Help);
                 }
                 Ok(vec![render(&[ViewSection::Help, ViewSection::Focus])])
@@ -2463,7 +2466,7 @@ impl ClientCore {
         self.pending.clear();
         self.stepper = None;
         self.focus_return = None;
-        self.help_open = false;
+        self.help_context = None;
         self.by_commit_pending = false;
         self.browse = None;
         self.visual_anchor = None;

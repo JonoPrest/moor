@@ -951,7 +951,11 @@ impl Keymap {
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
                     .join(" ");
-                if !out.iter().any(|h| h.keys == rest) {
+                // The same continuation may deliberately name more than
+                // one command when an override conflicts. Keep both so the
+                // which-key surface reports the collision instead of
+                // silently making one configured command undiscoverable.
+                if !out.iter().any(|h| h.keys == rest && h.command == b.command) {
                     out.push(Hint {
                         keys: rest,
                         command: b.command,
@@ -1343,5 +1347,139 @@ mod tests {
             assert!(hints.iter().all(|h| !h.label.is_empty()));
             assert_eq!(hints.last().unwrap().command, Command::ToggleHelp);
         }
+    }
+
+    #[test]
+    fn help_and_every_pending_prefix_are_exhaustively_derived_from_bindings() {
+        let map = Keymap::default_table();
+        for context in Context::iter() {
+            let help = map.help(context);
+            let contexts = if context == Context::Global {
+                vec![Context::Global]
+            } else {
+                vec![context, Context::Global]
+            };
+            assert_eq!(
+                help.groups.iter().map(|g| g.context).collect::<Vec<_>>(),
+                contexts,
+                "help groups for {context}"
+            );
+            for group in &help.groups {
+                let bindings = map
+                    .bindings()
+                    .iter()
+                    .filter(|binding| binding.context == group.context)
+                    .collect::<Vec<_>>();
+                assert_eq!(group.entries.len(), bindings.len(), "help for {context}");
+                for (entry, binding) in group.entries.iter().zip(bindings) {
+                    assert_eq!(entry.keys, binding.keys.to_string());
+                    assert_eq!(entry.command, binding.command);
+                    assert_eq!(entry.label, label(binding.command));
+                    assert_eq!(entry.primary, binding.primary);
+                    assert_eq!(
+                        entry.overridden,
+                        map.is_overridden(binding.context, binding.command)
+                    );
+                }
+            }
+
+            let mut prefixes = map
+                .applicable(context)
+                .flat_map(|binding| {
+                    (1..binding.keys.chords().len())
+                        .map(|len| binding.keys.chords()[..len].to_vec())
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            prefixes.sort_by_key(|prefix| {
+                prefix
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            });
+            prefixes.dedup();
+            for prefix in prefixes {
+                let expected = map
+                    .applicable(context)
+                    .filter(|binding| {
+                        binding.keys.chords().len() > prefix.len()
+                            && binding.keys.starts_with(&prefix)
+                    })
+                    .map(|binding| Hint {
+                        keys: binding.keys.chords()[prefix.len()..]
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join(" "),
+                        command: binding.command,
+                        label: label(binding.command).to_owned(),
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    map.pending_hints(context, &prefix),
+                    expected,
+                    "pending hints for {context} after {}",
+                    prefix
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn overridden_conflicting_continuations_remain_discoverable() {
+        let map = Keymap::with_overrides(&Overrides {
+            bindings: vec![
+                Override {
+                    context: Context::Diff,
+                    command: Command::ExpandUp,
+                    keys: Some(keys!("z x")),
+                    primary: false,
+                },
+                Override {
+                    context: Context::Diff,
+                    command: Command::ExpandDown,
+                    keys: Some(keys!("z x")),
+                    primary: false,
+                },
+            ],
+        });
+        let pending = map.pending_hints(Context::Diff, &[KeyChord::char('z')]);
+        assert!(
+            pending
+                .iter()
+                .any(|hint| hint.keys == "x" && hint.command == Command::ExpandUp)
+        );
+        assert!(
+            pending
+                .iter()
+                .any(|hint| hint.keys == "x" && hint.command == Command::ExpandDown)
+        );
+
+        let help = map.help(Context::Diff);
+        let diff = help
+            .groups
+            .iter()
+            .find(|group| group.context == Context::Diff)
+            .unwrap();
+        for command in [Command::ExpandUp, Command::ExpandDown] {
+            let entry = diff
+                .entries
+                .iter()
+                .find(|entry| entry.command == command)
+                .unwrap();
+            assert_eq!(entry.keys, "z x");
+            assert!(entry.overridden);
+        }
+        assert!(help.conflicts.iter().any(|conflict| {
+            conflict.context == Context::Diff
+                && conflict.keys.to_string() == "z x"
+                && conflict.commands.contains(&Command::ExpandUp)
+                && conflict.commands.contains(&Command::ExpandDown)
+        }));
     }
 }
