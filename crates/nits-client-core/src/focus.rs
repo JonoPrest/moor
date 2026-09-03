@@ -545,8 +545,10 @@ pub(crate) fn resolve(core: &ClientCore, command: Command) -> Result<Action, NoT
                 | Command::ExpandDown
                 | Command::CommentOnFile
                 | Command::SideBase
-                | Command::SideHead => false,
-                Command::CenterView | Command::ViewTop | Command::ViewBottom => false,
+                | Command::SideHead
+                | Command::CenterView
+                | Command::ViewTop
+                | Command::ViewBottom => false,
             };
             // A folded open file contributes no in-file stops.
             let found = if collapsed_of(view, render) {
