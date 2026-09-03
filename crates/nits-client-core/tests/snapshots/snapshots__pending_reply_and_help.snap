@@ -1135,7 +1135,10 @@ expression: core.view()
       "label": "back"
     }
   ],
-  "keys_handled": 2,
+  "last_key": {
+    "seq": 2,
+    "command": "ToggleHelp"
+  },
   "help": {
     "groups": [
       {

@@ -1296,7 +1296,10 @@ expression: core.view()
       "label": "open"
     }
   ],
-  "keys_handled": 2,
+  "last_key": {
+    "seq": 2,
+    "command": "NextComment"
+  },
   "help": null,
   "copy_target": "src/lib.rs",
   "connection": {

@@ -1296,7 +1296,7 @@ expression: core.view()
       "label": "open"
     }
   ],
-  "keys_handled": 0,
+  "last_key": null,
   "help": null,
   "copy_target": "src/lib.rs",
   "connection": {

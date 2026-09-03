@@ -162,23 +162,39 @@ module Shell = {
     modelRef.current = model
     let pending = React.useRef(Pending.make())
     // Keys this shell has sent, counted against the core's own count of
-    // keys seen. The core applies keys in order, so `j` then `y` copies
-    // the file `j` moved to; a target read before the core has accounted
-    // for `j` is the previous file. A model is not an acknowledgement —
-    // a command that changes nothing emits no patch of its own — so the
-    // correlation is the count, not the arrival.
+    // keys acted on. The core applies keys in order, so `j` then `y`
+    // copies the file `j` moved to; a target read before the core has
+    // accounted for `j` is the previous file. A model is not an
+    // acknowledgement — a command that changes nothing emits no patch of
+    // its own — so the correlation is the count, not the arrival.
     let sent = React.useRef(0)
-    let copyAfter = React.useRef(None)
+    // Keys waiting on the core's verdict, by their number. A key typed
+    // before the core has answered the one before it may land somewhere
+    // else entirely (`g t` moves to the threads, where `y` is bound to
+    // nothing), so what it copies — and whether it copies at all — is
+    // the core's to say, not this shell's to predict.
+    let awaitingCopy = React.useRef([])
+    let seqOf = (m: View.ViewModel.t) => m.lastKey->Option.mapOr(0, k => k.seq)
     React.useEffect1(() => {
-      switch copyAfter.current {
-      | Some(n) if model.keysHandled >= n => {
-          copyAfter.current = None
-          switch model.copyTarget {
-          | Some(path) => copy(path)
-          | None => ()
-          }
+      let seq = seqOf(model)
+
+      // Nothing of ours outstanding: adopt the core's count. It is
+      // shared — a reload attaches to a core mid-session, and the web
+      // bridge serves every browser from one — so where it has got to is
+      // never this shell's to assume.
+      if seq >= sent.current {
+        sent.current = seq
+      }
+      let answered = awaitingCopy.current->Array.some(wanted => wanted == seq)
+
+      // A verdict this shell never saw (two keys inside one batch) drops
+      // the copy rather than guessing at it.
+      awaitingCopy.current = awaitingCopy.current->Array.filter(wanted => wanted > seq)
+      if answered && model.lastKey->Option.flatMap(k => k.command) == Some(View.Command.CopyPath) {
+        switch model.copyTarget {
+        | Some(path) => copy(path)
+        | None => ()
         }
-      | Some(_) | None => ()
       }
       None
     }, [model])
@@ -203,18 +219,21 @@ module Shell = {
             }
             switch outcome {
             | Runs(CopyPath) =>
-              if m.keysHandled >= before {
+              if seqOf(m) >= before {
                 // The core has accounted for every key before this one,
-                // so this view is the one this key acts on: copy inside
-                // the gesture.
+                // so this view is the one this key acts on, and its
+                // context is the one the key lands in: copy inside the
+                // gesture, which is the only place the browser allows it.
                 switch m.copyTarget {
                 | Some(path) => copy(path)
                 | None => ()
                 }
               } else {
-                // Earlier keys are still unaccounted for; where they move
-                // the focus is what this key must copy.
-                copyAfter.current = Some(before)
+                // Earlier keys are still unaccounted for. Where they
+                // leave the focus decides what this key means, so wait
+                // for the core to say — and copy nothing if it says the
+                // key meant nothing there.
+                awaitingCopy.current->Array.push(before + 1)
               }
             | Runs(_) | Prefix | Unbound => ()
             }

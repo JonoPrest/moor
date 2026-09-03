@@ -9,7 +9,8 @@ use std::collections::BTreeSet;
 
 use nits_client_core::{
     Action, ActionKind, CacheConfig, ClientCore, Command, Config, Context, CoreError, Effect,
-    Focus, IdSeed, Input, KeyChord, Keymap, NamedKey, NoTarget, SEQ_TIMEOUT_MS, TransportEvent,
+    Focus, IdSeed, Input, KeyChord, Keymap, LastKey, NamedKey, NoTarget, SEQ_TIMEOUT_MS,
+    TransportEvent,
 };
 use nits_protocol::{
     Anchor, Author, BuildInfo, ChangeKind, ChunkIndex, ClientId, ClientMsg, Comment, CommentId,
@@ -1935,33 +1936,103 @@ fn the_view_lists_the_bindings_that_apply_where_the_focus_is() {
 }
 
 #[test]
-fn every_key_the_core_acts_on_is_counted() {
+fn every_key_the_core_acts_on_is_counted_with_what_it_meant() {
     // A host that acts on a key before the core answers compares this
-    // count against what it has sent. A command that changes nothing
-    // still has to be counted, or the count stalls on it and the host
-    // waits for ever; a key the context does not bind stays a typed
-    // error and is not counted, and the host — resolving against the
-    // same bindings — does not count that one either.
+    // count against what it has sent, and reads the command rather than
+    // predicting one. A command that changes nothing still has to be
+    // counted, or the count stalls on it and the host waits for ever; a
+    // key the context does not bind stays a typed error and is not
+    // counted, and the host — resolving against the same bindings —
+    // does not count that one either.
     let mut core = ready();
     core.handle(Input::User(Action::SetFocus {
         focus: Focus::Tree { index: 2 },
     }))
     .unwrap();
-    let start = core.view().keys_handled;
+    let start = core.view().last_key.map_or(0, |k| k.seq);
 
     // `y` is a no-op in the core (the shell has already copied) and is
-    // still counted, with a patch to carry the count.
+    // still counted, with a patch to carry the verdict.
     let effects = press(&mut core, "y").unwrap();
-    assert_eq!(core.view().keys_handled, start + 1);
+    assert_eq!(
+        core.view().last_key,
+        Some(LastKey {
+            seq: start + 1,
+            command: Some(Command::CopyPath),
+        })
+    );
     assert!(rendered(&effects).contains(&ViewSection::Hints));
 
-    // A prefix and the chord completing it are two.
+    // A prefix and the chord completing it are two, and only the second
+    // resolved to anything.
     press(&mut core, "g").ok();
+    assert_eq!(
+        core.view().last_key,
+        Some(LastKey {
+            seq: start + 2,
+            command: None,
+        })
+    );
     press(&mut core, "g").ok();
-    assert_eq!(core.view().keys_handled, start + 3);
+    assert_eq!(
+        core.view().last_key,
+        Some(LastKey {
+            seq: start + 3,
+            command: Some(Command::GoTop),
+        })
+    );
 
-    // An unbound key stays an error, and stays uncounted.
-    let before = core.view().keys_handled;
+    // An unbound key stays an error, and is still counted: the host
+    // counts the keys it sends, and it sent this one. The rejection
+    // returns before the view is derived, so the verdict rides out with
+    // the next key.
     assert!(core.handle(Input::Key(KeyChord::char('q'))).is_err());
-    assert_eq!(core.view().keys_handled, before);
+    press(&mut core, "j").ok();
+    assert_eq!(
+        core.view().last_key.map(|k| k.seq),
+        Some(start + 5),
+        "the rejected key was counted too"
+    );
+}
+
+#[test]
+fn a_key_that_lands_where_it_is_unbound_reports_no_command() {
+    // The case a host cannot predict: `y` typed straight after `g t`
+    // resolves against the diff's bindings on the way out, but lands in
+    // the thread list, where it means nothing. The core says so, so the
+    // host copies nothing rather than the file it was looking at.
+    let mut core = ready();
+    core.handle(Input::User(Action::SetFocus {
+        focus: Focus::Diff {
+            row: 0,
+            side: Side::Head,
+        },
+    }))
+    .unwrap();
+    assert_eq!(
+        core.view().focus.context(),
+        Context::Diff,
+        "y is bound here"
+    );
+
+    press(&mut core, "g").ok();
+    press(&mut core, "t").ok();
+    assert_eq!(core.view().focus.context(), Context::Thread);
+
+    let waiting = core.view().last_key.map_or(0, |k| k.seq) + 1;
+    assert!(
+        core.handle(Input::Key(KeyChord::char('y'))).is_err(),
+        "y is not bound in the thread list"
+    );
+
+    // The rejection carries no view, so a host waiting on this key's
+    // verdict never sees one: the next verdict is for a later key, which
+    // is how it learns to drop what it was holding rather than copy the
+    // file it happened to be looking at.
+    press(&mut core, "j").ok();
+    let last = core.view().last_key.expect("a later key was published");
+    assert!(
+        last.seq > waiting,
+        "the verdict for the rejected key is never published as a command"
+    );
 }

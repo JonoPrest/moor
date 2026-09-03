@@ -20,7 +20,10 @@
       "label": "next file"
     }
   ],
-  "keys_handled": 12,
+  "last_key": {
+    "command": "CopyPath",
+    "seq": 12
+  },
   "leader": "space",
   "mode": "Normal",
   "pending": "g",

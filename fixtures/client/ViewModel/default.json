@@ -235,8 +235,11 @@
       "label": "next file"
     }
   ],
-  "keys_handled": 12,
   "last_error": null,
+  "last_key": {
+    "command": "CopyPath",
+    "seq": 12
+  },
   "leader": "space",
   "mode": "Normal",
   "open_review": "01HF7YATZ80000000000000004",

@@ -1121,19 +1121,24 @@ function pressKey(key) {
 @module("react") external act: (unit => unit) => unit = "act"
 
 describe("Copying from the keyboard, through the shell", () => {
-  // The core applies keys in order and counts every one it sees, so the
-  // shell can tell whether the view it is holding accounts for the keys
-  // it has sent. A model arriving is not an acknowledgement — a command
-  // that changes nothing emits no patch — so the count is what matters.
-  let model = (~target, ~keysHandled): View.ViewModel.t => {
+  // The core applies keys in order, counts every one it is sent, and
+  // says what each turned out to mean. The shell copies inside the
+  // gesture when its view accounts for every earlier key; otherwise it
+  // waits for the core's verdict rather than predicting one, because a
+  // key typed after a focus change lands somewhere the shell has not
+  // seen yet.
+  let after = (seq, command): option<View.LastKey.t> => Some({seq, command})
+
+  let model = (~target, ~lastKey): View.ViewModel.t => {
     let base = Fixtures.parse(View.ViewModel.schema, "client", "ViewModel", "default")
     {
       ...base,
       copyTarget: Some(target),
-      keysHandled,
+      lastKey,
       bindings: [
         {keys: "y", command: CopyPath, label: "copy path"},
         {keys: "j", command: MoveDown, label: "down"},
+        {keys: "g t", command: FocusThreads, label: "threads"},
       ],
       hints: [],
       chrome: [],
@@ -1157,7 +1162,7 @@ describe("Copying from the keyboard, through the shell", () => {
 
   testAsync("`y` copies the current target when the core is caught up", async () => {
     installClipboard("ok")
-    let (_, _) = mount(model(~target="src/a.rs", ~keysHandled=0))
+    let (_, _) = mount(model(~target="src/a.rs", ~lastKey=None))
     pressKey("y")
     await flush()
     expect(copiedPaths())->toEqual(["src/a.rs"])
@@ -1168,32 +1173,85 @@ describe("Copying from the keyboard, through the shell", () => {
     // `CopyPath` is a no-op in the core, so the second `y` gets no patch
     // of its own: a shell that waited for one would copy once.
     installClipboard("ok")
-    let (_, push) = mount(model(~target="src/a.rs", ~keysHandled=0))
+    let (_, push) = mount(model(~target="src/a.rs", ~lastKey=None))
     pressKey("y")
     await flush()
-    act(() => push.contents(model(~target="src/a.rs", ~keysHandled=1)))
+    act(() => push.contents(model(~target="src/a.rs", ~lastKey=after(1, Some(CopyPath)))))
     pressKey("y")
     await flush()
     expect(copiedPaths())->toEqual(["src/a.rs", "src/a.rs"])
     cleanup()
   })
 
-  testAsync("two movements then `y` waits for both, not the first", async () => {
+  testAsync("two movements then `y` waits for the core's word on `y` itself", async () => {
     installClipboard("ok")
-    let (_, push) = mount(model(~target="before.rs", ~keysHandled=0))
+    let (_, push) = mount(model(~target="before.rs", ~lastKey=None))
     pressKey("j")
     pressKey("j")
     pressKey("y")
     await flush()
     expect(copiedPaths())->toEqual([])
-    // The answer to the first `j` only: still not this key's view.
-    act(() => push.contents(model(~target="after-one.rs", ~keysHandled=1)))
+    // The movements land one at a time; neither is the key that copies.
+    act(() => push.contents(model(~target="after-one.rs", ~lastKey=after(1, Some(MoveDown)))))
+    act(() => push.contents(model(~target="after-two.rs", ~lastKey=after(2, Some(MoveDown)))))
     await flush()
     expect(copiedPaths())->toEqual([])
-    // Both movements accounted for: now it copies, and copies that file.
-    act(() => push.contents(model(~target="after-two.rs", ~keysHandled=2)))
+    // The core reaches the `y`, in the context the movements left it in.
+    act(() => push.contents(model(~target="after-two.rs", ~lastKey=after(3, Some(CopyPath)))))
     await flush()
     expect(copiedPaths())->toEqual(["after-two.rs"])
+    cleanup()
+  })
+
+  testAsync("a shell that attaches mid-session does not read the core as caught up", async () => {
+    // A reload, or a second browser on the shared web host: the core has
+    // handled keys this shell never sent, so its count says nothing about
+    // this shell's own.
+    installClipboard("ok")
+    let (_, push) = mount(model(~target="before.rs", ~lastKey=after(10, Some(MoveDown))))
+    pressKey("j")
+    pressKey("y")
+    await flush()
+    expect(copiedPaths())->toEqual([])
+    act(() => push.contents(model(~target="after.rs", ~lastKey=after(11, Some(MoveDown)))))
+    await flush()
+    expect(copiedPaths())->toEqual([])
+    act(() => push.contents(model(~target="after.rs", ~lastKey=after(12, Some(CopyPath)))))
+    await flush()
+    expect(copiedPaths())->toEqual(["after.rs"])
+    cleanup()
+  })
+
+  testAsync("`y` typed into a context the core has moved to copies nothing", async () => {
+    // `g t` focuses the threads, where `y` is bound to nothing. The shell
+    // still holds the diff's bindings when the `y` arrives, so it would
+    // resolve it as a copy — the core's verdict is what stops it.
+    installClipboard("ok")
+    let (_, push) = mount(model(~target="before.rs", ~lastKey=None))
+    pressKey("g")
+    pressKey("t")
+    pressKey("y")
+    await flush()
+    act(() => push.contents(model(~target="before.rs", ~lastKey=after(2, Some(FocusThreads)))))
+    // The core acted on the `y` and made nothing of it.
+    act(() => push.contents(model(~target="before.rs", ~lastKey=after(3, None))))
+    await flush()
+    expect(copiedPaths())->toEqual([])
+    cleanup()
+  })
+
+  testAsync("two deferred copies both happen, in the order they were typed", async () => {
+    installClipboard("ok")
+    let (_, push) = mount(model(~target="before.rs", ~lastKey=None))
+    pressKey("j")
+    pressKey("y")
+    pressKey("j")
+    pressKey("y")
+    await flush()
+    act(() => push.contents(model(~target="after-one.rs", ~lastKey=after(2, Some(CopyPath)))))
+    act(() => push.contents(model(~target="after-two.rs", ~lastKey=after(4, Some(CopyPath)))))
+    await flush()
+    expect(copiedPaths())->toEqual(["after-one.rs", "after-two.rs"])
     cleanup()
   })
 
@@ -1205,7 +1263,7 @@ describe("Copying from the keyboard, through the shell", () => {
     let onAThread: View.ViewModel.t = {
       ...base,
       copyTarget: Some("src/a.rs"),
-      keysHandled: 0,
+      lastKey: None,
       bindings: [{keys: "enter", command: Open, label: "open"}],
       hints: [],
       chrome: [{keys: "y", command: CopyPath, label: "copy path"}],

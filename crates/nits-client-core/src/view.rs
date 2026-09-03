@@ -238,6 +238,17 @@ pub struct ScrollIntent {
     pub seq: u32,
 }
 
+/// The core's verdict on one key: which key (keys it acts on are counted
+/// in order from 1) and what it resolved to. `None` means the key meant
+/// nothing where it landed — a cancelled sequence, or a command whose
+/// context had moved on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LastKey {
+    pub seq: u64,
+    pub command: Option<crate::keymap::Command>,
+}
+
 /// The Visual-mode line selection (UI-DESIGN: modal keys): row indices of
 /// the open file, ordered, both ends inclusive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -315,11 +326,14 @@ pub struct ViewModel {
     /// resolves against this rather than guessing from `hints` (primary
     /// only) or `chrome` (one per command, no context).
     pub bindings: Vec<Hint>,
-    /// How many keys the core has seen. A host that acts on a key before
-    /// the core answers compares this against what it has sent: equal
-    /// means this view accounts for every one of them. Keys that meant
-    /// nothing are counted too, or the count would stall on them.
-    pub keys_handled: u64,
+    /// What the core made of the last key it acted on. A host that must
+    /// act on a key before the core answers (the clipboard needs the
+    /// gesture that asked for it) compares `seq` against what it has
+    /// sent — equal means this view accounts for every key — and reads
+    /// `command` rather than predicting one: the context a key lands in
+    /// is the one the core moved to, which the host cannot know until it
+    /// is told.
+    pub last_key: Option<LastKey>,
     /// The `?` overlay while open.
     pub help: Option<HelpView>,
     /// What `y` would copy from where the focus is (UI-DESIGN §Chrome).
