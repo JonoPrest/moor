@@ -170,10 +170,10 @@ impl Repo {
             return Ok(trunk_branch.clone().into_ref_spec());
         }
 
-        if let Some(branch) = current.as_ref() {
-            if let Some(parent) = self.reflog_parent(branch, &branches)? {
-                return Ok(parent.into_ref_spec());
-            }
+        if let Some(branch) = current.as_ref()
+            && let Some(parent) = self.reflog_parent(branch, &branches)?
+        {
+            return Ok(parent.into_ref_spec());
         }
 
         if let Some(parent) = self.closest_branch(current.as_ref(), trunk.as_ref(), &branches)? {
@@ -298,10 +298,10 @@ impl Repo {
                 return Ok(Some(branch));
             }
         }
-        if let Some(out) = self.git_probe(&["config", "--get", "init.defaultBranch"])? {
-            if let Some(branch) = find(String::from_utf8_lossy(&out).trim()) {
-                return Ok(Some(branch));
-            }
+        if let Some(out) = self.git_probe(&["config", "--get", "init.defaultBranch"])?
+            && let Some(branch) = find(String::from_utf8_lossy(&out).trim())
+        {
+            return Ok(Some(branch));
         }
         for name in ["main", "master", "trunk", "develop"] {
             if let Some(branch) = find(name) {

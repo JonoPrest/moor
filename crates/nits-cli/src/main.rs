@@ -765,9 +765,8 @@ async fn directory_review(
 ) -> anyhow::Result<nits_protocol::ReviewId> {
     let local = matches!(ctx, Context::Local { .. });
     let root = if local {
-        let root = repo_root(path)
-            .with_context(|| format!("{} is not inside a git repository", path.display()))?;
-        root
+        repo_root(path)
+            .with_context(|| format!("{} is not inside a git repository", path.display()))?
     } else {
         path.to_path_buf()
     };
@@ -835,8 +834,7 @@ async fn working_tree_review(
             .targets
             .iter()
             .find(|target| target.repo_id == located.repo.id && target.head == RefSpec::WorkingTree)
-            .map(|target| ref_label(&target.base))
-            .unwrap_or_else(|| "unknown".into());
+            .map_or_else(|| "unknown".into(), |target| ref_label(&target.base));
         eprintln!("review: {} \"{}\" (base: {base})", r.id, r.title);
         r.id
     } else {
