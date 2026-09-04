@@ -1,9 +1,10 @@
 //! End-to-end scenarios over `Core` (plan 1.6–1.8).
 
 use nits_protocol::{
-    AgentVia, Anchor, Author, ClientId, ClientSeq, CommentId, CommentKind, CommentState, CommitOid,
-    DiffScope, EventBody, NonEmpty, RefSpec, RenderOpts, RepoId, RepoPath, ReviewId, ReviewTarget,
-    Row, Side, ThreadResolution, Timestamp, WorkspaceId,
+    AgentVia, Anchor, Author, BaseRefSpec, ClientId, ClientSeq, CommentId, CommentKind,
+    CommentState, CommitOid, DiffScope, EventBody, NonEmpty, RefSpec, RenderOpts, RepoId, RepoPath,
+    ReviewId, ReviewTarget, ReviewTargetUpdate, Row, Side, TargetRevision, ThreadResolution,
+    Timestamp, WorkspaceId,
 };
 use nits_review_core::comments::{lines_anchor, thread_id_of};
 use nits_review_core::review::ViewedState;
@@ -181,6 +182,70 @@ fn multi_repo_review_lists_files_ordered_by_repo_display_name() {
             .create_review(&human(), review_id(2), ws(), "x".into(), bad),
         Err(CoreError::Invalid { .. })
     ));
+}
+
+#[test]
+fn updating_one_repo_target_is_typed_resolved_and_persisted() {
+    let w = world();
+    w.core
+        .create_review(&human(), review_id(1), ws(), "r".into(), targets())
+        .unwrap();
+    let before = w.core.last_seq().unwrap();
+    w.core
+        .update_review_target(
+            &human(),
+            review_id(1),
+            ReviewTargetUpdate {
+                repo_id: rid(2),
+                revision: TargetRevision::Base {
+                    ref_spec: BaseRefSpec::Head,
+                },
+            },
+        )
+        .unwrap();
+
+    let review = w.core.review(review_id(1)).unwrap();
+    let changed = review
+        .review
+        .targets
+        .iter()
+        .find(|target| target.repo_id == rid(2))
+        .unwrap();
+    assert_eq!(changed.base, RefSpec::Head);
+    let events = w.core.events_after(before).unwrap();
+    assert!(matches!(
+        events.first().map(|event| &event.body),
+        Some(EventBody::ReviewTargetUpdated { target, .. }) if target.repo_id == rid(2)
+    ));
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event.body, EventBody::ReviewTargetsResolved { .. }))
+    );
+
+    let last = w.core.last_seq().unwrap();
+    let error = w
+        .core
+        .update_review_target(
+            &human(),
+            review_id(1),
+            ReviewTargetUpdate {
+                repo_id: rid(2),
+                revision: TargetRevision::Head {
+                    ref_spec: RefSpec::Branch {
+                        name: "missing".into(),
+                    },
+                },
+            },
+        )
+        .unwrap_err();
+    assert!(error.to_string().contains("missing"), "{error}");
+    assert!(matches!(error, CoreError::Invalid { .. }));
+    assert_eq!(
+        w.core.last_seq().unwrap(),
+        last,
+        "invalid refs append no event"
+    );
 }
 
 #[test]

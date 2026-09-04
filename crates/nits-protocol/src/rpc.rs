@@ -10,8 +10,8 @@ use strum::{EnumDiscriminants, EnumIter};
 
 use crate::domain::{
     Anchor, Author, ChangeKind, Comment, CommentKind, CommitInfo, ContentHit, DiffScope,
-    FileChange, RefSpec, RenderOpts, ResolvedTarget, Review, ReviewStatus, ReviewTarget, Thread,
-    TreeDelta, TreeSnapshot, ViewedMark, Workspace,
+    FileChange, RefCandidate, RefSpec, RenderOpts, ResolvedTarget, Review, ReviewStatus,
+    ReviewTarget, ReviewTargetUpdate, Thread, TreeDelta, TreeSnapshot, ViewedMark, Workspace,
 };
 use crate::events::Event;
 use crate::ids::{
@@ -161,6 +161,10 @@ pub enum Mutation {
         title: String,
         status: ReviewStatus,
     },
+    UpdateReviewTarget {
+        review_id: ReviewId,
+        update: ReviewTargetUpdate,
+    },
     DeleteReview {
         review_id: ReviewId,
     },
@@ -233,6 +237,10 @@ pub enum Request {
     /// Detection runs beside the repository, in the daemon, so local and
     /// remote clients behave identically.
     DefaultBase {
+        repo_id: RepoId,
+    },
+    /// Branches, tags, recent commits and working tree read from git.
+    ListRefs {
         repo_id: RepoId,
     },
     GetReview {
@@ -342,6 +350,7 @@ impl Request {
             | Request::BlobRender { .. } => ResponseShape::Stream,
             Request::ListWorkspaces
             | Request::ListReviews { .. }
+            | Request::ListRefs { .. }
             | Request::DefaultBase { .. }
             | Request::GetReview { .. }
             | Request::ReviewSnapshot { .. }
@@ -386,6 +395,10 @@ pub enum Response {
     },
     DefaultBase {
         base: RefSpec,
+    },
+    Refs {
+        repo_id: RepoId,
+        refs: Vec<RefCandidate>,
     },
     Review {
         review: Review,
@@ -518,6 +531,7 @@ pub enum ViewSection {
     Threads,
     Conversation,
     CommitStepper,
+    RefSelector,
     Progress,
     Focus,
     Hints,

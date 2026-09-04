@@ -58,6 +58,62 @@ pub enum RefSpec {
     Head,
 }
 
+/// A revision valid on the base side of a review target. A working tree is
+/// deliberately unrepresentable here: it has no stable parent-side content.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, EnumDiscriminants)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[strum_discriminants(name(BaseRefSpecKind), derive(EnumIter, Hash))]
+#[serde(tag = "type", deny_unknown_fields)]
+pub enum BaseRefSpec {
+    Branch { name: String },
+    Commit { oid: CommitOid },
+    Tag { name: String },
+    Upstream,
+    Head,
+}
+
+impl From<BaseRefSpec> for RefSpec {
+    fn from(spec: BaseRefSpec) -> Self {
+        match spec {
+            BaseRefSpec::Branch { name } => Self::Branch { name },
+            BaseRefSpec::Commit { oid } => Self::Commit { oid },
+            BaseRefSpec::Tag { name } => Self::Tag { name },
+            BaseRefSpec::Upstream => Self::Upstream,
+            BaseRefSpec::Head => Self::Head,
+        }
+    }
+}
+
+/// Which half of one repository's review target is being replaced.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, EnumDiscriminants)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[strum_discriminants(name(TargetRevisionKind), derive(EnumIter, Hash))]
+#[serde(tag = "type", deny_unknown_fields)]
+pub enum TargetRevision {
+    Base { ref_spec: BaseRefSpec },
+    Head { ref_spec: RefSpec },
+}
+
+/// A typed edit of one repo within a possibly multi-repo review.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct ReviewTargetUpdate {
+    pub repo_id: RepoId,
+    pub revision: TargetRevision,
+}
+
+/// One revision offered by the daemon's git-backed selector catalog.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct RefCandidate {
+    pub ref_spec: RefSpec,
+    /// The commit subject for recent-commit candidates; absent for named
+    /// refs and the working tree.
+    pub subject: Option<String>,
+}
+
 /// A resolved ref: the tree it points at, plus what kind of thing it was
 /// resolved from. Every resolved ref has a tree, so that lives outside the
 /// enum; only the parts that differ are variants.

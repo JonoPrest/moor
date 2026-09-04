@@ -215,6 +215,46 @@ module ContentSearchView = {
   }
 }
 
+module RefSelectorSide = {
+  @schema
+  type t = Base | Head
+}
+
+module RefSelectorStatus = {
+  @@warning("-27")
+  @schema @tag("type")
+  type t =
+    | @as("Loading") Loading({})
+    | @as("Ready") Ready({})
+    | @as("Saving") Saving({})
+    | @as("InvalidRef") InvalidRef({message: string})
+    | @as("DaemonError") DaemonError({message: string})
+  @@warning("+27")
+}
+
+module RefOption = {
+  @schema
+  type t = {
+    @as("ref_spec") refSpec: Domain.RefSpec.t,
+    subject: @s.null option<string>,
+    current: bool,
+  }
+}
+
+module RefSelectorView = {
+  @schema
+  type t = {
+    @as("repo_id") repoId: repoId,
+    @as("repo_name") repoName: string,
+    side: RefSelectorSide.t,
+    current: Domain.RefSpec.t,
+    query: string,
+    options: array<RefOption.t>,
+    selected: int,
+    status: RefSelectorStatus.t,
+  }
+}
+
 module Progress = {
   @schema
   type t = {
@@ -507,6 +547,7 @@ module ViewModel = {
     @as("browse_ref") browseRef: @s.null option<Domain.RefSpec.t>,
     @as("content_search") contentSearch: @s.null option<ContentSearchView.t>,
     @as("action_palette") actionPalette: bool,
+    @as("ref_selector") refSelector: @s.null option<RefSelectorView.t>,
     visual: @s.null option<VisualView.t>,
     review: @s.null option<OpenReview.t>,
     draft: @s.null option<Draft.t>,
@@ -551,6 +592,7 @@ module ViewModel = {
     browseRef: None,
     contentSearch: None,
     actionPalette: false,
+    refSelector: None,
     visual: None,
     review: None,
     draft: None,
@@ -588,6 +630,10 @@ module ViewPatch = {
     | @as("Threads") Threads({threads: array<ThreadView.t>})
     | @as("Conversation") Conversation({conversation: array<ThreadView.t>})
     | @as("CommitStepper") CommitStepper({stepper: @s.null option<CommitStepper.t>})
+    | @as("RefSelector")
+    RefSelector({
+        @as("ref_selector") refSelector: @s.null option<RefSelectorView.t>,
+      })
     | @as("Progress") Progress({progress: Progress.t})
     | @as("Focus")
     Focus({
@@ -637,6 +683,7 @@ module ViewPatch = {
     | Threads({threads}) => {...model, threads}
     | Conversation({conversation}) => {...model, conversation}
     | CommitStepper({stepper}) => {...model, stepper}
+    | RefSelector({refSelector}) => {...model, refSelector}
     | Progress({progress}) => {...model, progress}
     | Focus({focus, tab, scroll, copyTarget}) => {...model, focus, tab, scroll, copyTarget}
     | Hints({hints, pending, pendingLabel, mode, leader, chrome, bindings, lastKey}) => {

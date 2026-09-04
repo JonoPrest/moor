@@ -12,6 +12,7 @@ use nits_protocol::{
 use serde::{Deserialize, Serialize};
 use strum::EnumDiscriminants;
 
+use crate::RefSelectorView;
 use crate::diff::{CommitStepper, DiffView, ThreadView};
 use crate::explorer::{Progress, TreeView};
 use crate::focus::Focus;
@@ -63,6 +64,9 @@ pub enum ViewPatch {
     },
     CommitStepper {
         stepper: Option<CommitStepper>,
+    },
+    RefSelector {
+        ref_selector: Option<RefSelectorView>,
     },
     Progress {
         progress: Progress,
@@ -119,6 +123,7 @@ impl ViewPatch {
             ViewPatch::Threads { .. } => ViewSection::Threads,
             ViewPatch::Conversation { .. } => ViewSection::Conversation,
             ViewPatch::CommitStepper { .. } => ViewSection::CommitStepper,
+            ViewPatch::RefSelector { .. } => ViewSection::RefSelector,
             ViewPatch::Progress { .. } => ViewSection::Progress,
             ViewPatch::Focus { .. } => ViewSection::Focus,
             ViewPatch::Hints { .. } => ViewSection::Hints,
@@ -163,6 +168,9 @@ impl ViewModel {
             },
             ViewSection::CommitStepper => ViewPatch::CommitStepper {
                 stepper: self.stepper.clone(),
+            },
+            ViewSection::RefSelector => ViewPatch::RefSelector {
+                ref_selector: self.ref_selector.clone(),
             },
             ViewSection::Progress => ViewPatch::Progress {
                 progress: self.progress,
@@ -250,6 +258,7 @@ impl ViewModel {
             ViewPatch::Threads { threads } => self.threads = threads,
             ViewPatch::Conversation { conversation } => self.conversation = conversation,
             ViewPatch::CommitStepper { stepper } => self.stepper = stepper,
+            ViewPatch::RefSelector { ref_selector } => self.ref_selector = ref_selector,
             ViewPatch::Progress { progress } => self.progress = progress,
             ViewPatch::Focus {
                 focus,

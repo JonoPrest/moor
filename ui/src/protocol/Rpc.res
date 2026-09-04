@@ -72,6 +72,7 @@ module ViewSection = {
     | Threads
     | Conversation
     | CommitStepper
+    | RefSelector
     | Progress
     | Focus
     | Hints
@@ -116,6 +117,11 @@ module Mutation = {
         @as("review_id") reviewId: reviewId,
         title: string,
         status: ReviewStatus.t,
+      })
+    | @as("UpdateReviewTarget")
+    UpdateReviewTarget({
+        @as("review_id") reviewId: reviewId,
+        update: ReviewTargetUpdate.t,
       })
     | @as("DeleteReview") DeleteReview({@as("review_id") reviewId: reviewId})
     | @as("AddComment")
@@ -187,6 +193,7 @@ module Request = {
   type t =
     | @as("ListWorkspaces") ListWorkspaces({})
     | @as("ListReviews") ListReviews({@as("workspace_id") workspaceId: workspaceId})
+    | @as("ListRefs") ListRefs({@as("repo_id") repoId: repoId})
     | @as("DefaultBase") DefaultBase({@as("repo_id") repoId: repoId})
     | @as("GetReview") GetReview({@as("review_id") reviewId: reviewId})
     | @as("ReviewSnapshot") ReviewSnapshot({@as("review_id") reviewId: reviewId})
@@ -258,6 +265,7 @@ module Response = {
     | @as("Search") Search({hits: array<Domain.ContentHit.t>, truncated: bool})
     | @as("Resolved") Resolved({targets: array<ResolvedTarget.t>, changed: bool})
     | @as("Commits") Commits({commits: array<CommitInfo.t>})
+    | @as("Refs") Refs({@as("repo_id") repoId: repoId, refs: array<RefCandidate.t>})
     | @as("TreeSnapshot") TreeSnapshot({snapshot: TreeSnapshot.t})
     | @as("RenderChunk") RenderChunk({chunk: Render.RenderChunk.t})
     | @as("Subscribed") Subscribed({seq: seq})

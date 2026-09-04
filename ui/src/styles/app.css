@@ -322,6 +322,9 @@
   .review-header-ref {
     @apply rounded border border-border bg-bg px-1.5 font-mono text-xs;
   }
+  .review-header-side-label {
+    @apply text-[10px] font-semibold tracking-wide text-muted uppercase;
+  }
   .review-header-arrow {
     @apply text-muted;
   }
@@ -601,6 +604,26 @@
   }
   .palette-truncated {
     @apply px-2 text-xs text-muted italic;
+  }
+  .ref-selector .text-input {
+    @apply w-full;
+  }
+  .ref-selector-results {
+    @apply mt-2 flex flex-col gap-1;
+  }
+  .ref-selector-results li {
+    @apply flex items-center gap-2;
+  }
+  .ref-selector-results .btn {
+    @apply flex-1 justify-start overflow-hidden text-left font-mono;
+  }
+  .ref-selector-kind {
+    @apply w-24 text-right;
+  }
+  .ref-selector-error {
+    @apply mt-2 rounded border p-2 text-sm;
+    border-color: var(--color-diff-remove-fg);
+    color: var(--color-diff-remove-fg);
   }
   .help-overlay {
     @apply fixed inset-0 z-40 flex items-center justify-center;

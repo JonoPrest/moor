@@ -372,6 +372,7 @@ impl Sim {
                     ),
                     Request::ListWorkspaces
                     | Request::ListReviews { .. }
+                    | Request::ListRefs { .. }
                     | Request::DefaultBase { .. }
                     | Request::GetReview { .. }
                     | Request::ListFiles { .. }
@@ -458,6 +459,19 @@ impl Sim {
                     },
                 },
             ),
+            Request::ListRefs { repo_id } => self.push_down(
+                peer,
+                ServerMsg::Response {
+                    id,
+                    response: Response::Refs {
+                        repo_id,
+                        refs: vec![nits_protocol::RefCandidate {
+                            ref_spec: nits_protocol::RefSpec::WorkingTree,
+                            subject: None,
+                        }],
+                    },
+                },
+            ),
             Request::ListReviews { .. }
             | Request::DefaultBase { .. }
             | Request::GetReview { .. }
@@ -498,6 +512,10 @@ fn rpc_error(e: &MutationError) -> RpcError {
         },
         MutationError::UnknownComment(id) => RpcError::NotFound {
             kind: EntityKind::Comment,
+            id: id.to_string(),
+        },
+        MutationError::UnknownRepo(id) => RpcError::NotFound {
+            kind: EntityKind::Repo,
             id: id.to_string(),
         },
         MutationError::NotAuthor(_) => RpcError::Forbidden {

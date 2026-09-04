@@ -25,6 +25,11 @@ module EventBody = {
         title: string,
         status: ReviewStatus.t,
       })
+    | @as("ReviewTargetUpdated")
+    ReviewTargetUpdated({
+        @as("review_id") reviewId: reviewId,
+        target: ReviewTarget.t,
+      })
     | @as("ReviewDeleted") ReviewDeleted({@as("review_id") reviewId: reviewId})
     | @as("ReviewTargetsResolved")
     ReviewTargetsResolved({

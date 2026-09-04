@@ -153,6 +153,10 @@ registry!(
     Workspace,
     Repo,
     RefSpec,
+    BaseRefSpec,
+    TargetRevision,
+    ReviewTargetUpdate,
+    RefCandidate,
     ResolvedRef,
     ResolvedSource,
     ReviewTarget,
@@ -711,6 +715,55 @@ enum_fixture!(
         RefSpec::Head,
     ]
 );
+enum_fixture!(
+    BaseRefSpec,
+    BaseRefSpecKind,
+    "BaseRefSpec",
+    [
+        BaseRefSpec::Branch {
+            name: "main".into()
+        },
+        BaseRefSpec::Commit { oid: commit(1) },
+        BaseRefSpec::Tag {
+            name: "v0.1.0".into()
+        },
+        BaseRefSpec::Upstream,
+        BaseRefSpec::Head,
+    ]
+);
+enum_fixture!(
+    TargetRevision,
+    TargetRevisionKind,
+    "TargetRevision",
+    [
+        TargetRevision::Base {
+            ref_spec: BaseRefSpec::Branch {
+                name: "main".into()
+            }
+        },
+        TargetRevision::Head {
+            ref_spec: RefSpec::WorkingTree
+        },
+    ]
+);
+struct_fixture!(
+    ReviewTargetUpdate,
+    "ReviewTargetUpdate",
+    ReviewTargetUpdate {
+        repo_id: repo_id(),
+        revision: TargetRevision::Head {
+            ref_spec: RefSpec::WorkingTree
+        }
+    }
+);
+struct_fixture!(
+    RefCandidate,
+    "RefCandidate",
+    RefCandidate {
+        ref_spec: RefSpec::Commit { oid: commit(1) },
+        subject: Some("Keep selectors typed".into())
+    }
+);
 struct_fixture!(
     ResolvedRef,
     "ResolvedRef",
@@ -935,6 +988,10 @@ enum_fixture!(
             review_id: review_id(),
             title: "Renamed".into(),
             status: ReviewStatus::Archived
+        },
+        EventBody::ReviewTargetUpdated {
+            review_id: review_id(),
+            target: targets()?.first().clone()
         },
         EventBody::ReviewDeleted {
             review_id: review_id()
@@ -1256,6 +1313,15 @@ enum_fixture!(
             title: "Renamed".into(),
             status: ReviewStatus::Archived
         },
+        Mutation::UpdateReviewTarget {
+            review_id: review_id(),
+            update: ReviewTargetUpdate {
+                repo_id: repo_id(),
+                revision: TargetRevision::Head {
+                    ref_spec: RefSpec::WorkingTree
+                }
+            }
+        },
         Mutation::DeleteReview {
             review_id: review_id()
         },
@@ -1321,6 +1387,7 @@ enum_fixture!(
         Request::ListReviews {
             workspace_id: workspace_id()
         },
+        Request::ListRefs { repo_id: repo_id() },
         Request::DefaultBase { repo_id: repo_id() },
         Request::GetReview {
             review_id: review_id()
@@ -1448,6 +1515,13 @@ enum_fixture!(
         },
         Response::Commits {
             commits: vec![commit_info()]
+        },
+        Response::Refs {
+            repo_id: repo_id(),
+            refs: vec![RefCandidate {
+                ref_spec: RefSpec::Commit { oid: commit(1) },
+                subject: Some("Keep selectors typed".into())
+            }]
         },
         Response::TreeSnapshot {
             snapshot: tree_snapshot()?

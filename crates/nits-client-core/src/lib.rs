@@ -32,6 +32,7 @@ mod focus;
 mod ids;
 mod keymap;
 mod patch;
+mod ref_selector;
 mod view;
 
 use std::collections::BTreeMap;
@@ -40,8 +41,8 @@ use nits_protocol::{
     Anchor, Author, BuildInfo, ClientId, ClientMsg, ClientSeq, CommentId, CommentKind, CommitOid,
     DiffScope, Event, EventBody, Mutation, NonEmpty, ProtocolVersion, RenderTarget, RepoId,
     RepoPath, Request, RequestId, ResolvedSource, Response, ReviewId, ReviewSnapshot, ReviewTarget,
-    RpcError, Seq, ServerMsg, Since, StreamItem, SubscribeScope, ThreadId, Timestamp, ViewSection,
-    WorkspaceId,
+    ReviewTargetUpdate, RpcError, Seq, ServerMsg, Since, StreamItem, SubscribeScope, ThreadId,
+    Timestamp, ViewSection, WorkspaceId,
 };
 use serde::{Deserialize, Serialize};
 use strum::EnumDiscriminants;
@@ -71,6 +72,9 @@ pub use keymap::{
     NamedKey, Override, Overrides, command_named, config_name, label, modes_of,
 };
 pub use patch::{ViewPatch, ViewPatchKind};
+pub use ref_selector::{
+    RefOption, RefSelectorSide, RefSelectorStatus, RefSelectorStatusKind, RefSelectorView,
+};
 pub use view::{
     ConnectionView, ConnectionViewKind, ContentSearchView, Draft, Landing, LastKey, Layout,
     OpenFile, OpenReview, PendingEvent, ScrollAlign, ScrollIntent, Tab, ViewDelta, ViewModel,
@@ -333,6 +337,25 @@ pub enum Action {
     SearchStep {
         delta: i32,
     },
+    /// Open the git-backed selector for one side of one repo target.
+    OpenRefSelector {
+        repo_id: RepoId,
+        side: RefSelectorSide,
+    },
+    RefSelectorQuery {
+        query: String,
+    },
+    RefSelectorStep {
+        delta: i32,
+    },
+    SelectRef {
+        index: usize,
+    },
+    /// Select the option currently highlighted by the core. Keyboard hosts
+    /// use this so motion and activation do not depend on an intervening
+    /// render reaching the UI.
+    SelectCurrentRef,
+    CloseRefSelector,
 }
 
 /// How much one `ExpandContext` step adds to a file's context lines.
@@ -412,6 +435,12 @@ pub enum CoreError {
     NotHuman,
     #[error("no commit list to step through")]
     NoStepper,
+    #[error("review has no repo {0}")]
+    UnknownRepo(RepoId),
+    #[error("no ref selector is open")]
+    NoRefSelector,
+    #[error("the ref selector has no selected option")]
+    NoSelectedRef,
     #[error("no thread {0}")]
     UnknownThread(ThreadId),
     #[error("thread {0} has no recorded original diff")]
@@ -455,6 +484,9 @@ pub(crate) enum InFlight {
     ListCommits {
         repo_id: RepoId,
     },
+    ListRefs {
+        repo_id: RepoId,
+    },
     Search,
     TreeSnapshot {
         root: nits_protocol::TreeOid,
@@ -491,6 +523,7 @@ impl InFlight {
             | InFlight::ReviewSnapshot { .. }
             | InFlight::ListFiles { .. }
             | InFlight::ListCommits { .. }
+            | InFlight::ListRefs { .. }
             | InFlight::Search
             | InFlight::Mutate { .. } => false,
         }
@@ -511,6 +544,7 @@ impl InFlight {
             | InFlight::ReviewSnapshot { .. }
             | InFlight::ListFiles { .. }
             | InFlight::ListCommits { .. }
+            | InFlight::ListRefs { .. }
             | InFlight::Search
             | InFlight::BrowseTree { .. }
             | InFlight::Mutate { .. } => None,
@@ -583,6 +617,7 @@ pub struct ClientCore {
     /// was on is remembered so the focus and the viewport can follow the
     /// content rather than the row index (§6.5).
     realign: Option<Realign>,
+    ref_selector: Option<ref_selector::RefSelector>,
 }
 
 /// Browsing one repo at an arbitrary ref.
@@ -637,6 +672,7 @@ impl ClientCore {
             browse: None,
             visual_anchor: None,
             realign: None,
+            ref_selector: None,
             keys_handled: 0,
             last_key: None,
         }
@@ -760,6 +796,14 @@ impl ClientCore {
     #[allow(clippy::too_many_lines)]
     fn derive(&mut self) -> Vec<ViewSection> {
         let mut sections = Vec::new();
+        let ref_selector = self
+            .ref_selector
+            .as_ref()
+            .map(|selector| selector.view.clone());
+        if ref_selector != self.view.ref_selector {
+            self.view.ref_selector = ref_selector;
+            sections.push(ViewSection::RefSelector);
+        }
         let (tree, progress) = match (&self.view.review, &self.committed) {
             (Some(open), Some(_)) => {
                 let browse_root = match (self.view.tab, &self.browse) {
@@ -1075,6 +1119,7 @@ impl ClientCore {
                 | EventBody::ThreadUnresolved { thread_id, .. } => ids.threads.push(*thread_id),
                 EventBody::ReviewCreated { .. }
                 | EventBody::ReviewUpdated { .. }
+                | EventBody::ReviewTargetUpdated { .. }
                 | EventBody::ReviewDeleted { .. }
                 | EventBody::ReviewTargetsResolved { .. }
                 | EventBody::FileViewed { .. }
@@ -2029,6 +2074,73 @@ impl ClientCore {
                     )))
                 }
             }
+            Action::OpenRefSelector { repo_id, side } => {
+                self.require_subscribed()?;
+                let Some(open) = &self.view.review else {
+                    return Err(CoreError::NoOpenReview);
+                };
+                let Some(target) = open
+                    .snapshot
+                    .review
+                    .targets
+                    .iter()
+                    .find(|target| target.repo_id == repo_id)
+                else {
+                    return Err(CoreError::UnknownRepo(repo_id));
+                };
+                let current = match side {
+                    RefSelectorSide::Base => target.base.clone(),
+                    RefSelectorSide::Head => target.head.clone(),
+                };
+                let workspace_id = open.snapshot.review.workspace_id;
+                let repo_name = self
+                    .view
+                    .workspaces
+                    .iter()
+                    .find(|workspace| workspace.id == workspace_id)
+                    .and_then(|workspace| workspace.repos.iter().find(|repo| repo.id == repo_id))
+                    .map_or_else(|| repo_id.to_string(), |repo| repo.display_name.clone());
+                self.ref_selector = Some(ref_selector::RefSelector::loading(
+                    repo_id, repo_name, side, current,
+                ));
+                Ok(vec![
+                    self.request(
+                        Request::ListRefs { repo_id },
+                        InFlight::ListRefs { repo_id },
+                    ),
+                    render(&[ViewSection::RefSelector]),
+                ])
+            }
+            Action::RefSelectorQuery { query } => {
+                let Some(selector) = &mut self.ref_selector else {
+                    return Err(CoreError::NoRefSelector);
+                };
+                selector.query(query);
+                Ok(vec![render(&[ViewSection::RefSelector])])
+            }
+            Action::RefSelectorStep { delta } => {
+                let Some(selector) = &mut self.ref_selector else {
+                    return Err(CoreError::NoRefSelector);
+                };
+                selector.step(delta);
+                Ok(vec![render(&[ViewSection::RefSelector])])
+            }
+            Action::SelectRef { index } => self.select_ref(index),
+            Action::SelectCurrentRef => {
+                let index = self
+                    .ref_selector
+                    .as_ref()
+                    .ok_or(CoreError::NoRefSelector)?
+                    .view
+                    .selected;
+                self.select_ref(index)
+            }
+            Action::CloseRefSelector => {
+                if self.ref_selector.take().is_none() {
+                    return Err(CoreError::NoRefSelector);
+                }
+                Ok(vec![render(&[ViewSection::RefSelector])])
+            }
             Action::SetBrowseRef { repo_id, ref_spec } => {
                 if self.view.review.is_none() {
                     return Err(CoreError::NoOpenReview);
@@ -2287,6 +2399,34 @@ impl ClientCore {
             .ok_or(CoreError::NoOpenReview)
     }
 
+    fn select_ref(&mut self, index: usize) -> Result<Vec<Effect>, CoreError> {
+        let Some(selector) = &self.ref_selector else {
+            return Err(CoreError::NoRefSelector);
+        };
+        let repo_id = selector.view.repo_id;
+        let Some(revision) = selector.revision_at(index) else {
+            return Err(CoreError::NoSelectedRef);
+        };
+        self.require_subscribed()?;
+        let Some(open) = &self.view.review else {
+            return Err(CoreError::NoOpenReview);
+        };
+        let mutation = Mutation::UpdateReviewTarget {
+            review_id: open.snapshot.review.id,
+            update: ReviewTargetUpdate { repo_id, revision },
+        };
+        let meta = self.meta_now();
+        let body = local_event(&open.snapshot, &meta, &mutation)?;
+        let Some(selector) = &mut self.ref_selector else {
+            return Err(CoreError::NoRefSelector);
+        };
+        selector.view.selected = index;
+        selector.view.status = RefSelectorStatus::Saving;
+        let mut effects = self.mutate_with(mutation, body);
+        effects.push(render(&[ViewSection::RefSelector]));
+        Ok(effects)
+    }
+
     /// What this client's own events carry, at the core's current time.
     fn meta_now(&self) -> EventMeta {
         EventMeta {
@@ -2458,6 +2598,7 @@ impl ClientCore {
         self.visual_anchor = None;
         self.view.content_search = None;
         self.view.action_palette = false;
+        self.ref_selector = None;
         self.review_closed(effects);
     }
 
@@ -2554,7 +2695,16 @@ impl ClientCore {
                     return Vec::new();
                 }
                 self.view.connection = ConnectionView::Disconnected;
-                vec![render(&[ViewSection::Connection])]
+                let mut sections = vec![ViewSection::Connection];
+                if let Some(selector) = &mut self.ref_selector
+                    && matches!(selector.view.status, RefSelectorStatus::Loading)
+                {
+                    selector.view.status = RefSelectorStatus::DaemonError {
+                        message: "daemon disconnected".into(),
+                    };
+                    sections.push(ViewSection::RefSelector);
+                }
+                vec![render(&sections)]
             }
         }
     }
@@ -2631,6 +2781,7 @@ impl ClientCore {
                     | InFlight::ReviewSnapshot { .. }
                     | InFlight::ListFiles { .. }
                     | InFlight::ListCommits { .. }
+                    | InFlight::ListRefs { .. }
                     | InFlight::Search
                     | InFlight::TreeSnapshot { .. }
                     | InFlight::BrowseTree { .. }
@@ -2650,7 +2801,7 @@ impl ClientCore {
                 let Some(waiting) = self.in_flight.remove(&id) else {
                     return Err(CoreError::UnknownRequest(id));
                 };
-                self.view.last_error = Some(error);
+                self.view.last_error = Some(error.clone());
                 let mut effects = Vec::new();
                 let mut sections = vec![ViewSection::Connection];
                 if let InFlight::Subscribe = waiting {
@@ -2659,10 +2810,26 @@ impl ClientCore {
                     self.view.connection = ConnectionView::Connecting;
                 }
                 if let InFlight::Mutate { client_seq } = waiting {
+                    let target_update = self.pending.iter().any(|pending| {
+                        pending.client_seq == client_seq
+                            && matches!(pending.mutation, Mutation::UpdateReviewTarget { .. })
+                    });
                     // Rejected: the optimistic change is undone.
                     self.retire_pending(client_seq);
                     sections.extend(self.rebase());
                     sections.push(ViewSection::Threads);
+                    if target_update && let Some(selector) = &mut self.ref_selector {
+                        selector.view.status = selector_error(&error);
+                        sections.push(ViewSection::RefSelector);
+                    }
+                }
+                if matches!(waiting, InFlight::ListRefs { .. })
+                    && let Some(selector) = &mut self.ref_selector
+                {
+                    selector.view.status = RefSelectorStatus::DaemonError {
+                        message: rpc_error_message(&error),
+                    };
+                    sections.push(ViewSection::RefSelector);
                 }
                 if let Some(key) = waiting.key() {
                     self.content_failed(&key);
@@ -2674,6 +2841,14 @@ impl ClientCore {
                 Ok(effects)
             }
             ServerMsg::Event { event } => match self.connection {
+                // A mutation response and the subscription tail carry the
+                // same event.  If the response wins the race, its broadcast
+                // echo is an expected no-op rather than a stale event.
+                Connection::Subscribed { last_seq }
+                    if event.seq == last_seq && event.client_id == self.config.client_id =>
+                {
+                    Ok(Vec::new())
+                }
                 Connection::Subscribed { last_seq } if event.seq <= last_seq => {
                     Err(CoreError::StaleEvent {
                         seq: event.seq,
@@ -2841,6 +3016,7 @@ impl ClientCore {
                 | InFlight::ReviewSnapshot { .. }
                 | InFlight::ListFiles { .. }
                 | InFlight::ListCommits { .. }
+                | InFlight::ListRefs { .. }
                 | InFlight::Search
                 | InFlight::TreeSnapshot { .. }
                 | InFlight::BrowseTree { .. }
@@ -2980,6 +3156,29 @@ impl ClientCore {
                 }
                 effects
             }
+            (
+                InFlight::ListRefs { repo_id },
+                Response::Refs {
+                    repo_id: got_repo,
+                    refs,
+                },
+            ) => {
+                if repo_id != got_repo {
+                    return Err(CoreError::UnexpectedResponse {
+                        id,
+                        expected: "Refs for the requested repo",
+                        got: "Refs for another repo",
+                    });
+                }
+                if let Some(selector) = &mut self.ref_selector
+                    && selector.view.repo_id == repo_id
+                {
+                    selector.install(refs);
+                    vec![render(&[ViewSection::RefSelector])]
+                } else {
+                    Vec::new()
+                }
+            }
             (InFlight::Search, Response::Search { hits, truncated }) => {
                 if let Some(cs) = &mut self.view.content_search {
                     cs.hits = hits;
@@ -3089,6 +3288,7 @@ impl ClientCore {
                     InFlight::ReviewSnapshot { .. } => "ReviewSnapshot",
                     InFlight::ListFiles { .. } => "Files",
                     InFlight::ListCommits { .. } => "Commits",
+                    InFlight::ListRefs { .. } => "Refs",
                     InFlight::Search => "Search",
                     InFlight::TreeSnapshot { .. } | InFlight::BrowseTree { .. } => "TreeSnapshot",
                     InFlight::RenderChunk { .. } => "RenderChunk",
@@ -3127,6 +3327,28 @@ impl ClientCore {
                     r.title.clone_from(title);
                     r.status = *status;
                     sections.push(ViewSection::ReviewList);
+                }
+            }
+            EventBody::ReviewTargetUpdated { review_id, target } => {
+                if let Some(review) = self.view.reviews.iter_mut().find(|r| r.id == *review_id)
+                    && let Some(existing) = review
+                        .targets
+                        .iter_mut()
+                        .find(|existing| existing.repo_id == target.repo_id)
+                {
+                    existing.clone_from(target);
+                    sections.push(ViewSection::ReviewList);
+                }
+                let close = self.ref_selector.as_ref().is_some_and(|selector| {
+                    selector.view.repo_id == target.repo_id
+                        && self
+                            .committed
+                            .as_ref()
+                            .is_some_and(|snapshot| snapshot.review.id == *review_id)
+                });
+                if close {
+                    self.ref_selector = None;
+                    sections.push(ViewSection::RefSelector);
                 }
             }
             EventBody::ReviewDeleted { review_id } => {
@@ -3314,11 +3536,48 @@ fn response_name(r: &Response) -> &'static str {
         Response::Resolved { .. } => "Resolved",
         Response::Search { .. } => "Search",
         Response::Commits { .. } => "Commits",
+        Response::Refs { .. } => "Refs",
         Response::TreeSnapshot { .. } => "TreeSnapshot",
         Response::RenderChunk { .. } => "RenderChunk",
         Response::Subscribed { .. } => "Subscribed",
         Response::Unsubscribed => "Unsubscribed",
         Response::Committed { .. } => "Committed",
         Response::ShuttingDown => "ShuttingDown",
+    }
+}
+
+fn selector_error(error: &RpcError) -> RefSelectorStatus {
+    match error {
+        RpcError::Invalid { reason } => RefSelectorStatus::InvalidRef {
+            message: reason.clone(),
+        },
+        RpcError::NotFound { kind, id } => RefSelectorStatus::InvalidRef {
+            message: format!("{kind:?} {id} was not found"),
+        },
+        RpcError::Forbidden { .. }
+        | RpcError::SeqTooOld { .. }
+        | RpcError::Cancelled
+        | RpcError::UnsupportedProtocol { .. }
+        | RpcError::VersionMismatch { .. }
+        | RpcError::Internal { .. } => RefSelectorStatus::DaemonError {
+            message: rpc_error_message(error),
+        },
+    }
+}
+
+fn rpc_error_message(error: &RpcError) -> String {
+    match error {
+        RpcError::NotFound { kind, id } => format!("{kind:?} {id} was not found"),
+        RpcError::Invalid { reason } | RpcError::Forbidden { reason } => reason.clone(),
+        RpcError::SeqTooOld { oldest } => format!("event history starts at {oldest}"),
+        RpcError::Cancelled => "request cancelled".to_owned(),
+        RpcError::UnsupportedProtocol { requested, .. } => {
+            format!("protocol {requested} is unsupported")
+        }
+        RpcError::VersionMismatch {
+            negotiated,
+            received,
+        } => format!("expected protocol {negotiated}, received {received}"),
+        RpcError::Internal { message } => message.clone(),
     }
 }

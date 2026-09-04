@@ -16,8 +16,9 @@ use std::process::Command;
 use gix::bstr::ByteSlice;
 use gix::objs::tree::EntryKind as K;
 use nits_protocol::{
-    BlobOid, ChangeKind, CommitInfo, CommitOid, Oid, RefSpec, RepoId, RepoPath, ResolvedRef,
-    ResolvedSource, Sig, Timestamp, TreeDelta, TreeEntry, TreeEntryKind, TreeOid, TreeSnapshot,
+    BlobOid, ChangeKind, CommitInfo, CommitOid, Oid, RefCandidate, RefSpec, RepoId, RepoPath,
+    ResolvedRef, ResolvedSource, Sig, Timestamp, TreeDelta, TreeEntry, TreeEntryKind, TreeOid,
+    TreeSnapshot,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -206,6 +207,56 @@ impl Repo {
             .collect();
         branches.sort();
         Ok(branches)
+    }
+
+    /// Revisions offered by the review header's selectors. Named refs come
+    /// from git's ref database and recent commits come from reachable
+    /// history, so remote clients see the daemon repository's actual state.
+    pub fn ref_candidates(&self) -> Result<Vec<RefCandidate>, GitError> {
+        let mut refs = self
+            .local_branches()?
+            .into_iter()
+            .map(|branch| RefCandidate {
+                ref_spec: branch.into_ref_spec(),
+                subject: None,
+            })
+            .collect::<Vec<_>>();
+
+        let tags = self.git(&["for-each-ref", "--format=%(refname)", "refs/tags/"], &[])?;
+        refs.extend(
+            String::from_utf8_lossy(&tags)
+                .lines()
+                .filter_map(|line| line.trim().strip_prefix("refs/tags/"))
+                .filter(|name| !name.is_empty())
+                .map(|name| RefCandidate {
+                    ref_spec: RefSpec::Tag {
+                        name: name.to_owned(),
+                    },
+                    subject: None,
+                }),
+        );
+
+        let log = self.git(
+            &["log", "--all", "--max-count=50", "--format=%H%x00%s"],
+            &[],
+        )?;
+        for line in String::from_utf8_lossy(&log).lines() {
+            let Some((oid, subject)) = line.split_once('\0') else {
+                return Err(GitError::Parse("git log record has no separator".into()));
+            };
+            let oid = oid
+                .parse::<CommitOid>()
+                .map_err(|e| GitError::Parse(format!("invalid commit oid {oid:?}: {e}")))?;
+            refs.push(RefCandidate {
+                ref_spec: RefSpec::Commit { oid },
+                subject: Some(subject.to_owned()),
+            });
+        }
+        refs.push(RefCandidate {
+            ref_spec: RefSpec::WorkingTree,
+            subject: None,
+        });
+        Ok(refs)
     }
 
     fn reflog_parent(

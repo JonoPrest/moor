@@ -156,6 +156,19 @@ pub(super) fn apply(t: &mut Write<'_>, event: &Event) -> Result<(), StoreError> 
             rec.review.status = *status;
             save_review(t, &rec)?;
         }
+        EventBody::ReviewTargetUpdated { review_id, target } => {
+            let mut rec = load_review(t, seq, *review_id)?;
+            let stored = rec
+                .review
+                .targets
+                .iter_mut()
+                .find(|stored| stored.repo_id == target.repo_id)
+                .ok_or_else(|| {
+                    inconsistent(seq, format!("review has no repo {}", target.repo_id))
+                })?;
+            stored.clone_from(target);
+            save_review(t, &rec)?;
+        }
         EventBody::ReviewDeleted { review_id } => {
             let mut rec = load_review(t, seq, *review_id)?;
             rec.lifecycle = ReviewLifecycle::Deleted { at: seq };

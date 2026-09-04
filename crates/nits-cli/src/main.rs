@@ -588,6 +588,9 @@ fn event_line(e: &Event) -> String {
             format!("review created {} {}", review.id, review.title)
         }
         EventBody::ReviewUpdated { review_id, .. } => format!("review updated {review_id}"),
+        EventBody::ReviewTargetUpdated { review_id, target } => {
+            format!("review target updated {review_id} repo {}", target.repo_id)
+        }
         EventBody::ReviewDeleted { review_id } => format!("review deleted {review_id}"),
         EventBody::ReviewTargetsResolved { review_id, .. } => {
             format!("targets resolved {review_id}")

@@ -5,7 +5,7 @@ use strum::{EnumDiscriminants, EnumIter};
 
 use crate::domain::{
     Anchor, Author, Comment, CommentState, Human, Repo, ResolvedTarget, Review, ReviewStatus,
-    Workspace,
+    ReviewTarget, Workspace,
 };
 use crate::ids::{
     BlobOid, ClientId, ClientSeq, CommentId, RepoId, ReviewId, Seq, ThreadId, Timestamp,
@@ -55,6 +55,11 @@ pub enum EventBody {
         review_id: ReviewId,
         title: String,
         status: ReviewStatus,
+    },
+    /// One repository's requested base/head pair changed.
+    ReviewTargetUpdated {
+        review_id: ReviewId,
+        target: ReviewTarget,
     },
     /// Tombstone. The review is excluded from listings; comments remain in the
     /// log until an offline compaction.
@@ -136,6 +141,7 @@ impl EventBody {
             EventBody::ReviewCreated { review } => Some(review.id),
             EventBody::CommentCreated { comment } => Some(comment.review_id),
             EventBody::ReviewUpdated { review_id, .. }
+            | EventBody::ReviewTargetUpdated { review_id, .. }
             | EventBody::ReviewDeleted { review_id }
             | EventBody::ReviewTargetsResolved { review_id, .. }
             | EventBody::CommentEdited { review_id, .. }
@@ -160,6 +166,7 @@ impl EventBody {
             | EventBody::RepoDetached { workspace_id, .. } => Some(*workspace_id),
             EventBody::ReviewCreated { review } => Some(review.workspace_id),
             EventBody::ReviewUpdated { .. }
+            | EventBody::ReviewTargetUpdated { .. }
             | EventBody::ReviewDeleted { .. }
             | EventBody::ReviewTargetsResolved { .. }
             | EventBody::CommentCreated { .. }

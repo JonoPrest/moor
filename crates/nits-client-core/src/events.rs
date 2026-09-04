@@ -14,8 +14,9 @@
 //! handled by `ClientCore::apply_event` before this is called.
 
 use nits_protocol::{
-    Author, Comment, CommentId, CommentState, EventBody, Mutation, MutationKind, ReviewSnapshot,
-    Thread, ThreadId, ThreadResolution, Timestamp, ViewSection, ViewedMark,
+    Author, Comment, CommentId, CommentState, EventBody, Mutation, MutationKind, RepoId,
+    ReviewSnapshot, TargetRevision, Thread, ThreadId, ThreadResolution, Timestamp, ViewSection,
+    ViewedMark,
 };
 use strum::EnumDiscriminants;
 
@@ -44,6 +45,8 @@ pub enum MutationError {
     AlreadyResolved(ThreadId),
     #[error("thread {0} is not resolved")]
     NotResolved(ThreadId),
+    #[error("review has no repo {0}")]
+    UnknownRepo(RepoId),
     /// The mutation is not one the client core issues optimistically.
     #[error("{0:?} is not applied locally")]
     Unsupported(MutationKind),
@@ -198,6 +201,25 @@ pub fn local_event(
             title: title.clone(),
             status: *status,
         }),
+        Mutation::UpdateReviewTarget { review_id, update } => {
+            let Some(existing) = snapshot
+                .review
+                .targets
+                .iter()
+                .find(|target| target.repo_id == update.repo_id)
+            else {
+                return Err(MutationError::UnknownRepo(update.repo_id));
+            };
+            let mut target = existing.clone();
+            match &update.revision {
+                TargetRevision::Base { ref_spec } => target.base = ref_spec.clone().into(),
+                TargetRevision::Head { ref_spec } => target.head.clone_from(ref_spec),
+            }
+            Ok(EventBody::ReviewTargetUpdated {
+                review_id: *review_id,
+                target,
+            })
+        }
         Mutation::CreateWorkspace { .. }
         | Mutation::RenameWorkspace { .. }
         | Mutation::AttachRepo { .. }
@@ -238,6 +260,18 @@ pub fn apply_body(
         EventBody::ReviewTargetsResolved { review_id, targets } if mine(*review_id) => {
             snapshot.resolved = Some(targets.clone());
             vec![ViewSection::Diff]
+        }
+        EventBody::ReviewTargetUpdated { review_id, target } if mine(*review_id) => {
+            let Some(existing) = snapshot
+                .review
+                .targets
+                .iter_mut()
+                .find(|existing| existing.repo_id == target.repo_id)
+            else {
+                return Vec::new();
+            };
+            existing.clone_from(target);
+            vec![ViewSection::ReviewList]
         }
         EventBody::CommentCreated { comment } if mine(comment.review_id) => {
             if snapshot.comments.iter().any(|c| c.id == comment.id) {
@@ -359,6 +393,7 @@ pub fn apply_body(
             vec![ViewSection::Conversation]
         }
         EventBody::ReviewUpdated { .. }
+        | EventBody::ReviewTargetUpdated { .. }
         | EventBody::ReviewTargetsResolved { .. }
         | EventBody::CommentCreated { .. }
         | EventBody::CommentEdited { .. }

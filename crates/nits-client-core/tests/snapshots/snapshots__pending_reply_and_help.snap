@@ -1507,6 +1507,7 @@ expression: core.view()
   "browse_ref": null,
   "content_search": null,
   "action_palette": false,
+  "ref_selector": null,
   "visual": null,
   "review": {
     "snapshot": {

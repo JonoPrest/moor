@@ -2,9 +2,10 @@
 
 use nits_protocol::{
     BlobOid, ChangeKind, CommitInfo, CommitOid, DiffScope, EntityKind, EventBody, FileChange,
-    FileRenderHeader, NonEmpty, RefSpec, RenderOpts, RenderTarget, Repo, RepoId, RepoPath,
-    ResolvedRef, ResolvedSource, ResolvedTarget, Review, ReviewId, ReviewSnapshot, ReviewStatus,
-    ReviewTarget, TreeDelta, TreeEntryKind, TreeSnapshot, ViewedMark, Workspace, WorkspaceId,
+    FileRenderHeader, NonEmpty, RefCandidate, RefSpec, RenderOpts, RenderTarget, Repo, RepoId,
+    RepoPath, ResolvedRef, ResolvedSource, ResolvedTarget, Review, ReviewId, ReviewSnapshot,
+    ReviewStatus, ReviewTarget, ReviewTargetUpdate, TargetRevision, TreeDelta, TreeEntryKind,
+    TreeSnapshot, ViewedMark, Workspace, WorkspaceId,
 };
 
 use crate::core::{Core, CoreError, Ctx};
@@ -148,6 +149,10 @@ impl Core {
         Ok(self.repo(repo_id)?.default_base()?)
     }
 
+    pub fn ref_candidates(&self, repo_id: RepoId) -> Result<Vec<RefCandidate>, CoreError> {
+        Ok(self.repo(repo_id)?.ref_candidates()?)
+    }
+
     /// A live review's record (review + resolved targets).
     pub fn review(&self, id: ReviewId) -> Result<ReviewRecord, CoreError> {
         let rec = self
@@ -227,6 +232,44 @@ impl Core {
                 status,
             },
         )?;
+        Ok(())
+    }
+
+    /// Replace one repo's base or head after resolving the complete new
+    /// target first. A failed/stale ref cannot partially update a review,
+    /// and `TargetRevision::Base` cannot contain a working tree.
+    pub fn update_review_target(
+        &self,
+        ctx: &Ctx,
+        id: ReviewId,
+        update: ReviewTargetUpdate,
+    ) -> Result<(), CoreError> {
+        let rec = self.review(id)?;
+        let mut target = rec
+            .review
+            .targets
+            .iter()
+            .find(|target| target.repo_id == update.repo_id)
+            .cloned()
+            .ok_or_else(|| CoreError::not_found(EntityKind::Repo, &update.repo_id))?;
+        match update.revision {
+            TargetRevision::Base { ref_spec } => target.base = ref_spec.into(),
+            TargetRevision::Head { ref_spec } => target.head = ref_spec,
+        }
+        let repo = self.repo(target.repo_id)?;
+        repo.resolve(&target.base)
+            .and_then(|_| repo.resolve(&target.head))
+            .map_err(|error| CoreError::Invalid {
+                reason: error.to_string(),
+            })?;
+        self.append(
+            ctx,
+            EventBody::ReviewTargetUpdated {
+                review_id: id,
+                target,
+            },
+        )?;
+        self.resolve_targets(ctx, id)?;
         Ok(())
     }
 

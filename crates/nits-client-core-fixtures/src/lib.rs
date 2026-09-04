@@ -128,6 +128,10 @@ registry!(
     ScrollAlign,
     Landing,
     ContentSearchView,
+    RefSelectorSide,
+    RefSelectorStatus,
+    RefOption,
+    RefSelectorView,
     ViewPrefs,
     Layout,
     Tab,
@@ -322,6 +326,50 @@ struct_fixture!(
         truncated: false,
         pending: false,
         selected: 0,
+    }
+);
+unit_enum_fixture!(RefSelectorSide, "RefSelectorSide");
+enum_fixture!(
+    RefSelectorStatus,
+    RefSelectorStatusKind,
+    "RefSelectorStatus",
+    [
+        RefSelectorStatus::Loading,
+        RefSelectorStatus::Ready,
+        RefSelectorStatus::Saving,
+        RefSelectorStatus::InvalidRef {
+            message: "unknown revision".into()
+        },
+        RefSelectorStatus::DaemonError {
+            message: "git unavailable".into()
+        },
+    ]
+);
+struct_fixture!(
+    RefOption,
+    "RefOption",
+    RefOption {
+        ref_spec: RefSpec::Branch {
+            name: "main".into()
+        },
+        subject: None,
+        current: true,
+    }
+);
+struct_fixture!(
+    RefSelectorView,
+    "RefSelectorView",
+    RefSelectorView {
+        repo_id: repo_id()?,
+        repo_name: "nits".into(),
+        side: RefSelectorSide::Head,
+        current: RefSpec::Branch {
+            name: "main".into()
+        },
+        query: "sel".into(),
+        options: vec![local::<RefOption>()?],
+        selected: 0,
+        status: RefSelectorStatus::Ready,
     }
 );
 struct_fixture!(FileRef, "FileRef", file_ref()?);
@@ -756,6 +804,17 @@ enum_fixture!(
         Action::EnterVisual,
         Action::LeaveVisual,
         Action::SearchStep { delta: 1 },
+        Action::OpenRefSelector {
+            repo_id: repo_id()?,
+            side: RefSelectorSide::Base,
+        },
+        Action::RefSelectorQuery {
+            query: "main".into()
+        },
+        Action::RefSelectorStep { delta: 1 },
+        Action::SelectRef { index: 0 },
+        Action::SelectCurrentRef,
+        Action::CloseRefSelector,
     ]
 );
 enum_fixture!(
@@ -850,6 +909,9 @@ enum_fixture!(
         },
         ViewPatch::CommitStepper {
             stepper: Some(local::<CommitStepper>()?),
+        },
+        ViewPatch::RefSelector {
+            ref_selector: Some(local::<RefSelectorView>()?),
         },
         ViewPatch::Progress {
             progress: local::<Progress>()?,
@@ -946,6 +1008,7 @@ struct_fixture!(
         browse_ref: None,
         content_search: Some(local::<ContentSearchView>()?),
         action_palette: false,
+        ref_selector: Some(local::<RefSelectorView>()?),
         visual: Some(local::<VisualView>()?),
         review: Some(local::<OpenReview>()?),
         draft: Some(local::<Draft>()?),
