@@ -21,6 +21,7 @@ module Screen = {
 
 module Document = {
   @val @scope("document") external activeElement: Nullable.t<element> = "activeElement"
+  @val @scope("document") external body: element = "body"
 }
 
 module FireEvent = {
@@ -28,6 +29,9 @@ module FireEvent = {
   external click: element => unit = "click"
   @module("@testing-library/react") @scope("fireEvent")
   external keyDown: (element, {"key": string, "ctrlKey": bool}) => unit = "keyDown"
+  @module("@testing-library/react") @scope("fireEvent")
+  external keyDownWithShift: (element, {"key": string, "ctrlKey": bool, "shiftKey": bool}) => unit =
+    "keyDown"
   @module("@testing-library/react") @scope("fireEvent")
   external change: (element, {"target": {"value": string}}) => unit = "change"
   @module("@testing-library/react") @scope("fireEvent")
@@ -49,4 +53,6 @@ module Element = {
   @get external scrollTop: element => int = "scrollTop"
   @set external setScrollTop: (element, int) => unit = "scrollTop"
   @get external value: element => string = "value"
+  @get external innerHTML: element => string = "innerHTML"
+  @send external focus: element => unit = "focus"
 }

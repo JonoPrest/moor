@@ -48,8 +48,8 @@ light both):
 
 - **Header**: review title · scope control (below) · `base → head` chips
   (resolved branch names; a working-tree head shows `branch (worktree)`) ·
-  layout + whitespace toggles · totals (`N files · +A −D`) · connection
-  dot.
+  compact diff-settings menu (layout and whitespace) · totals
+  (`N files · +A −D`) · connection dot.
 - **Tabs**: `Files changed` (with count) · `Conversation` (with thread
   count) · `Browse`. Keys `1/2/3`.
 - **Left sidebar**: file tree with per-file `+A −D` and thread-count

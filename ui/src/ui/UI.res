@@ -46,17 +46,47 @@ module Panel = {
 }
 
 module Button = {
-  type kind = Primary | Secondary | Ghost
+  type kind = Primary | Secondary | Ghost | Icon
   @react.component
-  let make = (~label: string, ~onClick: unit => unit, ~kind=Secondary, ~title=?) => {
+  let make = (
+    ~label: string,
+    ~onClick: unit => unit,
+    ~kind=Secondary,
+    ~title=?,
+    ~ariaLabel=?,
+    ~ariaControls=?,
+    ~expanded: option<bool>=?,
+    ~hasPopup=?,
+  ) => {
     let className = switch kind {
     | Primary => "btn btn-primary"
     | Secondary => "btn"
     | Ghost => "btn btn-ghost"
+    | Icon => "btn btn-icon"
     }
     // Explicit type: inside a <form> a bare <button> would submit it.
-    <button type_="button" className ?title onClick={_ => onClick()}>
-      {React.string(label)}
+    // Activation is owned here because the shell's window keymap also
+    // listens for Enter and Space. Stopping both keys prevents one gesture
+    // from running a focused core command as well as clicking the button.
+    <button
+      type_="button"
+      className
+      ?title
+      ?ariaLabel
+      ?ariaControls
+      ariaExpanded=?expanded
+      ariaHaspopup=?hasPopup
+      onClick={_ => onClick()}
+      onKeyDown={ev => {
+        let key = ReactEvent.Keyboard.key(ev)
+        if key == "Enter" || key == " " {
+          ReactEvent.Keyboard.preventDefault(ev)
+          ReactEvent.Keyboard.stopPropagation(ev)
+          onClick()
+        }
+      }}
+    >
+      {kind == Icon ? <span ariaHidden=true> {React.string(label)} </span> : React.string(label)}
     </button>
   }
 }
@@ -86,6 +116,70 @@ module Kbd = {
       ->Array.join(" ")
     <kbd> {React.string(text)} </kbd>
   }
+}
+
+module MenuItem = {
+  /// A checked menu choice with roving focus. The owning menu interprets
+  /// navigation keys so one primitive works for radio groups of any shape.
+  @react.component
+  let make = (
+    ~label: string,
+    ~checked: bool,
+    ~tabIndex: int,
+    ~onClick: unit => unit,
+    ~onFocus: unit => unit,
+    ~onKey: string => unit,
+    ~hint: option<string>=?,
+    ~title=?,
+    ~autoFocus=false,
+  ) =>
+    <button
+      type_="button"
+      className="menu-item"
+      role="menuitemradio"
+      ariaLabel=label
+      ariaChecked={checked ? #"true" : #"false"}
+      tabIndex
+      ?title
+      autoFocus
+      onClick={_ => onClick()}
+      onFocus={_ => onFocus()}
+      onKeyDown={ev => {
+        let key = ReactEvent.Keyboard.key(ev)
+        if key == "Tab" {
+          // Close the owning menu without cancelling native forward or
+          // reverse focus traversal.
+          ReactEvent.Keyboard.stopPropagation(ev)
+          onKey(key)
+        } else if (
+          [
+            "ArrowDown",
+            "ArrowRight",
+            "ArrowUp",
+            "ArrowLeft",
+            "Enter",
+            " ",
+            "Escape",
+          ]->Array.includes(key)
+        ) {
+          ReactEvent.Keyboard.preventDefault(ev)
+          ReactEvent.Keyboard.stopPropagation(ev)
+          onKey(key)
+        }
+      }}
+    >
+      <span className="menu-item-check" ariaHidden=true>
+        {React.string(checked ? "✓" : "")}
+      </span>
+      <span className="menu-item-label"> {React.string(label)} </span>
+      {switch hint {
+      | Some(keys) =>
+        <span className="menu-item-hint" ariaHidden=true>
+          <Kbd keys />
+        </span>
+      | None => React.null
+      }}
+    </button>
 }
 
 module Empty = {
