@@ -170,7 +170,7 @@ pub struct ViewPrefs {
     pub layout: Layout,
     pub ignore_whitespace: bool,
     pub context_lines: u32,
-    /// Whole sidebar hidden (`g b`).
+    /// Whole sidebar hidden (`<leader>b`).
     #[serde(default)]
     pub sidebar_hidden: bool,
 }

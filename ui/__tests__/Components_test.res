@@ -1524,6 +1524,83 @@ function pressKey(key) {
 /// React 19's `act`, so a model pushed outside an event is flushed.
 @module("react") external act: (unit => unit) => unit = "act"
 
+describe("The shell's file-tree toggle", () => {
+  let model = (hidden: bool): View.ViewModel.t => {
+    let base = Fixtures.parse(View.ViewModel.schema, "client", "ViewModel", "default")
+    {
+      ...base,
+      prefs: {...base.prefs, sidebarHidden: hidden},
+      chrome: [{keys: "x b", command: ToggleSidebar, label: "custom sidebar toggle"}],
+    }
+  }
+
+  let mount = initial => {
+    let push = ref(_ => ())
+    let dispatch: Action.t => unit = fn()
+    let key: Keys.KeyChord.t => unit = fn()
+    let core: Core.t = {
+      dispatch,
+      key,
+      subscribe: listener => {
+        push := listener
+        listener(initial)
+        () => ()
+      },
+      attach: () => (),
+    }
+    (render(<App.Shell core />), push, dispatch, key)
+  }
+
+  test("stays put, exposes both states, and owns mouse and keyboard activation", () => {
+    let ({container}, push, dispatch, key) = mount(model(false))
+    let toggle = Screen.getByLabelText("Hide file tree")
+    expect(Element.getAttribute(toggle, "aria-controls"))->toEqual(
+      Nullable.make("file-tree-sidebar"),
+    )
+    expect(Element.getAttribute(toggle, "aria-expanded"))->toEqual(Nullable.make("true"))
+    expect(Element.getAttribute(toggle, "title"))->toEqual(
+      Nullable.make("custom sidebar toggle (x b)"),
+    )
+    expect(Element.querySelector(toggle, "[aria-hidden=\"true\"]"))->not_->toBeNull
+    expect(Element.querySelector(container, "#file-tree-sidebar"))->not_->toBeNull
+    expect(Element.querySelector(container, ".sidebar-rail"))->toBeNull
+    expect(Element.querySelector(container, ".sidebar-collapse"))->toBeNull
+
+    FireEvent.keyDown(toggle, {"key": "Enter", "ctrlKey": false})
+    expect(Array.length(mock(dispatch).calls))->toBe(1)
+    expect(dispatch)->toHaveBeenLastCalledWith(Action.ToggleSidebar({}))
+    expect(Array.length(mock(key).calls))->toBe(0)
+
+    FireEvent.keyDown(toggle, {"key": " ", "ctrlKey": false})
+    expect(Array.length(mock(dispatch).calls))->toBe(2)
+    expect(dispatch)->toHaveBeenLastCalledWith(Action.ToggleSidebar({}))
+    expect(Array.length(mock(key).calls))->toBe(0)
+
+    FireEvent.click(toggle)
+    expect(Array.length(mock(dispatch).calls))->toBe(3)
+    expect(dispatch)->toHaveBeenLastCalledWith(Action.ToggleSidebar({}))
+
+    Element.focus(toggle)
+    expect(Document.activeElement->Nullable.toOption)->toEqual(Some(toggle))
+    act(() => push.contents(model(true)))
+    let sameToggle = Screen.getByLabelText("Show file tree")
+    expect(sameToggle)->toBe(toggle)
+    expect(Document.activeElement->Nullable.toOption)->toEqual(Some(toggle))
+    expect(Element.getAttribute(toggle, "aria-expanded"))->toEqual(Nullable.make("false"))
+    expect(Element.textContent(toggle))->toContain("◨")
+    expect(Element.querySelector(container, "#file-tree-sidebar"))->toBeNull
+    expect(
+      Element.className(Element.querySelector(container, ".app-body")->Nullable.getExn),
+    )->toContain("sidebar-hidden")
+
+    act(() => push.contents(model(false)))
+    expect(Screen.getByLabelText("Hide file tree"))->toBe(toggle)
+    expect(Document.activeElement->Nullable.toOption)->toEqual(Some(toggle))
+    expect(Element.textContent(toggle))->toContain("◧")
+    expect(Element.querySelector(container, "#file-tree-sidebar"))->not_->toBeNull
+  })
+})
+
 describe("Copying from the keyboard, through the shell", () => {
   // The core applies keys in order, counts every one it is sent, and
   // says what each turned out to mean. The shell copies inside the

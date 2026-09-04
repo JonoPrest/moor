@@ -333,31 +333,31 @@ module Shell = {
     | Tree(_) => true
     | _ => false
     }
+    let sidebarAction = model.prefs.sidebarHidden ? "Show file tree" : "Hide file tree"
     <main className="app-shell">
-      <div className="app-body">
+      <div className={"app-body" ++ (model.prefs.sidebarHidden ? " sidebar-hidden" : "")}>
+        <div className="sidebar-toggle">
+          <UI.Button
+            label={model.prefs.sidebarHidden ? "◨" : "◧"}
+            kind=Icon
+            ariaLabel=sidebarAction
+            ariaControls="file-tree-sidebar"
+            expanded={!model.prefs.sidebarHidden}
+            title=?{Chrome.tip(model.chrome, ToggleSidebar)}
+            onClick={() => dispatch(ToggleSidebar({}))}
+          />
+        </div>
         {model.prefs.sidebarHidden
-          ? <button
-              type_="button"
-              className="sidebar-rail"
-              title=?{Chrome.tip(model.chrome, ToggleSidebar)}
-              onClick={_ => dispatch(ToggleSidebar({}))}
+          ? React.null
+          : <aside
+              id="file-tree-sidebar"
+              className={"app-left" ++ (treeFocused ? " app-left-expanded" : "")}
             >
-              {React.string("⟩")}
-            </button>
-          : <aside className={"app-left" ++ (treeFocused ? " app-left-expanded" : "")}>
               <div className="app-left-tree"> left </div>
               {switch model.stepper {
               | Some(stepper) => <Stepper stepper scope=model.scope focus=model.focus dispatch />
               | None => React.null
               }}
-              <button
-                type_="button"
-                className="sidebar-collapse"
-                title=?{Chrome.tip(model.chrome, ToggleSidebar)}
-                onClick={_ => dispatch(ToggleSidebar({}))}
-              >
-                {React.string("⟨ hide")}
-              </button>
             </aside>}
         <div className="app-center">
           <ReviewHeader
