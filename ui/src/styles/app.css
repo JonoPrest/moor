@@ -237,6 +237,9 @@
   /* Stacked file diffs (UI-DESIGN §Layout, GitHub-style). */
   .diff-stack {
     @apply flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3;
+    /* Context expansion has an explicit stable-line anchor in the host.
+       Native scroll anchoring would apply a second, index-based correction. */
+    overflow-anchor: none;
   }
   .file-diff {
     @apply shrink-0 overflow-hidden rounded border border-border;
@@ -263,6 +266,7 @@
   }
   .diff-scroll {
     @apply min-h-0 flex-1 overflow-auto;
+    overflow-anchor: none;
   }
   .diff-empty {
     @apply flex flex-1 items-center justify-center text-muted;

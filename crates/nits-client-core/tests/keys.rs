@@ -203,6 +203,13 @@ fn chunk(index: u32) -> RenderChunk {
                         dir: ExpandDir::Both,
                         gap: Gap::new(1),
                     },
+                    // A deliberately asymmetric split row used to prove
+                    // realignment preserves the focused side, not merely
+                    // whichever side the host happens to inspect first.
+                    171 => Row::Modified {
+                        left: cell(500),
+                        right: cell(n),
+                    },
                     _ => Row::Context {
                         left: cell(n),
                         right: cell(n),
@@ -1822,9 +1829,54 @@ fn expanded_rows(extra: u32) -> Vec<Row> {
     out
 }
 
+/// The same expansion from the leading side of the gap: revealed rows
+/// land below a cursor above it, so neither its row nor viewport shifts.
+fn expanded_rows_below(extra: u32) -> Vec<Row> {
+    use nits_protocol::{Cell, LineNo};
+    let base: Vec<Row> = (0..3).flat_map(|c| chunk(c).rows).collect();
+    let revealed = |i: u32| {
+        let cell = Cell {
+            line_no: LineNo::new(2000 + i).unwrap(),
+            text: format!("revealed below {i}"),
+            spans: Vec::new(),
+            changed: Vec::new(),
+        };
+        Row::Context {
+            left: cell.clone(),
+            right: cell,
+        }
+    };
+    let split = EXPANDER_ROW as usize + 1;
+    let mut out = base[..split].to_vec();
+    out.extend((0..extra).map(revealed));
+    out.extend_from_slice(&base[split..]);
+    out
+}
+
+/// An expanded render where the old head-side line also occurs among the
+/// newly revealed rows. Only the base-side identity uniquely names the
+/// split row the reader actually focused.
+fn expanded_rows_with_head_decoy(extra: u32) -> Vec<Row> {
+    use nits_protocol::{Cell, LineNo};
+    let mut rows = expanded_rows(extra);
+    let right = Cell {
+        line_no: LineNo::new(171).unwrap(),
+        text: "same head line, different row".to_owned(),
+        spans: Vec::new(),
+        changed: Vec::new(),
+    };
+    rows[EXPANDER_ROW as usize] = Row::Added { right };
+    rows
+}
+
 /// Answer the render request in flight with a file `extra` rows longer,
 /// returning what the core emitted for it.
 fn deliver_render(core: &mut ClientCore, effects: &[Effect], extra: u32) -> Vec<Effect> {
+    deliver_rows(core, effects, &expanded_rows(extra))
+}
+
+/// Answer the render request with the supplied complete render.
+fn deliver_rows(core: &mut ClientCore, effects: &[Effect], rows: &[Row]) -> Vec<Effect> {
     let id = effects
         .iter()
         .find_map(|e| match e {
@@ -1835,8 +1887,12 @@ fn deliver_render(core: &mut ClientCore, effects: &[Effect], extra: u32) -> Vec<
             _ => None,
         })
         .expect("a render was requested");
-    let rows = expanded_rows(extra);
     let total = u32::try_from(rows.len()).unwrap();
+    let gap_row = rows
+        .iter()
+        .position(|row| matches!(row, Row::Expander { .. }))
+        .and_then(|row| u32::try_from(row).ok())
+        .expect("the shaped render keeps its expander");
     let mut header = header("src/a.rs");
     header.opts = core
         .view()
@@ -1854,7 +1910,7 @@ fn deliver_render(core: &mut ClientCore, effects: &[Effect], extra: u32) -> Vec<
         deletions: 1,
         gaps: nits_protocol::GapTable::try_from(vec![nits_protocol::GapRow {
             gap: Gap::new(1),
-            row: EXPANDER_ROW + extra,
+            row: gap_row,
         }])
         .unwrap(),
     };
@@ -1956,6 +2012,134 @@ fn the_cursor_keeps_its_line_when_a_gap_above_it_opens() {
         }
         other => panic!("expected a diff patch, got {other:?}"),
     }
+
+    // Repeating the operation anchors from the position produced by the
+    // previous one rather than accumulating a row of drift each time.
+    let effects = press(core, "z u").unwrap();
+    let landed = deliver_render(core, &effects, 40);
+    assert!(rendered(&landed).contains(&ViewSection::Focus));
+    assert_eq!(
+        core.view().focus,
+        Focus::Diff {
+            row: 200,
+            side: Side::Head
+        }
+    );
+    assert_eq!(core.view().diff.as_ref().unwrap().first_row, first_row + 40);
+    assert_eq!(
+        text_at(core, 200).as_deref(),
+        Some(before.as_str()),
+        "the second expansion preserves the same logical line"
+    );
+}
+
+#[test]
+fn repeated_expansion_before_the_first_render_lands_keeps_the_original_line() {
+    let core = &mut on_row(160, Side::Head);
+    let file = core.view().diff.as_ref().unwrap().file.clone();
+    let before = core
+        .view()
+        .diff
+        .as_ref()
+        .unwrap()
+        .rows
+        .iter()
+        .find(|row| row.index == 160)
+        .and_then(|row| match &row.row {
+            Row::Context { right, .. } => Some(right.text.clone()),
+            Row::HunkHeader { .. }
+            | Row::Expander { .. }
+            | Row::Added { .. }
+            | Row::Removed { .. }
+            | Row::Modified { .. }
+            | Row::WhitespaceOnly => None,
+        })
+        .unwrap();
+
+    core.handle(Input::User(Action::ExpandGap {
+        file: file.clone(),
+        gap: Gap::new(1),
+        dir: nits_protocol::ExpandDir::Up,
+    }))
+    .unwrap();
+    assert!(core.view().diff.is_none(), "the first render is pending");
+    let second = core
+        .handle(Input::User(Action::ExpandGap {
+            file,
+            gap: Gap::new(1),
+            dir: nits_protocol::ExpandDir::Up,
+        }))
+        .unwrap();
+    let landed = deliver_render(core, &second, 40);
+
+    assert!(rendered(&landed).contains(&ViewSection::Focus));
+    assert_eq!(
+        core.view().focus,
+        Focus::Diff {
+            row: 200,
+            side: Side::Head,
+        }
+    );
+    let focused = core
+        .view()
+        .diff
+        .as_ref()
+        .unwrap()
+        .rows
+        .iter()
+        .find(|row| row.index == 200)
+        .and_then(|row| match &row.row {
+            Row::Context { right, .. } => Some(right.text.as_str()),
+            Row::HunkHeader { .. }
+            | Row::Expander { .. }
+            | Row::Added { .. }
+            | Row::Removed { .. }
+            | Row::Modified { .. }
+            | Row::WhitespaceOnly => None,
+        });
+    assert_eq!(focused, Some(before.as_str()));
+}
+
+#[test]
+fn opening_a_gap_below_keeps_the_exact_focus_and_viewport() {
+    let core = &mut on_row(100, Side::Head);
+    let first_row = core.view().diff.as_ref().unwrap().first_row;
+    let effects = press(core, "z d").unwrap();
+    let landed = deliver_rows(core, &effects, &expanded_rows_below(20));
+    let sections = rendered(&landed);
+    assert!(sections.contains(&ViewSection::Diff), "{sections:?}");
+    assert!(sections.contains(&ViewSection::Focus), "{sections:?}");
+    assert_eq!(
+        core.view().focus,
+        Focus::Diff {
+            row: 100,
+            side: Side::Head
+        }
+    );
+    assert_eq!(core.view().diff.as_ref().unwrap().first_row, first_row);
+    match core.view().patch(ViewSection::Diff) {
+        nits_client_core::ViewPatch::Diff { diff, .. } => {
+            assert_eq!(diff.map(|d| d.first_row), Some(first_row));
+        }
+        other => panic!("expected a diff patch, got {other:?}"),
+    }
+}
+
+#[test]
+fn realignment_preserves_the_focused_side_of_a_split_row() {
+    let core = &mut on_row(170, Side::Base);
+    let first_row = core.view().diff.as_ref().unwrap().first_row;
+    let effects = press(core, "z u").unwrap();
+    deliver_rows(core, &effects, &expanded_rows_with_head_decoy(20));
+    assert_eq!(
+        core.view().focus,
+        Focus::Diff {
+            row: 190,
+            side: Side::Base
+        },
+        "the newly revealed duplicate head line must not steal base focus"
+    );
+    assert_eq!(core.view().diff.as_ref().unwrap().first_row, first_row + 20);
 }
 
 /// Open `b.rs`, returning the chunk requests it made. Its rows arrive

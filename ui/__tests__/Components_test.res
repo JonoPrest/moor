@@ -458,9 +458,16 @@ describe("Context expanders", () => {
     // that one hidden run rather than re-rendering the whole file.
     let row = Fixtures.parse(Render.Row.schema, "protocol", "Row", "Expander")
     let expand = fn()
+    let focus = fn()
     let {container} = render(
       <Row
-        row layout=Unified index=0 focused=false threads=[] onExpand={(g, d) => expand((g, d))}
+        row
+        layout=Unified
+        index=0
+        focused=false
+        threads=[]
+        onClick={side => focus(side)}
+        onExpand={(g, d) => expand((g, d))}
       />,
     )
     let arrows = Element.querySelectorAll(container, ".expander-arrow")
@@ -472,6 +479,7 @@ describe("Context expanders", () => {
     // Clicking the row itself opens the gap in its own direction.
     FireEvent.click(Screen.getByTextRe(/more lines/))
     expect(expand)->toHaveBeenLastCalledWith((1, Render.ExpandDir.Both))
+    expect(focus)->not_->toHaveBeenCalled
   })
 })
 
@@ -1255,6 +1263,193 @@ describe("Scroll.delta", () => {
   })
 })
 
+/// React 19's `act`, so a model pushed outside an event is flushed.
+@module("react") external act: (unit => unit) => unit = "act"
+
+module AnchorGeometry = {
+  type t = {mutable rowTop: float, mutable rowHeight: float}
+
+  // jsdom does not lay elements out. Model one real scroll container so
+  // the test observes viewport-relative pixels, including fractional and
+  // variable-height geometry, rather than merely testing row arithmetic.
+  let install: (Dom.element, Dom.element, t) => unit = %raw(`
+    (container, row, geometry) => {
+      Object.defineProperties(container, {
+        clientHeight: {configurable: true, value: 400},
+        scrollHeight: {configurable: true, value: 2000},
+        getBoundingClientRect: {
+          configurable: true,
+          value: () => ({top: 0, bottom: 400, height: 400})
+        }
+      })
+      row.getBoundingClientRect = () => {
+        const top = geometry.rowTop - container.scrollTop
+        return {top, bottom: top + geometry.rowHeight, height: geometry.rowHeight}
+      }
+    }
+  `)
+
+  // Install geometry for the real Shell/FileDiff lifecycle. The matcher is
+  // prototype-based so it also covers the replacement scroller and row that
+  // mount after the transient loading patch removes the originals.
+  let installShell: t => unit => unit = %raw(`geometry => {
+    const proto = globalThis.HTMLElement.prototype
+    const clientHeight = Object.getOwnPropertyDescriptor(proto, "clientHeight")
+    const scrollHeight = Object.getOwnPropertyDescriptor(proto, "scrollHeight")
+    const rect = proto.getBoundingClientRect
+    Object.defineProperties(proto, {
+      clientHeight: {
+        configurable: true,
+        get() {
+          if (this.classList?.contains("diff-stack")) return 400
+          return clientHeight?.get?.call(this) ?? 0
+        },
+      },
+      scrollHeight: {
+        configurable: true,
+        get() {
+          if (this.classList?.contains("diff-stack")) return 2000
+          return scrollHeight?.get?.call(this) ?? 0
+        },
+      },
+    })
+    proto.getBoundingClientRect = function() {
+      if (this.classList?.contains("diff-stack")) {
+        return {top: 0, bottom: 400, height: 400}
+      }
+      if (this.hasAttribute?.("data-scroll-anchor")) {
+        const container = this.closest(".diff-stack")
+        const top = geometry.rowTop - (container?.scrollTop ?? 0)
+        return {top, bottom: top + geometry.rowHeight, height: geometry.rowHeight}
+      }
+      return rect.call(this)
+    }
+    return () => {
+      if (clientHeight) Object.defineProperty(proto, "clientHeight", clientHeight)
+      else delete proto.clientHeight
+      if (scrollHeight) Object.defineProperty(proto, "scrollHeight", scrollHeight)
+      else delete proto.scrollHeight
+      proto.getBoundingClientRect = rect
+    }
+  }
+  `)
+}
+
+describe("Scroll stable line anchor", () => {
+  let mount = () => {
+    let key = "repo:src/a.rs:Head:42"
+    let line = Attrs.withData(
+      <div className="row"> {React.string("the focused line")} </div>,
+      [("data-focused", "true"), ("data-scroll-anchor", key)],
+    )
+    let {container} = render(<div className="anchor-scroller"> line </div>)
+    let scroller =
+      Element.querySelector(container, ".anchor-scroller")
+      ->Nullable.toOption
+      ->Option.getExn
+    let row =
+      Element.querySelector(container, "[data-scroll-anchor]")
+      ->Nullable.toOption
+      ->Option.getExn
+    (scroller, row)
+  }
+
+  test("rows inserted above preserve the focused line's visual Y", () => {
+    let (scroller, row) = mount()
+    let geometry: AnchorGeometry.t = {rowTop: 260., rowHeight: 20.}
+    AnchorGeometry.install(scroller, row, geometry)
+    Scroll.setScrollTop(scroller, 100.)
+    let before = Scroll.boxOf(row).top
+    let anchor = Scroll.captureAnchor()->Option.getExn
+    geometry.rowTop = geometry.rowTop +. 73.5
+    expect(Scroll.restoreAnchor(anchor))->toBe(true)
+    expect(Scroll.boxOf(row).top)->toBe(before)
+    expect(Scroll.scrollTop(scroller))->toBe(173.5)
+  })
+
+  test("rows inserted below leave the exact visual Y untouched", () => {
+    let (scroller, row) = mount()
+    let geometry: AnchorGeometry.t = {rowTop: 260., rowHeight: 20.}
+    AnchorGeometry.install(scroller, row, geometry)
+    Scroll.setScrollTop(scroller, 100.)
+    let before = Scroll.boxOf(row).top
+    let anchor = Scroll.captureAnchor()->Option.getExn
+    // Downward expansion changes the document below the anchor only.
+    expect(Scroll.restoreAnchor(anchor))->toBe(true)
+    expect(Scroll.boxOf(row).top)->toBe(before)
+    expect(Scroll.scrollTop(scroller))->toBe(100.)
+  })
+
+  test("repeated variable-height expansion does not accumulate drift", () => {
+    let (scroller, row) = mount()
+    let geometry: AnchorGeometry.t = {rowTop: 140.25, rowHeight: 20.}
+    AnchorGeometry.install(scroller, row, geometry)
+    Scroll.setScrollTop(scroller, 40.)
+    let wanted = Scroll.boxOf(row).top
+
+    let first = Scroll.captureAnchor()->Option.getExn
+    geometry.rowTop = geometry.rowTop +. 37.25
+    geometry.rowHeight = 57.5
+    expect(Scroll.restoreAnchor(first))->toBe(true)
+    expect(Scroll.boxOf(row).top)->toBe(wanted)
+
+    let second = Scroll.captureAnchor()->Option.getExn
+    geometry.rowTop = geometry.rowTop +. 21.75
+    geometry.rowHeight = 13.25
+    expect(Scroll.restoreAnchor(second))->toBe(true)
+    expect(Scroll.boxOf(row).top)->toBe(wanted)
+    expect(Scroll.scrollTop(scroller))->toBe(99.)
+  })
+
+  test("the Shell carries an anchor across the missing-render patch", () => {
+    let base = Fixtures.parse(View.ViewModel.schema, "client", "ViewModel", "default")
+    let diff = base.diff->Option.getExn
+    let initial: View.ViewModel.t = {...base, diffs: [diff]}
+    let loading: View.ViewModel.t = {...initial, diff: None, diffs: []}
+    let moved: View.DiffView.t = {
+      ...diff,
+      firstRow: diff.firstRow + 20,
+      lastRow: diff.lastRow + 20,
+      rows: diff.rows->Array.map(row => {...row, index: row.index + 20}),
+    }
+    let landed: View.ViewModel.t = {
+      ...initial,
+      focus: Diff({row: 141, side: Head}),
+      diff: Some(moved),
+      diffs: [moved],
+    }
+    let push = ref(_ => ())
+    let core: Core.t = {
+      dispatch: _ => (),
+      key: _ => (),
+      subscribe: listener => {
+        push := listener
+        listener(initial)
+        () => ()
+      },
+      attach: () => (),
+    }
+    let geometry: AnchorGeometry.t = {rowTop: 260., rowHeight: 20.}
+    let restoreGeometry = AnchorGeometry.installShell(geometry)
+    let {container} = render(<App.Shell core />)
+    let row = Element.querySelector(container, "[data-scroll-anchor]")->Nullable.getExn
+    let scroller = Element.querySelector(container, ".diff-stack")->Nullable.getExn
+    Scroll.setScrollTop(scroller, 100.)
+    let wanted = Scroll.boxOf(row).top
+
+    act(() => push.contents(loading))
+    expect(Element.querySelector(container, "[data-scroll-anchor]"))->toBeNull
+    geometry.rowTop = geometry.rowTop +. 73.5
+    act(() => push.contents(landed))
+
+    let replacement = Element.querySelector(container, "[data-scroll-anchor]")->Nullable.getExn
+    let replacementScroller = Element.querySelector(container, ".diff-stack")->Nullable.getExn
+    expect(Scroll.boxOf(replacement).top)->toBe(wanted)
+    expect(Scroll.scrollTop(replacementScroller))->toBe(173.5)
+    restoreGeometry()
+  })
+})
+
 describe("Scroll.plan", () => {
   let intent = (seq: int): View.ScrollIntent.t => {row: 120, align: Center, seq}
 
@@ -1521,9 +1716,6 @@ function pressKey(key) {
 }
 `)
 @val external pressKey: string => unit = "pressKey"
-/// React 19's `act`, so a model pushed outside an event is flushed.
-@module("react") external act: (unit => unit) => unit = "act"
-
 describe("The shell's file-tree toggle", () => {
   let model = (hidden: bool): View.ViewModel.t => {
     let base = Fixtures.parse(View.ViewModel.schema, "client", "ViewModel", "default")
