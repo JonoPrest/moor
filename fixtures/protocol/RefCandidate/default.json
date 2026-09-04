@@ -1,0 +1,7 @@
+{
+  "ref_spec": {
+    "oid": "1f202122232425262728292a2b2c2d2e2f303132",
+    "type": "Commit"
+  },
+  "subject": "Keep selectors typed"
+}

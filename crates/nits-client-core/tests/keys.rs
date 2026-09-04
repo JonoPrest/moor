@@ -401,6 +401,12 @@ fn every_action_is_reachable_from_a_binding() {
         ActionKind::CommentLines, // mouse drag across lines
         ActionKind::CommentFile,  // the file header's comment button
         ActionKind::SearchStep,   // search inputs forward Down/Up
+        ActionKind::OpenRefSelector, // header buttons own target selection
+        ActionKind::RefSelectorQuery, // selector text is host-owned
+        ActionKind::RefSelectorStep, // selector input forwards motion
+        ActionKind::SelectRef,    // selector clicks an explicit option
+        ActionKind::SelectCurrentRef, // selector Enter activates core state
+        ActionKind::CloseRefSelector, // selector Escape
         ActionKind::Viewport,     // the host reports what it shows; keys
                                   // open a file with `OpenFileAt`, which knows the row and side
     ]

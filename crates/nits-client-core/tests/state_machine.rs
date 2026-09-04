@@ -3,15 +3,15 @@
 
 use nits_client_core::{
     Action, CacheConfig, ClientCore, Config, Connection, ConnectionView, CoreError, Effect,
-    FileRef, IdSeed, Input, TransportEvent, ViewDelta,
+    FileRef, IdSeed, Input, RefSelectorSide, RefSelectorStatus, TransportEvent, ViewDelta,
 };
 use nits_protocol::{
     Anchor, Author, BuildInfo, ClientId, ClientMsg, ClientSeq, Comment, CommentKind, CommentState,
-    Event, EventBody, Mutation, NonEmpty, Oid, ProtocolVersion, RefSpec, RenderOpts, RepoId,
-    Request, RequestId, ResolvedRef, ResolvedSource, ResolvedTarget, Response, Review, ReviewId,
-    ReviewSnapshot, ReviewStatus, ReviewTarget, RpcError, SchemaVersion, Seq, ServerMsg, Since,
-    StreamItem, SubscribeScope, ThreadId, Timestamp, TreeDelta, TreeOid, TreeSnapshot, ViewSection,
-    WorkspaceId,
+    Event, EventBody, Mutation, NonEmpty, Oid, ProtocolVersion, RefCandidate, RefSpec, RenderOpts,
+    RepoId, Request, RequestId, ResolvedRef, ResolvedSource, ResolvedTarget, Response, Review,
+    ReviewId, ReviewSnapshot, ReviewStatus, ReviewTarget, RpcError, SchemaVersion, Seq, ServerMsg,
+    Since, StreamItem, SubscribeScope, ThreadId, Timestamp, TreeDelta, TreeOid, TreeSnapshot,
+    ViewSection, WorkspaceId,
 };
 use proptest::prelude::*;
 
@@ -211,6 +211,323 @@ fn open(core: &mut ClientCore, id: ReviewId) {
     .unwrap();
     core.handle(Input::Server(ServerMsg::StreamEnd { id: req }))
         .unwrap();
+}
+
+fn load_ref_selector(core: &mut ClientCore, side: RefSelectorSide) {
+    let effects = core
+        .handle(Input::User(Action::OpenRefSelector {
+            repo_id: repo_id(),
+            side,
+        }))
+        .unwrap();
+    let (request_id, request) = sent_request(&effects).unwrap();
+    assert_eq!(request, Request::ListRefs { repo_id: repo_id() });
+    assert!(matches!(
+        core.view()
+            .ref_selector
+            .as_ref()
+            .map(|selector| &selector.status),
+        Some(RefSelectorStatus::Loading)
+    ));
+    core.handle(Input::Server(ServerMsg::Response {
+        id: request_id,
+        response: Response::Refs {
+            repo_id: repo_id(),
+            refs: vec![
+                RefCandidate {
+                    ref_spec: RefSpec::Branch {
+                        name: "feature/selector".into(),
+                    },
+                    subject: None,
+                },
+                RefCandidate {
+                    ref_spec: RefSpec::WorkingTree,
+                    subject: None,
+                },
+            ],
+        },
+    }))
+    .unwrap();
+}
+
+fn filter_to_feature(core: &mut ClientCore) {
+    core.handle(Input::User(Action::RefSelectorQuery {
+        query: "fsel".into(),
+    }))
+    .unwrap();
+    let selector = core.view().ref_selector.as_ref().unwrap();
+    assert_eq!(selector.options.len(), 1);
+    assert_eq!(
+        selector.options[0].ref_spec,
+        RefSpec::Branch {
+            name: "feature/selector".into()
+        }
+    );
+}
+
+#[test]
+fn ref_selector_loads_filters_and_excludes_working_tree_from_base() {
+    let review_id = ReviewId::from_parts(4, 4);
+    let mut core = subscribed(1);
+    open(&mut core, review_id);
+    load_ref_selector(&mut core, RefSelectorSide::Base);
+    let selector = core.view().ref_selector.as_ref().unwrap();
+    assert!(
+        selector
+            .options
+            .iter()
+            .all(|option| option.ref_spec != RefSpec::WorkingTree)
+    );
+    assert!(selector.options.iter().any(|option| option.current));
+    insta::assert_json_snapshot!("ref_selector_open", selector);
+
+    filter_to_feature(&mut core);
+}
+
+#[test]
+fn ref_selector_updates_the_typed_target_and_rolls_back_invalid_refs() {
+    let review_id = ReviewId::from_parts(4, 4);
+    let mut core = subscribed(1);
+    open(&mut core, review_id);
+    load_ref_selector(&mut core, RefSelectorSide::Base);
+    filter_to_feature(&mut core);
+
+    let effects = core
+        .handle(Input::User(Action::SelectRef { index: 0 }))
+        .unwrap();
+    let (mutation_id, request) = sent_request(&effects).unwrap();
+    assert_eq!(
+        request,
+        Request::Mutate {
+            client_seq: ClientSeq::new(1),
+            mutation: Mutation::UpdateReviewTarget {
+                review_id,
+                update: nits_protocol::ReviewTargetUpdate {
+                    repo_id: repo_id(),
+                    revision: nits_protocol::TargetRevision::Base {
+                        ref_spec: nits_protocol::BaseRefSpec::Branch {
+                            name: "feature/selector".into()
+                        }
+                    }
+                }
+            }
+        }
+    );
+    assert!(matches!(
+        core.view()
+            .ref_selector
+            .as_ref()
+            .map(|selector| &selector.status),
+        Some(RefSelectorStatus::Saving)
+    ));
+    assert_eq!(
+        core.view()
+            .review
+            .as_ref()
+            .unwrap()
+            .snapshot
+            .review
+            .targets
+            .first()
+            .base,
+        RefSpec::Branch {
+            name: "feature/selector".into()
+        }
+    );
+    core.handle(Input::Server(ServerMsg::Error {
+        id: mutation_id,
+        error: RpcError::Invalid {
+            reason: "revision disappeared".into(),
+        },
+    }))
+    .unwrap();
+    assert!(matches!(
+        core.view()
+            .ref_selector
+            .as_ref()
+            .map(|selector| &selector.status),
+        Some(RefSelectorStatus::InvalidRef { message }) if message == "revision disappeared"
+    ));
+    assert_eq!(
+        core.view()
+            .review
+            .as_ref()
+            .unwrap()
+            .snapshot
+            .review
+            .targets
+            .first()
+            .base,
+        RefSpec::Branch {
+            name: "main".into()
+        }
+    );
+}
+
+#[test]
+fn ref_selector_motion_then_enter_uses_core_state_without_a_render_round_trip() {
+    let review_id = ReviewId::from_parts(4, 4);
+    let mut core = subscribed(1);
+    open(&mut core, review_id);
+    load_ref_selector(&mut core, RefSelectorSide::Head);
+
+    let before = core.view().ref_selector.as_ref().unwrap().selected;
+    core.handle(Input::User(Action::RefSelectorStep { delta: 1 }))
+        .unwrap();
+    let selected = core.view().ref_selector.as_ref().unwrap().selected;
+    assert_ne!(selected, before);
+
+    let effects = core.handle(Input::User(Action::SelectCurrentRef)).unwrap();
+    let (_, request) = sent_request(&effects).unwrap();
+    let Request::Mutate {
+        mutation: Mutation::UpdateReviewTarget { update, .. },
+        ..
+    } = request
+    else {
+        panic!("Enter must update the highlighted ref");
+    };
+    assert_eq!(
+        update.revision,
+        nits_protocol::TargetRevision::Head {
+            ref_spec: RefSpec::WorkingTree,
+        }
+    );
+}
+
+#[test]
+fn disconnected_ref_selection_is_rejected_without_changing_selector_state() {
+    let review_id = ReviewId::from_parts(4, 4);
+    let mut core = subscribed(1);
+    open(&mut core, review_id);
+    load_ref_selector(&mut core, RefSelectorSide::Head);
+    core.handle(Input::Transport(TransportEvent::Disconnected))
+        .unwrap();
+    let before = core.view().ref_selector.clone();
+
+    let error = core
+        .handle(Input::User(Action::SelectCurrentRef))
+        .unwrap_err();
+
+    assert!(matches!(error, CoreError::WrongConnectionState { .. }));
+    // A rejected input does not derive the public view.  A subsequent
+    // successful input proves the private selector was not corrupted either.
+    core.handle(Input::Tick(1_000)).unwrap();
+    assert_eq!(core.view().ref_selector, before);
+    assert_eq!(core.pending_count(), 0);
+}
+
+#[test]
+fn response_first_ref_selection_ignores_its_echo_then_refreshes_the_diff() {
+    let review_id = ReviewId::from_parts(4, 4);
+    let mut core = subscribed(1);
+    open(&mut core, review_id);
+    load_ref_selector(&mut core, RefSelectorSide::Base);
+    filter_to_feature(&mut core);
+
+    let effects = core
+        .handle(Input::User(Action::SelectRef { index: 0 }))
+        .unwrap();
+    let (request_id, request) = sent_request(&effects).unwrap();
+    let Request::Mutate { client_seq, .. } = request else {
+        panic!("selection must send a mutation");
+    };
+    let target = core
+        .view()
+        .review
+        .as_ref()
+        .unwrap()
+        .snapshot
+        .review
+        .targets
+        .first()
+        .clone();
+    let committed = Event {
+        seq: Seq::new(2),
+        ts: Timestamp::from_millis(0),
+        author: config().author,
+        client_id: core.client_id(),
+        client_seq,
+        body: EventBody::ReviewTargetUpdated { review_id, target },
+    };
+    core.handle(Input::Server(ServerMsg::Response {
+        id: request_id,
+        response: Response::Committed {
+            event: committed.clone(),
+        },
+    }))
+    .unwrap();
+    assert!(core.view().ref_selector.is_none());
+    assert_eq!(core.pending_count(), 0);
+
+    let effects = core
+        .handle(Input::Server(ServerMsg::Event { event: committed }))
+        .unwrap();
+    assert!(effects.is_empty(), "the broadcast echo is a no-op");
+
+    let effects = core
+        .handle(Input::Server(ServerMsg::Event {
+            event: Event {
+                ..event(
+                    3,
+                    EventBody::ReviewTargetsResolved {
+                        review_id,
+                        targets: resolved(8),
+                    },
+                )
+            },
+        }))
+        .unwrap();
+    let requests = effects
+        .iter()
+        .filter_map(|effect| match effect {
+            Effect::Send(ClientMsg::Request { request, .. }) => Some(request),
+            Effect::Connect
+            | Effect::Disconnect
+            | Effect::Send(ClientMsg::Hello { .. } | ClientMsg::Cancel { .. })
+            | Effect::Persist { .. }
+            | Effect::Load { .. }
+            | Effect::Remove { .. }
+            | Effect::Render(_) => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        requests
+            .iter()
+            .any(|request| matches!(request, Request::ListFiles { .. }))
+    );
+    assert!(
+        requests
+            .iter()
+            .any(|request| matches!(request, Request::TreeSnapshot { .. }))
+    );
+}
+
+#[test]
+fn ref_selector_keeps_errors_visible_and_escape_cancels() {
+    let review_id = ReviewId::from_parts(4, 4);
+    let mut core = subscribed(1);
+    open(&mut core, review_id);
+    let effects = core
+        .handle(Input::User(Action::OpenRefSelector {
+            repo_id: repo_id(),
+            side: RefSelectorSide::Head,
+        }))
+        .unwrap();
+    let (request_id, _) = sent_request(&effects).unwrap();
+    core.handle(Input::Server(ServerMsg::Error {
+        id: request_id,
+        error: RpcError::Internal {
+            message: "git unavailable".into(),
+        },
+    }))
+    .unwrap();
+    assert!(matches!(
+        core.view().ref_selector.as_ref().map(|selector| &selector.status),
+        Some(RefSelectorStatus::DaemonError { message }) if message == "git unavailable"
+    ));
+    core.handle(Input::User(Action::CloseRefSelector)).unwrap();
+    assert!(core.view().ref_selector.is_none());
+    insta::assert_json_snapshot!("ref_selector_closed", core.view().ref_selector);
 }
 
 #[test]

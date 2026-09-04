@@ -317,6 +317,7 @@ fn event_workspace(body: &EventBody) -> Option<WorkspaceId> {
         | EventBody::RepoDetached { workspace_id, .. } => Some(*workspace_id),
         EventBody::ReviewCreated { review } => Some(review.workspace_id),
         EventBody::ReviewUpdated { .. }
+        | EventBody::ReviewTargetUpdated { .. }
         | EventBody::ReviewDeleted { .. }
         | EventBody::ReviewTargetsResolved { .. }
         | EventBody::CommentCreated { .. }
@@ -338,6 +339,7 @@ fn event_review(body: &EventBody) -> Option<ReviewId> {
         EventBody::ReviewCreated { review } => Some(review.id),
         EventBody::CommentCreated { comment } => Some(comment.review_id),
         EventBody::ReviewUpdated { review_id, .. }
+        | EventBody::ReviewTargetUpdated { review_id, .. }
         | EventBody::ReviewDeleted { review_id }
         | EventBody::ReviewTargetsResolved { review_id, .. }
         | EventBody::CommentEdited { review_id, .. }

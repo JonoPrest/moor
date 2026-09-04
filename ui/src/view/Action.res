@@ -101,4 +101,14 @@ type t =
   | @as("EnterVisual") EnterVisual({})
   | @as("LeaveVisual") LeaveVisual({})
   | @as("SearchStep") SearchStep({delta: int})
+  | @as("OpenRefSelector")
+  OpenRefSelector({
+      @as("repo_id") repoId: repoId,
+      side: View.RefSelectorSide.t,
+    })
+  | @as("RefSelectorQuery") RefSelectorQuery({query: string})
+  | @as("RefSelectorStep") RefSelectorStep({delta: int})
+  | @as("SelectRef") SelectRef({index: int})
+  | @as("SelectCurrentRef") SelectCurrentRef({})
+  | @as("CloseRefSelector") CloseRefSelector({})
 @@warning("+27")

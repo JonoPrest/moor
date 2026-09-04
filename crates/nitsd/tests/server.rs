@@ -7,10 +7,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use nits_protocol::{
-    Anchor, Author, BuildInfo, ChunkIndex, ClientId, ClientMsg, ClientSeq, CommentId, CommentKind,
-    DiffScope, Envelope, EventBody, Mutation, NonEmpty, ProtocolVersion, RefSpec, RenderOpts,
-    RepoId, RepoPath, Request, RequestId, Response, ReviewId, ReviewTarget, RpcError, Since,
-    StreamItem, SubscribeScope, WorkspaceId,
+    Anchor, Author, BaseRefSpec, BuildInfo, ChunkIndex, ClientId, ClientMsg, ClientSeq, CommentId,
+    CommentKind, DiffScope, Envelope, EventBody, Mutation, NonEmpty, ProtocolVersion, RefSpec,
+    RenderOpts, RepoId, RepoPath, Request, RequestId, Response, ReviewId, ReviewTarget,
+    ReviewTargetUpdate, RpcError, Since, StreamItem, SubscribeScope, TargetRevision, WorkspaceId,
 };
 use nits_review_core::DataDir;
 use nits_test_support::{RepoBuilder, TestRepo, files};
@@ -259,6 +259,34 @@ fn file_comment(n: u128, body: &str) -> Mutation {
         body: body.into(),
         context: None,
     }
+}
+
+#[tokio::test]
+async fn target_mutation_acknowledges_the_primary_event_before_resolution() {
+    let h = start(small_repo());
+    let c = connect(&h, 1, "ada").await;
+    seed(&h, &c).await;
+
+    let event = mutate(
+        &c,
+        4,
+        Mutation::UpdateReviewTarget {
+            review_id: review_id(),
+            update: ReviewTargetUpdate {
+                repo_id: rid(),
+                revision: TargetRevision::Base {
+                    ref_spec: BaseRefSpec::Head,
+                },
+            },
+        },
+    )
+    .await
+    .unwrap();
+
+    assert!(matches!(
+        event.body,
+        EventBody::ReviewTargetUpdated { review_id: id, .. } if id == review_id()
+    ));
 }
 
 #[tokio::test]

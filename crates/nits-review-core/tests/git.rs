@@ -1,7 +1,7 @@
 //! Git engine tests over real repositories.
 
 use nits_protocol::{
-    ChangeKind, CommitOid, RefSpec, RepoId, ResolvedSource, TreeEntryKind, TreeOid,
+    ChangeKind, CommitOid, RefCandidate, RefSpec, RepoId, ResolvedSource, TreeEntryKind, TreeOid,
 };
 use nits_review_core::git::{Repo, is_binary};
 use nits_test_support::{RepoBuilder, TestRepo, files};
@@ -50,6 +50,41 @@ fn resolves_every_refspec_variant() {
         })
         .unwrap_err();
     assert!(err.to_string().contains("nope"), "{err}");
+}
+
+#[test]
+fn ref_candidates_come_from_real_branches_tags_commits_and_working_tree() {
+    let t = RepoBuilder::new()
+        .commit("base subject", files!["a.txt" => "a\n"])
+        .tag("v1")
+        .branch("feature")
+        .commit("selector subject", files!["a.txt" => "b\n"])
+        .build()
+        .unwrap();
+    let feature = commit(&t.rev_parse("feature").unwrap());
+    let candidates = Repo::open(t.path()).unwrap().ref_candidates().unwrap();
+
+    assert!(candidates.contains(&RefCandidate {
+        ref_spec: RefSpec::Branch {
+            name: "feature".into()
+        },
+        subject: None,
+    }));
+    assert!(candidates.contains(&RefCandidate {
+        ref_spec: RefSpec::Tag { name: "v1".into() },
+        subject: None,
+    }));
+    assert!(candidates.contains(&RefCandidate {
+        ref_spec: RefSpec::Commit { oid: feature },
+        subject: Some("selector subject".into()),
+    }));
+    assert_eq!(
+        candidates.last(),
+        Some(&RefCandidate {
+            ref_spec: RefSpec::WorkingTree,
+            subject: None,
+        })
+    );
 }
 
 #[test]

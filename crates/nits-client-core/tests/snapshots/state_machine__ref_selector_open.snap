@@ -1,0 +1,36 @@
+---
+source: crates/nits-client-core/tests/state_machine.rs
+expression: selector
+---
+{
+  "repo_id": "00000000020000000000000002",
+  "repo_name": "00000000020000000000000002",
+  "side": "Base",
+  "current": {
+    "type": "Branch",
+    "name": "main"
+  },
+  "query": "",
+  "options": [
+    {
+      "ref_spec": {
+        "type": "Branch",
+        "name": "main"
+      },
+      "subject": null,
+      "current": true
+    },
+    {
+      "ref_spec": {
+        "type": "Branch",
+        "name": "feature/selector"
+      },
+      "subject": null,
+      "current": false
+    }
+  ],
+  "selected": 0,
+  "status": {
+    "type": "Ready"
+  }
+}

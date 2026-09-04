@@ -1,0 +1,5 @@
+---
+source: crates/nits-client-core/tests/state_machine.rs
+expression: core.view().ref_selector
+---
+null

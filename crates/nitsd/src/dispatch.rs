@@ -37,6 +37,10 @@ pub async fn single(
             let base = daemon.read(move |c| c.default_base(repo_id)).await?;
             Ok(Response::DefaultBase { base })
         }
+        Request::ListRefs { repo_id } => {
+            let refs = daemon.read(move |c| c.ref_candidates(repo_id)).await?;
+            Ok(Response::Refs { repo_id, refs })
+        }
         Request::GetReview { review_id } => {
             let review = daemon.read(move |c| c.review(review_id)).await?.review;
             Ok(Response::Review { review })
@@ -115,7 +119,11 @@ pub async fn single(
         } => {
             let ctx = Daemon::ctx(who.author.clone(), who.client_id, client_seq);
             let ((), events) = daemon.write(move |c| apply(c, &ctx, mutation)).await?;
-            let event = events.into_iter().last().ok_or_else(|| {
+            // A mutation may append follow-up events (for example a target
+            // update is followed by resolved targets).  Acknowledge the
+            // mutation's primary event so the client cannot advance past it
+            // before the broadcast tail delivers the sequence in order.
+            let event = events.into_iter().next().ok_or_else(|| {
                 DaemonError::Core(CoreError::Invalid {
                     reason: "mutation committed no event".into(),
                 })
@@ -167,6 +175,9 @@ fn apply(core: &Core, ctx: &nits_review_core::Ctx, m: Mutation) -> Result<(), Co
             title,
             status,
         } => core.update_review(ctx, review_id, title, status)?,
+        Mutation::UpdateReviewTarget { review_id, update } => {
+            core.update_review_target(ctx, review_id, update)?;
+        }
         Mutation::DeleteReview { review_id } => core.delete_review(ctx, review_id)?,
         Mutation::AddComment {
             review_id,

@@ -1,5 +1,5 @@
 // What the open review diffs, laid out exactly as the design canvas'
-// Main artboard (UI-DESIGN §Layout): title · `base → head` chips ·
+// Main artboard (UI-DESIGN §Layout): title · labelled Base → Head selectors ·
 // `+ working tree` check · (right) Unified|Split ·
 // hide-whitespace check · totals · connection dot. A working-tree head
 // shows the checked-out branch from the resolved targets. Every
@@ -47,6 +47,7 @@ let make = (
   ~chrome: array<View.Hint.t>=[],
   ~connection: View.ConnectionView.t=View.ConnectionView.Disconnected({}),
   ~progress: View.Progress.t=View.ViewModel.empty.progress,
+  ~refSelector: option<View.RefSelectorView.t>=?,
   ~dispatch: Action.t => unit=_ => (),
 ) =>
   switch openReview->Option.flatMap(id => reviews->Array.find(r => r.id == id)) {
@@ -86,9 +87,19 @@ let make = (
                   {React.string(repoName(t.repoId) ++ ":")}
                 </span>
               : React.null}
-            <span className="review-header-ref"> {React.string(RefSpecText.print(t.base))} </span>
+            <span className="review-header-side-label"> {React.string("Base")} </span>
+            <UI.Button
+              label={RefSpecText.print(t.base) ++ " ▾"}
+              kind=Ghost
+              onClick={() => dispatch(OpenRefSelector({repoId: t.repoId, side: Base}))}
+            />
             <span className="review-header-arrow" ariaHidden=true> {React.string("→")} </span>
-            <span className="review-header-ref"> {React.string(headText(t))} </span>
+            <span className="review-header-side-label"> {React.string("Head")} </span>
+            <UI.Button
+              label={headText(t) ++ " ▾"}
+              kind=Ghost
+              onClick={() => dispatch(OpenRefSelector({repoId: t.repoId, side: Head}))}
+            />
           </span>
         )
         ->React.array}
@@ -140,6 +151,10 @@ let make = (
           </span>
           <span className={"conn-dot conn-" ++ conn} title=conn />
         </span>
+        {switch refSelector {
+        | Some(selector) => <RefSelector selector dispatch />
+        | None => React.null
+        }}
       </header>
     }
   }

@@ -370,6 +370,7 @@ module Shell = {
             chrome=model.chrome
             connection=model.connection
             progress=model.progress
+            refSelector=?model.refSelector
             dispatch
           />
           <Tabs

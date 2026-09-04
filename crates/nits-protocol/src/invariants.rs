@@ -47,6 +47,10 @@ impl<T> NonEmpty<T> {
         self.0.iter()
     }
 
+    pub fn iter_mut(&mut self) -> core::slice::IterMut<'_, T> {
+        self.0.iter_mut()
+    }
+
     pub fn len(&self) -> usize {
         self.0.len()
     }
@@ -84,6 +88,15 @@ impl<'a, T> IntoIterator for &'a NonEmpty<T> {
     type IntoIter = core::slice::Iter<'a, T>;
     fn into_iter(self) -> Self::IntoIter {
         self.0.iter()
+    }
+}
+
+impl<'a, T> IntoIterator for &'a mut NonEmpty<T> {
+    type Item = &'a mut T;
+    type IntoIter = core::slice::IterMut<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter_mut()
     }
 }
 

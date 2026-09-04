@@ -52,6 +52,35 @@ module RefSpec = {
   @@warning("+27")
 }
 
+module BaseRefSpec = {
+  @@warning("-27")
+  @schema @tag("type")
+  type t =
+    | @as("Branch") Branch({name: string})
+    | @as("Commit") Commit({oid: commitOid})
+    | @as("Tag") Tag({name: string})
+    | @as("Upstream") Upstream({})
+    | @as("Head") Head({})
+  @@warning("+27")
+}
+
+module TargetRevision = {
+  @schema @tag("type")
+  type t =
+    | @as("Base") Base({@as("ref_spec") refSpec: BaseRefSpec.t})
+    | @as("Head") Head({@as("ref_spec") refSpec: RefSpec.t})
+}
+
+module ReviewTargetUpdate = {
+  @schema
+  type t = {@as("repo_id") repoId: repoId, revision: TargetRevision.t}
+}
+
+module RefCandidate = {
+  @schema
+  type t = {@as("ref_spec") refSpec: RefSpec.t, subject: @s.null option<string>}
+}
+
 module ResolvedSource = {
   @schema @tag("type")
   type t =

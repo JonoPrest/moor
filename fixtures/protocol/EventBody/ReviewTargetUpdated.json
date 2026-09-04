@@ -1,0 +1,14 @@
+{
+  "review_id": "01HF7YATZ80000000000000004",
+  "target": {
+    "base": {
+      "name": "main",
+      "type": "Branch"
+    },
+    "head": {
+      "type": "WorkingTree"
+    },
+    "repo_id": "01HF7YAT000000000000000002"
+  },
+  "type": "ReviewTargetUpdated"
+}

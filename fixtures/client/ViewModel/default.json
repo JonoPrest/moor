@@ -269,6 +269,30 @@
     "total": 12,
     "viewed": 3
   },
+  "ref_selector": {
+    "current": {
+      "name": "main",
+      "type": "Branch"
+    },
+    "options": [
+      {
+        "current": true,
+        "ref_spec": {
+          "name": "main",
+          "type": "Branch"
+        },
+        "subject": null
+      }
+    ],
+    "query": "sel",
+    "repo_id": "01HF7YAT000000000000000002",
+    "repo_name": "nits",
+    "selected": 0,
+    "side": "Head",
+    "status": {
+      "type": "Ready"
+    }
+  },
   "resolved_targets": [
     {
       "base": {

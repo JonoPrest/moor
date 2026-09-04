@@ -662,8 +662,11 @@ describe("ReviewHeader", () => {
         reviews=[review] workspaces=[ws] resolvedTargets=[resolved] openReview=Some(review.id) prefs
       />,
     )
-    let refs = Element.querySelectorAll(container, ".review-header-ref")
-    expect(Array.length(refs))->toBe(2 * Array.length(review.targets))
+    expect(Array.length(Screen.queryAllByText("Base")))->toBe(Array.length(review.targets))
+    expect(Array.length(Screen.queryAllByText("Head")))->toBe(Array.length(review.targets))
+    expect(Array.length(Element.querySelectorAll(container, ".review-header-target .btn")))->toBe(
+      2 * Array.length(review.targets),
+    )
     cleanup()
     let {container: closed} = render(
       <ReviewHeader reviews=[review] workspaces=[ws] resolvedTargets=[] openReview=None prefs />,
@@ -715,6 +718,78 @@ describe("ReviewHeader", () => {
     )
     expect(Element.hasAttribute(Screen.getByText("Split"), "data-active"))->toBe(true)
     expect(Element.hasAttribute(Screen.getByText("hide whitespace"), "data-active"))->toBe(true)
+  })
+
+  test("base and head buttons open the selector for the exact repo", () => {
+    let dispatch = fn()
+    let review = Fixtures.parse(Domain.Review.schema, "protocol", "Review", "default")
+    let ws = Fixtures.parse(Domain.Workspace.schema, "protocol", "Workspace", "default")
+    let _ = render(
+      <ReviewHeader
+        reviews=[review]
+        workspaces=[ws]
+        resolvedTargets=[]
+        openReview=Some(review.id)
+        prefs=View.ViewModel.empty.prefs
+        dispatch
+      />,
+    )
+    let target = review.targets->Array.getUnsafe(0)
+    FireEvent.click(Screen.getByText(RefSpecText.print(target.base) ++ " ▾"))
+    expect(dispatch)->toHaveBeenLastCalledWith(
+      Action.OpenRefSelector({repoId: target.repoId, side: Base}),
+    )
+  })
+})
+
+describe("RefSelector", () => {
+  test("shows kinds/current state and dispatches keyboard navigation", () => {
+    let dispatch = fn()
+    let selector = Fixtures.parse(
+      View.RefSelectorView.schema,
+      "client",
+      "RefSelectorView",
+      "default",
+    )
+    let _ = render(<RefSelector selector dispatch />)
+    let input = Screen.getByPlaceholderText("Find a head revision")
+    expect(Document.activeElement)->toEqual(Nullable.make(input))
+    let _ = Screen.getByText("branch")
+    let current = Screen.getByTextRe(/current/)
+    FireEvent.click(current)
+    expect(dispatch)->toHaveBeenLastCalledWith(Action.SelectRef({index: 0}))
+    FireEvent.change(input, {"target": {"value": "feature"}})
+    expect(dispatch)->toHaveBeenLastCalledWith(Action.RefSelectorQuery({query: "feature"}))
+    FireEvent.keyDown(input, {"key": "j", "ctrlKey": false})
+    expect(dispatch)->toHaveBeenLastCalledWith(Action.RefSelectorStep({delta: 1}))
+    FireEvent.keyDown(input, {"key": "ArrowUp", "ctrlKey": false})
+    expect(dispatch)->toHaveBeenLastCalledWith(Action.RefSelectorStep({delta: -1}))
+    FireEvent.keyDown(input, {"key": "Enter", "ctrlKey": false})
+    expect(dispatch)->toHaveBeenLastCalledWith(Action.SelectCurrentRef({}))
+    FireEvent.keyDown(input, {"key": "Escape", "ctrlKey": false})
+    expect(dispatch)->toHaveBeenLastCalledWith(Action.CloseRefSelector({}))
+  })
+
+  test("renders loading, empty, invalid-ref, and daemon-error states", () => {
+    let selector = Fixtures.parse(
+      View.RefSelectorView.schema,
+      "client",
+      "RefSelectorView",
+      "default",
+    )
+    let dispatch = fn()
+    let {rerender} = render(<RefSelector selector={...selector, status: Loading({})} dispatch />)
+    let _ = Screen.getByTextRe(/Loading branches/)
+    rerender(<RefSelector selector={...selector, options: [], status: Ready({})} dispatch />)
+    let _ = Screen.getByText("No matching refs")
+    rerender(
+      <RefSelector selector={...selector, status: InvalidRef({message: "missing"})} dispatch />,
+    )
+    let _ = Screen.getByText("Invalid ref: missing")
+    rerender(
+      <RefSelector selector={...selector, status: DaemonError({message: "offline"})} dispatch />,
+    )
+    let _ = Screen.getByText("Daemon error: offline")
   })
 })
 

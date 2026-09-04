@@ -11,6 +11,7 @@ use crate::diff::{CommitStepper, DiffView, ThreadView};
 use crate::explorer::{Progress, TreeView};
 use crate::focus::Focus;
 use crate::keymap::{HelpView, Hint};
+use crate::ref_selector::RefSelectorView;
 use serde::{Deserialize, Serialize};
 use strum::EnumDiscriminants;
 
@@ -370,6 +371,9 @@ pub struct ViewModel {
     /// The actions palette (`:`) while open; its entries are `chrome`.
     #[serde(default)]
     pub action_palette: bool,
+    /// Base/head selector while open.
+    #[serde(default)]
+    pub ref_selector: Option<RefSelectorView>,
     /// Rows of the open file selected in Visual mode (`V`), when it is on.
     #[serde(default)]
     pub visual: Option<VisualView>,
