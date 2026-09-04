@@ -674,7 +674,7 @@ describe("ReviewHeader", () => {
     expect(Element.querySelector(closed, ".review-header"))->toBeNull
   })
 
-  test("layout and whitespace toggles dispatch, with keymap-derived tooltips", () => {
+  test("renders a minimal closed header and a keymap-described settings menu", () => {
     let dispatch = fn()
     let review = Fixtures.parse(Domain.Review.schema, "protocol", "Review", "default")
     let ws = Fixtures.parse(Domain.Workspace.schema, "protocol", "Workspace", "default")
@@ -683,7 +683,7 @@ describe("ReviewHeader", () => {
       {keys: "g s", command: ToggleLayout, label: "split layout"},
       {keys: "g h", command: ToggleWhitespace, label: "hide whitespace"},
     ]
-    let _ = render(
+    let {container} = render(
       <ReviewHeader
         reviews=[review]
         workspaces=[ws]
@@ -694,30 +694,138 @@ describe("ReviewHeader", () => {
         dispatch
       />,
     )
-    let split = Screen.getByText("Split")
-    expect(Element.getAttribute(split, "title"))->toEqual(Nullable.make("split layout (g s)"))
-    FireEvent.click(split)
-    expect(dispatch)->toHaveBeenLastCalledWith(Action.SetLayout({layout: Split}))
-    FireEvent.click(Screen.getByText("hide whitespace"))
-    expect(dispatch)->toHaveBeenLastCalledWith(
-      Action.SetRenderOpts({ignoreWhitespace: true, contextLines: prefs.contextLines}),
+    let trigger = Screen.getByLabelText("Diff settings")
+    expect(Element.getAttribute(trigger, "aria-controls"))->toEqual(
+      Nullable.make("diff-settings-menu"),
     )
-    // The inactive segment carries no data-active (Unified is default).
-    expect(Element.hasAttribute(split, "data-active"))->toBe(false)
-    cleanup()
-    let _ = render(
+    expect(Element.getAttribute(trigger, "aria-haspopup"))->toEqual(Nullable.make("menu"))
+    expect(Element.getAttribute(trigger, "aria-expanded"))->toEqual(Nullable.make("false"))
+    expect(Element.querySelector(container, "[role=\"menu\"]"))->toBeNull
+    expect(Element.querySelector(container, ".segmented"))->toBeNull
+    expect(Array.length(Screen.queryAllByText("Unified")))->toBe(0)
+    expect(Array.length(Screen.queryAllByText("hide whitespace")))->toBe(0)
+    expect(Element.innerHTML(container))->toMatchSnapshot("minimal closed review header")
+
+    FireEvent.keyDown(trigger, {"key": "Enter", "ctrlKey": false})
+    expect(Element.getAttribute(trigger, "aria-expanded"))->toEqual(Nullable.make("true"))
+    let unified = Screen.getByLabelText("Unified")
+    let split = Screen.getByLabelText("Split")
+    let show = Screen.getByLabelText("Show")
+    expect(Document.activeElement)->toEqual(Nullable.make(unified))
+    expect(Element.getAttribute(unified, "aria-checked"))->toEqual(Nullable.make("true"))
+    expect(Element.getAttribute(split, "aria-checked"))->toEqual(Nullable.make("false"))
+    expect(Element.getAttribute(show, "aria-checked"))->toEqual(Nullable.make("true"))
+    expect(Element.getAttribute(split, "title"))->toEqual(Nullable.make("split layout (g s)"))
+    expect(Element.textContent(split))->toContain("g s")
+    expect(Element.getAttribute(Screen.getByLabelText("Hide"), "title"))->toEqual(
+      Nullable.make("hide whitespace (g h)"),
+    )
+    expect(Element.textContent(Screen.getByLabelText("Hide")))->toContain("g h")
+    expect(Element.innerHTML(container))->toMatchSnapshot("open diff settings menu")
+  })
+
+  test("supports mouse and roving-keyboard selection, Esc, and outside click", () => {
+    let dispatch = fn()
+    let review = Fixtures.parse(Domain.Review.schema, "protocol", "Review", "default")
+    let ws = Fixtures.parse(Domain.Workspace.schema, "protocol", "Workspace", "default")
+    let prefs = View.ViewModel.empty.prefs
+    let {container} = render(
       <ReviewHeader
         reviews=[review]
         workspaces=[ws]
         resolvedTargets=[]
         openReview=Some(review.id)
-        prefs={...prefs, layout: Split, ignoreWhitespace: true}
-        chrome
+        prefs
         dispatch
       />,
     )
-    expect(Element.hasAttribute(Screen.getByText("Split"), "data-active"))->toBe(true)
-    expect(Element.hasAttribute(Screen.getByText("hide whitespace"), "data-active"))->toBe(true)
+    let trigger = Screen.getByLabelText("Diff settings")
+    FireEvent.click(trigger)
+    let unified = Screen.getByLabelText("Unified")
+    FireEvent.keyDown(unified, {"key": "ArrowDown", "ctrlKey": false})
+    let split = Screen.getByLabelText("Split")
+    expect(Document.activeElement)->toEqual(Nullable.make(split))
+    FireEvent.keyDown(split, {"key": "Enter", "ctrlKey": false})
+    expect(dispatch)->toHaveBeenLastCalledWith(Action.SetLayout({layout: Split}))
+    expect(Element.querySelector(container, "[role=\"menu\"]"))->toBeNull
+    expect(Document.activeElement)->toEqual(Nullable.make(trigger))
+
+    // Space opens the trigger once; ArrowUp wraps to the last option and
+    // Space selects it without leaking either key to the shell keymap.
+    FireEvent.keyDown(trigger, {"key": " ", "ctrlKey": false})
+    let unified = Screen.getByLabelText("Unified")
+    FireEvent.keyDown(unified, {"key": "ArrowUp", "ctrlKey": false})
+    let hide = Screen.getByLabelText("Hide")
+    expect(Document.activeElement)->toEqual(Nullable.make(hide))
+    FireEvent.keyDown(hide, {"key": " ", "ctrlKey": false})
+    expect(dispatch)->toHaveBeenLastCalledWith(
+      Action.SetRenderOpts({ignoreWhitespace: true, contextLines: prefs.contextLines}),
+    )
+    expect(Document.activeElement)->toEqual(Nullable.make(trigger))
+
+    FireEvent.click(trigger)
+    FireEvent.keyDown(Screen.getByLabelText("Unified"), {"key": "Escape", "ctrlKey": false})
+    expect(Element.querySelector(container, "[role=\"menu\"]"))->toBeNull
+    expect(Document.activeElement)->toEqual(Nullable.make(trigger))
+
+    FireEvent.click(trigger)
+    let target = review.targets->Array.getUnsafe(0)
+    let outside = Screen.getByText(RefSpecText.print(target.base) ++ " ▾")
+    Element.focus(outside)
+    FireEvent.click(outside)
+    expect(Element.querySelector(container, "[role=\"menu\"]"))->toBeNull
+    expect(Document.activeElement)->toEqual(Nullable.make(trigger))
+
+    FireEvent.click(trigger)
+    FireEvent.click(Screen.getByLabelText("Split"))
+    expect(dispatch)->toHaveBeenLastCalledWith(Action.SetLayout({layout: Split}))
+    expect(Document.activeElement)->toEqual(Nullable.make(trigger))
+
+    FireEvent.click(trigger)
+    FireEvent.keyDown(Screen.getByLabelText("Unified"), {"key": "Tab", "ctrlKey": false})
+    expect(Element.querySelector(container, "[role=\"menu\"]"))->toBeNull
+
+    FireEvent.click(trigger)
+    FireEvent.keyDownWithShift(
+      Screen.getByLabelText("Unified"),
+      {
+        "key": "Tab",
+        "ctrlKey": false,
+        "shiftKey": true,
+      },
+    )
+    expect(Element.querySelector(container, "[role=\"menu\"]"))->toBeNull
+  })
+
+  test("reflects preference changes made by shortcuts while it is open", () => {
+    let dispatch = fn()
+    let review = Fixtures.parse(Domain.Review.schema, "protocol", "Review", "default")
+    let ws = Fixtures.parse(Domain.Workspace.schema, "protocol", "Workspace", "default")
+    let prefs = View.ViewModel.empty.prefs
+    let view = prefs =>
+      <ReviewHeader
+        reviews=[review]
+        workspaces=[ws]
+        resolvedTargets=[]
+        openReview=Some(review.id)
+        prefs
+        dispatch
+      />
+    let {rerender} = render(view(prefs))
+    FireEvent.click(Screen.getByLabelText("Diff settings"))
+    rerender(view({...prefs, layout: Split, ignoreWhitespace: true}))
+    expect(Element.getAttribute(Screen.getByLabelText("Unified"), "aria-checked"))->toEqual(
+      Nullable.make("false"),
+    )
+    expect(Element.getAttribute(Screen.getByLabelText("Split"), "aria-checked"))->toEqual(
+      Nullable.make("true"),
+    )
+    expect(Element.getAttribute(Screen.getByLabelText("Show"), "aria-checked"))->toEqual(
+      Nullable.make("false"),
+    )
+    expect(Element.getAttribute(Screen.getByLabelText("Hide"), "aria-checked"))->toEqual(
+      Nullable.make("true"),
+    )
   })
 
   test("base and head buttons open the selector for the exact repo", () => {

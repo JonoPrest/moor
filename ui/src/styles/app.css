@@ -197,6 +197,12 @@
   .btn-ghost {
     @apply border-transparent text-muted;
   }
+  .btn-icon {
+    @apply flex h-6 w-6 cursor-pointer items-center justify-center bg-panel p-0 text-sm leading-none text-muted;
+  }
+  .btn-icon:hover {
+    color: var(--color-accent);
+  }
   .badge {
     @apply ml-2 rounded bg-panel px-1 text-xs text-muted;
   }
@@ -285,14 +291,17 @@
     background: var(--color-diff-remove-fg);
   }
   .review-header {
-    @apply flex items-center gap-3 overflow-x-auto border-b border-border bg-panel px-3 py-1.5 text-sm whitespace-nowrap;
+    @apply flex items-center gap-3 border-b border-border bg-panel px-3 py-1.5 text-sm whitespace-nowrap;
+  }
+  .review-header-main {
+    @apply flex min-w-0 flex-1 items-center gap-3 overflow-x-auto;
     /* Scrollable when narrow, but never a visible second scrollbar. */
     scrollbar-width: none;
   }
-  .review-header::-webkit-scrollbar {
+  .review-header-main::-webkit-scrollbar {
     display: none;
   }
-  .review-header > * {
+  .review-header-main > * {
     @apply shrink-0;
   }
   .review-header-title {
@@ -674,7 +683,36 @@
     @apply flex flex-1 items-center justify-center text-muted;
   }
   .review-header-toggles {
-    @apply ml-auto flex items-center gap-2;
+    @apply flex shrink-0 items-center gap-2;
+  }
+  .diff-settings {
+    @apply relative;
+  }
+  .diff-settings-menu {
+    @apply absolute top-full right-0 z-30 mt-1 w-56 rounded border border-border bg-panel p-1 shadow-lg;
+  }
+  .menu-group + .menu-group {
+    @apply mt-1 border-t border-border pt-1;
+  }
+  .menu-group-label {
+    @apply block px-2 py-1 text-[10px] font-semibold tracking-wide text-muted uppercase;
+  }
+  .menu-item {
+    @apply flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1 text-left text-xs;
+  }
+  .menu-item:hover,
+  .menu-item:focus-visible {
+    background: color-mix(in oklch, var(--color-focus) 20%, transparent);
+    outline: none;
+  }
+  .menu-item-check {
+    @apply inline-block w-3 text-accent;
+  }
+  .menu-item-label {
+    @apply flex-1;
+  }
+  .menu-item-hint {
+    @apply text-muted;
   }
   .toggle {
     @apply whitespace-nowrap;

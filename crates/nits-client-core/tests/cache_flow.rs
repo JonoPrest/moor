@@ -269,6 +269,24 @@ fn persists(effects: &[Effect]) -> Vec<String> {
         .collect()
 }
 
+fn persisted_view_prefs(effects: &[Effect]) -> Vec<nits_client_core::ViewPrefs> {
+    effects
+        .iter()
+        .filter_map(|effect| match effect {
+            Effect::Persist { key, value } if key == nits_client_core::ViewPrefs::KEY => {
+                Some(serde_json::from_slice(value).unwrap())
+            }
+            Effect::Persist { .. }
+            | Effect::Send(_)
+            | Effect::Connect
+            | Effect::Disconnect
+            | Effect::Render(_)
+            | Effect::Load { .. }
+            | Effect::Remove { .. } => None,
+        })
+        .collect()
+}
+
 fn removes(effects: &[Effect]) -> Vec<String> {
     effects
         .iter()
@@ -1559,6 +1577,8 @@ fn prefs_are_loaded_once_on_connect_persisted_on_change_and_re_key_renders() {
         persists(&effects),
         vec![nits_client_core::ViewPrefs::KEY.to_string()]
     );
+    assert_eq!(persisted_view_prefs(&effects), vec![core.view().prefs]);
+    assert_eq!(core.view().prefs.layout, nits_client_core::Layout::Split);
     assert_eq!(rendered(&effects), vec![ViewSection::Diff]);
     // Render options re-key every render: the file list is fetched again
     // with the new opts and the tree empties until it lands.
@@ -1575,6 +1595,9 @@ fn prefs_are_loaded_once_on_connect_persisted_on_change_and_re_key_renders() {
         persists(&effects),
         vec![nits_client_core::ViewPrefs::KEY.to_string()]
     );
+    assert_eq!(persisted_view_prefs(&effects), vec![core.view().prefs]);
+    assert!(core.view().prefs.ignore_whitespace);
+    assert_eq!(core.view().prefs.layout, nits_client_core::Layout::Split);
     assert!(core.view().review.as_ref().unwrap().files.is_empty());
     let effects = core
         .handle(Input::Server(ServerMsg::Response {

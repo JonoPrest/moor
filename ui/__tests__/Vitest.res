@@ -15,6 +15,7 @@ type expect<'a>
 @send external toContain: (expect<'a>, 'b) => unit = "toContain"
 @send external toHaveBeenCalledWith: (expect<'f>, 'a) => unit = "toHaveBeenCalledWith"
 @send external toHaveBeenLastCalledWith: (expect<'f>, 'a) => unit = "toHaveBeenLastCalledWith"
+@send external toMatchSnapshot: (expect<'a>, string) => unit = "toMatchSnapshot"
 @get external not_: expect<'a> => expect<'a> = "not"
 @send external toHaveBeenCalled: expect<'f> => unit = "toHaveBeenCalled"
 @send external toBeNull: expect<'a> => unit = "toBeNull"

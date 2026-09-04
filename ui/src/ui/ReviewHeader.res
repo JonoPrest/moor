@@ -1,30 +1,27 @@
 // What the open review diffs, laid out exactly as the design canvas'
 // Main artboard (UI-DESIGN §Layout): title · labelled Base → Head selectors ·
-// `+ working tree` check · (right) Unified|Split ·
-// hide-whitespace check · totals · connection dot. A working-tree head
-// shows the checked-out branch from the resolved targets. Every
-// control's tooltip comes from the keymap chrome, never hand-written.
+// `+ working tree` check · (right) compact diff settings · totals ·
+// connection dot. A working-tree head shows the checked-out branch from
+// the resolved targets. Menu hints come from the keymap chrome.
 
-module Seg = {
-  /// One segment of a joined segmented control.
-  @react.component
-  let make = (~label: string, ~active: bool, ~title: option<string>, ~onClick: unit => unit) => {
-    let el =
-      <button
-        type_="button"
-        className="seg"
-        ?title
-        ariaPressed={active ? #"true" : #"false"}
-        onClick={_ => onClick()}
-      >
-        {React.string(label)}
-      </button>
-    active ? Attrs.withData(el, [("data-active", "true")]) : el
-  }
+let focusMenuItem: (Nullable.t<Dom.element>, int) => unit = %raw(`(menu, index) => {
+  menu?.querySelectorAll('[role="menuitemradio"]')[index]?.focus()
+}`)
+let focusSettingsButton: Nullable.t<Dom.element> => unit = %raw(`root => {
+  root?.querySelector('[aria-controls="diff-settings-menu"]')?.focus()
+}`)
+let eventIsOutside: (Nullable.t<Dom.element>, 'event) => bool = %raw(`(root, event) => {
+  return root == null || !root.contains(event.target)
+}`)
+
+module Pointer = {
+  type event
+  @val @scope("document") external listen: (string, event => unit) => unit = "addEventListener"
+  @val @scope("document") external unlisten: (string, event => unit) => unit = "removeEventListener"
 }
 
 module Check = {
-  /// A checkbox chip (design: `+ working tree`, `hide whitespace`).
+  /// The compact `+ working tree` scope chip.
   @react.component
   let make = (~label: string, ~checked: bool, ~title: option<string>, ~onToggle: unit => unit) => {
     let el =
@@ -49,7 +46,57 @@ let make = (
   ~progress: View.Progress.t=View.ViewModel.empty.progress,
   ~refSelector: option<View.RefSelectorView.t>=?,
   ~dispatch: Action.t => unit=_ => (),
-) =>
+) => {
+  let (settingsOpen, setSettingsOpen) = React.useState(() => false)
+  let (settingsIndex, setSettingsIndex) = React.useState(() => 0)
+  let settingsRef = React.useRef(Nullable.null)
+  let menuRef = React.useRef(Nullable.null)
+  let closeSettings = () => {
+    setSettingsOpen(_ => false)
+    focusSettingsButton(settingsRef.current)
+  }
+  let chooseSetting = index => {
+    switch index {
+    | 0 if prefs.layout != Unified => dispatch(SetLayout({layout: Unified}))
+    | 1 if prefs.layout != Split => dispatch(SetLayout({layout: Split}))
+    | 2 if prefs.ignoreWhitespace =>
+      dispatch(SetRenderOpts({ignoreWhitespace: false, contextLines: prefs.contextLines}))
+    | 3 if !prefs.ignoreWhitespace =>
+      dispatch(SetRenderOpts({ignoreWhitespace: true, contextLines: prefs.contextLines}))
+    | 0 | 1 | 2 | 3 | _ => ()
+    }
+    closeSettings()
+  }
+  let moveSetting = delta => {
+    let next = mod(settingsIndex + delta + 4, 4)
+    setSettingsIndex(_ => next)
+    focusMenuItem(menuRef.current, next)
+  }
+  let menuKey = key =>
+    switch key {
+    | "ArrowDown" | "ArrowRight" => moveSetting(1)
+    | "ArrowUp" | "ArrowLeft" => moveSetting(-1)
+    | "Enter" | " " => chooseSetting(settingsIndex)
+    | "Escape" => closeSettings()
+    | "Tab" => setSettingsOpen(_ => false)
+    | _ => ()
+    }
+  React.useEffect1(() => {
+    if settingsOpen {
+      let handler = event =>
+        if eventIsOutside(settingsRef.current, event) {
+          closeSettings()
+        }
+      // `click` runs after the pointer's focus default, so restoring the
+      // trigger remains the final focus state even when the outside target
+      // itself is focusable.
+      Pointer.listen("click", handler)
+      Some(() => Pointer.unlisten("click", handler))
+    } else {
+      None
+    }
+  }, [settingsOpen])
+
   switch openReview->Option.flatMap(id => reviews->Array.find(r => r.id == id)) {
   | None => React.null
   | Some(review) => {
@@ -78,67 +125,121 @@ let make = (
       | Rejected(_) => "rejected"
       }
       <header className="review-header" ariaLabel="review targets">
-        <span className="review-header-title"> {React.string(review.title)} </span>
-        {review.targets
-        ->Array.map(t =>
-          <span key=t.repoId className="review-header-target">
-            {many
-              ? <span className="review-header-repo">
-                  {React.string(repoName(t.repoId) ++ ":")}
-                </span>
+        <div className="review-header-main">
+          <span className="review-header-title"> {React.string(review.title)} </span>
+          {review.targets
+          ->Array.map(t =>
+            <span key=t.repoId className="review-header-target">
+              {many
+                ? <span className="review-header-repo">
+                    {React.string(repoName(t.repoId) ++ ":")}
+                  </span>
+                : React.null}
+              <span className="review-header-side-label"> {React.string("Base")} </span>
+              <UI.Button
+                label={RefSpecText.print(t.base) ++ " ▾"}
+                kind=Ghost
+                onClick={() => dispatch(OpenRefSelector({repoId: t.repoId, side: Base}))}
+              />
+              <span className="review-header-arrow" ariaHidden=true> {React.string("→")} </span>
+              <span className="review-header-side-label"> {React.string("Head")} </span>
+              <UI.Button
+                label={headText(t) ++ " ▾"}
+                kind=Ghost
+                onClick={() => dispatch(OpenRefSelector({repoId: t.repoId, side: Head}))}
+              />
+            </span>
+          )
+          ->React.array}
+          {allish
+            ? <Check
+                label="+ working tree"
+                checked={scope == All({})}
+                title={Chrome.tip(chrome, ScopeWorktree)}
+                onToggle={() =>
+                  dispatch(SetScope({scope: scope == All({}) ? Committed({}) : All({})}))}
+              />
+            : React.null}
+        </div>
+        <div className="review-header-toggles">
+          <div className="diff-settings" ref={ReactDOM.Ref.domRef(settingsRef)}>
+            <UI.Button
+              label="⚙"
+              kind=Icon
+              ariaLabel="Diff settings"
+              ariaControls="diff-settings-menu"
+              expanded=settingsOpen
+              hasPopup=#menu
+              onClick={() => {
+                if settingsOpen {
+                  closeSettings()
+                } else {
+                  setSettingsIndex(_ => prefs.layout == Unified ? 0 : 1)
+                  setSettingsOpen(_ => true)
+                }
+              }}
+            />
+            {settingsOpen
+              ? <div
+                  id="diff-settings-menu"
+                  className="diff-settings-menu"
+                  role="menu"
+                  ariaLabel="Diff settings menu"
+                  ref={ReactDOM.Ref.domRef(menuRef)}
+                >
+                  <div className="menu-group" role="group" ariaLabel="Diff layout">
+                    <span className="menu-group-label"> {React.string("Diff layout")} </span>
+                    <UI.MenuItem
+                      label="Unified"
+                      checked={prefs.layout == Unified}
+                      tabIndex={settingsIndex == 0 ? 0 : -1}
+                      autoFocus={settingsIndex == 0}
+                      hint=?{Chrome.keys(chrome, ToggleLayout)}
+                      title=?{Chrome.tip(chrome, ToggleLayout)}
+                      onFocus={() => setSettingsIndex(_ => 0)}
+                      onKey=menuKey
+                      onClick={() => chooseSetting(0)}
+                    />
+                    <UI.MenuItem
+                      label="Split"
+                      checked={prefs.layout == Split}
+                      tabIndex={settingsIndex == 1 ? 0 : -1}
+                      autoFocus={settingsIndex == 1}
+                      hint=?{Chrome.keys(chrome, ToggleLayout)}
+                      title=?{Chrome.tip(chrome, ToggleLayout)}
+                      onFocus={() => setSettingsIndex(_ => 1)}
+                      onKey=menuKey
+                      onClick={() => chooseSetting(1)}
+                    />
+                  </div>
+                  <div className="menu-group" role="group" ariaLabel="Whitespace changes">
+                    <span className="menu-group-label"> {React.string("Whitespace changes")} </span>
+                    <UI.MenuItem
+                      label="Show"
+                      checked={!prefs.ignoreWhitespace}
+                      tabIndex={settingsIndex == 2 ? 0 : -1}
+                      autoFocus={settingsIndex == 2}
+                      hint=?{Chrome.keys(chrome, ToggleWhitespace)}
+                      title=?{Chrome.tip(chrome, ToggleWhitespace)}
+                      onFocus={() => setSettingsIndex(_ => 2)}
+                      onKey=menuKey
+                      onClick={() => chooseSetting(2)}
+                    />
+                    <UI.MenuItem
+                      label="Hide"
+                      checked=prefs.ignoreWhitespace
+                      tabIndex={settingsIndex == 3 ? 0 : -1}
+                      autoFocus={settingsIndex == 3}
+                      hint=?{Chrome.keys(chrome, ToggleWhitespace)}
+                      title=?{Chrome.tip(chrome, ToggleWhitespace)}
+                      onFocus={() => setSettingsIndex(_ => 3)}
+                      onKey=menuKey
+                      onClick={() => chooseSetting(3)}
+                    />
+                  </div>
+                </div>
               : React.null}
-            <span className="review-header-side-label"> {React.string("Base")} </span>
-            <UI.Button
-              label={RefSpecText.print(t.base) ++ " ▾"}
-              kind=Ghost
-              onClick={() => dispatch(OpenRefSelector({repoId: t.repoId, side: Base}))}
-            />
-            <span className="review-header-arrow" ariaHidden=true> {React.string("→")} </span>
-            <span className="review-header-side-label"> {React.string("Head")} </span>
-            <UI.Button
-              label={headText(t) ++ " ▾"}
-              kind=Ghost
-              onClick={() => dispatch(OpenRefSelector({repoId: t.repoId, side: Head}))}
-            />
-          </span>
-        )
-        ->React.array}
-        {allish
-          ? <Check
-              label="+ working tree"
-              checked={scope == All({})}
-              title={Chrome.tip(chrome, ScopeWorktree)}
-              onToggle={() =>
-                dispatch(SetScope({scope: scope == All({}) ? Committed({}) : All({})}))}
-            />
-          : React.null}
-        <span className="review-header-toggles">
-          <span className="segmented" role="group" ariaLabel="diff layout">
-            <Seg
-              label="Unified"
-              active={prefs.layout == Unified}
-              title={Chrome.tip(chrome, ToggleLayout)}
-              onClick={() => dispatch(SetLayout({layout: Unified}))}
-            />
-            <Seg
-              label="Split"
-              active={prefs.layout == Split}
-              title={Chrome.tip(chrome, ToggleLayout)}
-              onClick={() => dispatch(SetLayout({layout: Split}))}
-            />
-          </span>
-          <Check
-            label="hide whitespace"
-            checked=prefs.ignoreWhitespace
-            title={Chrome.tip(chrome, ToggleWhitespace)}
-            onToggle={() =>
-              dispatch(
-                SetRenderOpts({
-                  ignoreWhitespace: !prefs.ignoreWhitespace,
-                  contextLines: prefs.contextLines,
-                }),
-              )}
-          />
+          </div>
           <span className="header-totals">
             {React.string(Int.toString(progress.total) ++ " files · ")}
             <span className="stat-add">
@@ -150,7 +251,7 @@ let make = (
             </span>
           </span>
           <span className={"conn-dot conn-" ++ conn} title=conn />
-        </span>
+        </div>
         {switch refSelector {
         | Some(selector) => <RefSelector selector dispatch />
         | None => React.null
@@ -158,3 +259,4 @@ let make = (
       </header>
     }
   }
+}
