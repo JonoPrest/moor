@@ -130,11 +130,37 @@ module Shell = {
   @react.component
   let make = (~core: Core.t) => {
     let (model, setModel) = React.useState(() => View.ViewModel.empty)
+    // A core Realign preserves the logical line/side while expansion
+    // renumbers its row. Snapshot the browser geometry before React sees
+    // each patch, then put that same identity back at the same pixel in a
+    // layout effect. Future hosts can keep consuming the core's typed
+    // focus/viewport result without inheriting browser DOM mechanics.
+    let pendingAnchor = React.useRef(None)
+    let anchorRestored = React.useRef(false)
     React.useEffect0(() => {
-      let unsubscribe = core.subscribe(m => setModel(_ => m))
+      let unsubscribe = core.subscribe(m => {
+        switch Scroll.captureAnchor() {
+        | Some(anchor) => pendingAnchor.current = Some(anchor)
+        // An uncached-render patch temporarily removes the row. Keep the
+        // last geometry until the replacement render can consume it.
+        | None => ()
+        }
+        setModel(_ => m)
+      })
       core.attach()
       Some(unsubscribe)
     })
+    React.useLayoutEffect1(() => {
+      anchorRestored.current =
+        pendingAnchor.current->Option.mapOr(false, anchor => {
+          let restored = Scroll.restoreAnchor(anchor)
+          if restored {
+            pendingAnchor.current = None
+          }
+          restored
+        })
+      None
+    }, [model])
     // Deep link: open `?review=<id>` once the daemon is subscribed.
     let deepLinked = React.useRef(false)
     React.useEffect1(() => {
@@ -297,10 +323,14 @@ module Shell = {
       seen.current = next
       switch step {
       | Skip => ()
+      // The exact pixel anchor is stronger than ordinary scrolloff
+      // following for the patch that performed a core Realign.
+      | Follow if anchorRestored.current => ()
       | Follow => Scroll.apply(Nearest)
       | Reposition(align) => Scroll.apply(Align(align))
       | List => Focused.scrollIntoView()
       }
+      anchorRestored.current = false
       None
     }, [key])
     let dispatch = (action: Action.t) => {

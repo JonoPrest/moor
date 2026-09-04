@@ -1368,7 +1368,19 @@ impl ClientCore {
         }
         // Remember the cursor's line, not its row index: the row numbers
         // below an opened gap all shift by however much it revealed.
-        self.realign = self.focused_line(&old, &key);
+        self.realign = match self.focused_line(&old, &key) {
+            Some(realign) => Some(realign),
+            None => match self.realign.take() {
+                // A second explicit expansion can arrive while the first
+                // render is still missing. Carry the original logical line
+                // forward to the newest render instead of losing it.
+                Some(mut pending) if pending.render == old => {
+                    pending.render = key.clone();
+                    Some(pending)
+                }
+                Some(_) | None => None,
+            },
+        };
         let Some(open) = &mut self.view.review else {
             return Err(CoreError::NoOpenReview);
         };
@@ -1422,7 +1434,7 @@ impl ClientCore {
 
     /// The line the cursor is on in `render`, if that is the open file.
     fn focused_line(&self, render: &RenderKey, waiting_for: &RenderKey) -> Option<Realign> {
-        let Focus::Diff { row, .. } = self.view.focus else {
+        let Focus::Diff { row, side } = self.view.focus else {
             return None;
         };
         let open = self.view.review.as_ref()?;
@@ -1431,10 +1443,10 @@ impl ClientCore {
         }
         let diff = self.view.diff.as_ref()?;
         let r = diff.rows.iter().find(|r| r.index == row)?;
-        // A row with cells on both sides is followed by its head line.
-        let (side, line) = [nits_protocol::Side::Head, nits_protocol::Side::Base]
-            .into_iter()
-            .find_map(|side| diff::line_on(&r.row, side).map(|line| (side, line)))?;
+        // A split row can name different lines on its two sides. Preserve
+        // the half the reader actually focused rather than silently
+        // preferring whichever cell happens to be found first.
+        let line = diff::line_on(&r.row, side)?;
         Some(Realign {
             render: waiting_for.clone(),
             side,

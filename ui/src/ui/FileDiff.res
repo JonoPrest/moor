@@ -8,17 +8,7 @@ open View
 /// The line `side` of `row` carries, mirroring the core's `line_on`: a
 /// modified row has one on each side, an added row only on head, a
 /// removed row only on base.
-let lineOn = (row: Render.Row.t, side: Domain.Side.t): option<int> =>
-  switch (row, side) {
-  | (Context({left}) | Modified({left}) | Removed({left}), Base) => Some(left.lineNo)
-  | (Context({right}) | Modified({right}) | Added({right}), Head) => Some(right.lineNo)
-  | (Added(_), Base)
-  | (Removed(_), Head)
-  | (HunkHeader(_), _)
-  | (Expander(_), _)
-  | (WhitespaceOnly(_), _) =>
-    None
-  }
+let lineOn = Row.lineOn
 
 @val @scope(("navigator", "clipboard")) external writeText: string => unit = "writeText"
 @send external scrollIntoView: (Dom.element, {"block": string}) => unit = "scrollIntoView"
@@ -159,6 +149,11 @@ let make = (
           {rows
           ->Array.map(r => {
             let focused = focusedRow == Some(r.index)
+            let scrollAnchor = focused
+              ? lineOn(r.row, focusedSide)->Option.map(line =>
+                  Scroll.lineAnchor(~file=diff.file, ~side=focusedSide, ~line)
+                )
+              : None
             let selectedSide = switch inDrag(r.row) {
             | Some(side) => Some(side)
             | None => inVisual(r.index)
@@ -170,6 +165,7 @@ let make = (
                 index=r.index
                 focused
                 focusedSide
+                ?scrollAnchor
                 ?selectedSide
                 drafted=?r.drafted
                 threads=r.threads

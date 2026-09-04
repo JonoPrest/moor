@@ -167,6 +167,11 @@ let make = (
           let focused = focusedRow == Some(item.index)
           let inner = switch cached->Dict.get(Int.toString(item.index)) {
           | Some(r) =>
+            let scrollAnchor = focused
+              ? Row.lineOn(r.row, focusedSide)->Option.map(line =>
+                  Scroll.lineAnchor(~file=diff.file, ~side=focusedSide, ~line)
+                )
+              : None
             <>
               <Row
                 row=r.row
@@ -174,6 +179,7 @@ let make = (
                 index=item.index
                 focused
                 focusedSide
+                ?scrollAnchor
                 drafted=?r.drafted
                 threads=r.threads
                 onClick={side => dispatch(SetFocus({focus: Focus.Diff({row: item.index, side})}))}

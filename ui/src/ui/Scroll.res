@@ -94,11 +94,18 @@ external getBoundingClientRect: element => {"top": float, "bottom": float, "heig
 @val @scope("document") external querySelector: string => Nullable.t<element> = "querySelector"
 @send external closest: (element, string) => Nullable.t<element> = "closest"
 @send external querySelectorIn: (element, string) => Nullable.t<element> = "querySelector"
+@send external getAttribute: (element, string) => Nullable.t<string> = "getAttribute"
 
 let boxOf = (el: element): box => {
   let r = getBoundingClientRect(el)
   {top: r["top"], bottom: r["bottom"], height: r["height"]}
 }
+
+/// Stable identity for a rendered line. It intentionally includes the
+/// side: a split row may carry two different source lines, and preserving
+/// only the row would move a base-side reader onto the head-side line.
+let lineAnchor = (~file: View.FileRef.t, ~side: Domain.Side.t, ~line: int): string =>
+  file.repoId ++ ":" ++ file.path ++ ":" ++ Domain.Side.name(side) ++ ":" ++ Int.toString(line)
 
 /// The nearest ancestor that actually scrolls.
 let rec scroller = (el: element): option<element> =>
@@ -109,6 +116,41 @@ let rec scroller = (el: element): option<element> =>
       Some(p)
     } else {
       scroller(p)
+    }
+  }
+
+/// The focused logical line's screen position immediately before a view
+/// patch lands. The DOM element itself is not retained: React and the
+/// virtualizer are free to replace it while applying the patch.
+type anchor = {key: string, top: float}
+
+let captureAnchor = (): option<anchor> =>
+  switch querySelector("[data-focused][data-scroll-anchor]")->Nullable.toOption {
+  | None => None
+  | Some(el) =>
+    getAttribute(el, "data-scroll-anchor")
+    ->Nullable.toOption
+    ->Option.map(key => {key, top: boxOf(el).top})
+  }
+
+/// Put the same logical line back at its captured viewport-relative Y.
+/// Measuring the actual rectangles makes this independent of row index,
+/// insertion direction, and the heights of rows revealed above it.
+let restoreAnchor = (anchor: anchor): bool =>
+  switch querySelector("[data-focused][data-scroll-anchor]")->Nullable.toOption {
+  | None => false
+  | Some(el)
+    if getAttribute(el, "data-scroll-anchor")->Nullable.toOption != Some(anchor.key) => false
+  | Some(el) =>
+    switch scroller(el) {
+    | None => false
+    | Some(container) => {
+        let d = boxOf(el).top -. anchor.top
+        if d != 0. {
+          setScrollTop(container, scrollTop(container) +. d)
+        }
+        true
+      }
     }
   }
 

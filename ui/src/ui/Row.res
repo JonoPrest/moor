@@ -31,6 +31,22 @@ let rowClassName = (row: Row.t): string =>
   | WhitespaceOnly(_) => "row-whitespace-only"
   }
 
+/// The source line represented by one side of a row. Keeping this beside
+/// the renderer gives every host the same stable identity for focus and
+/// scroll anchoring; row indices are deliberately not identities because
+/// context expansion renumbers them.
+let lineOn = (row: Row.t, side: Domain.Side.t): option<int> =>
+  switch (row, side) {
+  | (Context({left}) | Modified({left}) | Removed({left}), Base) => Some(left.lineNo)
+  | (Context({right}) | Modified({right}) | Added({right}), Head) => Some(right.lineNo)
+  | (Added(_), Base)
+  | (Removed(_), Head)
+  | (HunkHeader(_), _)
+  | (Expander(_), _)
+  | (WhitespaceOnly(_), _) =>
+    None
+  }
+
 /// A cell's text split at every span and changed-range boundary, each
 /// piece carrying its span class and whether it is inside a changed range.
 type piece = {text: string, class: option<SpanClass.t>, changed: bool}
@@ -156,6 +172,7 @@ let make = (
   ~onMouseEnter: Domain.Side.t => unit=_ => (),
   ~onExpand: (int, Render.ExpandDir.t) => unit=(_, _) => (),
   ~chrome: array<View.Hint.t>=[],
+  ~scrollAnchor: option<string>=?,
 ) => {
   let base = "row " ++ rowClassName(row)
   let className = switch layout {
@@ -239,7 +256,16 @@ let make = (
         >
           {React.string(arrow(d))}
         </button>
-      <div className="cell-hunk" onClick={_ => onExpand(gap, dir)}>
+      <div
+        className="cell-hunk"
+        onClick={ev => {
+          // The expander is an action beside the cursor, not a row to
+          // move the cursor onto. This keeps its mouse alias identical to
+          // `z u`/`z d` while the async render is in flight.
+          ReactEvent.Mouse.stopPropagation(ev)
+          onExpand(gap, dir)
+        }}
+      >
         {switch dir {
         | Both =>
           <>
@@ -289,7 +315,9 @@ let make = (
           ("data-focused", "true"),
           ("data-row-index", Int.toString(index)),
           ("data-side", Domain.Side.name(focusedSide)),
-        ]
+        ]->Array.concat(
+          scrollAnchor->Option.map(key => [("data-scroll-anchor", key)])->Option.getOr([]),
+        )
       : [("data-row-index", Int.toString(index))],
   )
 }
