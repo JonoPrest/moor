@@ -1,0 +1,17 @@
+---
+source: crates/nits-client-core/tests/snapshots.rs
+expression: "serde_json::json!({ \"prefs\": core.view().prefs, \"focus\": core.view().focus, })"
+---
+{
+  "focus": {
+    "row": 0,
+    "side": "Head",
+    "type": "Diff"
+  },
+  "prefs": {
+    "context_lines": 3,
+    "ignore_whitespace": false,
+    "layout": "Unified",
+    "sidebar_hidden": true
+  }
+}

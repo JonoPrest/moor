@@ -415,6 +415,30 @@ fn scope_picker_commit() {
 }
 
 #[test]
+fn sidebar_visibility_states() {
+    let mut core = opened();
+    settings().bind(|| {
+        insta::assert_json_snapshot!(
+            "sidebar_visible",
+            serde_json::json!({
+                "prefs": core.view().prefs,
+                "focus": core.view().focus,
+            })
+        );
+    });
+    core.handle(Input::User(Action::ToggleSidebar)).unwrap();
+    settings().bind(|| {
+        insta::assert_json_snapshot!(
+            "sidebar_hidden",
+            serde_json::json!({
+                "prefs": core.view().prefs,
+                "focus": core.view().focus,
+            })
+        );
+    });
+}
+
+#[test]
 fn view_after_open() {
     let core = opened();
     settings().bind(|| insta::assert_json_snapshot!("after_open", core.view()));

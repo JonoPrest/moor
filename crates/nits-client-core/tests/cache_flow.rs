@@ -1535,12 +1535,12 @@ fn prefs_are_loaded_once_on_connect_persisted_on_change_and_re_key_renders() {
             nits_client_core::Keymap::KEY.to_string()
         ]
     );
-    // Stored prefs: split layout, whitespace ignored.
+    // Stored prefs: split layout, whitespace ignored, sidebar hidden.
     let stored = nits_client_core::ViewPrefs {
         layout: nits_client_core::Layout::Split,
         ignore_whitespace: true,
         context_lines: 5,
-        sidebar_hidden: false,
+        sidebar_hidden: true,
     };
     let effects = core
         .handle(Input::Stored {
@@ -1580,6 +1580,38 @@ fn prefs_are_loaded_once_on_connect_persisted_on_change_and_re_key_renders() {
     assert_eq!(persisted_view_prefs(&effects), vec![core.view().prefs]);
     assert_eq!(core.view().prefs.layout, nits_client_core::Layout::Split);
     assert_eq!(rendered(&effects), vec![ViewSection::Diff]);
+    // Sidebar visibility uses the same preference path without touching the
+    // daemon or render cache. The persisted value is the whole typed prefs
+    // record, and toggling it leaves semantic focus where it can be restored.
+    let focus = core.view().focus;
+    let effects = core.handle(Input::User(Action::ToggleSidebar)).unwrap();
+    assert_eq!(effects.len(), 2);
+    let Effect::Persist { key, value } = &effects[0] else {
+        panic!("preference write must precede its render")
+    };
+    assert_eq!(key, nits_client_core::ViewPrefs::KEY);
+    let hidden: nits_client_core::ViewPrefs = serde_json::from_slice(value).unwrap();
+    assert!(hidden.sidebar_hidden);
+    assert_eq!(hidden.layout, nits_client_core::Layout::Split);
+    assert_eq!(hidden.render_opts(), core.cache_config().render_opts);
+    let Effect::Render(delta) = &effects[1] else {
+        panic!("preference write must end with one render")
+    };
+    assert_eq!(delta.sections, vec![ViewSection::Diff]);
+    assert!(requests(&effects).is_empty());
+    assert_eq!(core.view().focus, focus);
+
+    let effects = core.handle(Input::User(Action::ToggleSidebar)).unwrap();
+    assert_eq!(effects.len(), 2);
+    let Effect::Persist { key, value } = &effects[0] else {
+        panic!("preference write must precede its render")
+    };
+    assert_eq!(key, nits_client_core::ViewPrefs::KEY);
+    let shown: nits_client_core::ViewPrefs = serde_json::from_slice(value).unwrap();
+    assert!(!shown.sidebar_hidden);
+    assert_eq!(rendered(&effects), vec![ViewSection::Diff]);
+    assert!(requests(&effects).is_empty());
+    assert_eq!(core.view().focus, focus);
     // Render options re-key every render: the file list is fetched again
     // with the new opts and the tree empties until it lands.
     let effects = core

@@ -862,6 +862,36 @@ fn sequences_resolve_and_expire() {
 }
 
 #[test]
+fn leader_b_toggles_the_persisted_sidebar_preference() {
+    let mut core = ready();
+    let focus = core.view().focus;
+
+    for hidden in [true, false] {
+        let effects = press(&mut core, "space b").unwrap();
+        assert_eq!(core.view().prefs.sidebar_hidden, hidden);
+        assert_eq!(core.view().focus, focus);
+        assert!(requests(&effects).is_empty());
+
+        let writes: Vec<_> = effects
+            .iter()
+            .filter_map(|effect| match effect {
+                Effect::Persist { key, value } => Some((key, value)),
+                Effect::Send(_)
+                | Effect::Connect
+                | Effect::Disconnect
+                | Effect::Render(_)
+                | Effect::Load { .. }
+                | Effect::Remove { .. } => None,
+            })
+            .collect();
+        assert_eq!(writes.len(), 1);
+        assert_eq!(writes[0].0, nits_client_core::ViewPrefs::KEY);
+        let stored: nits_client_core::ViewPrefs = serde_json::from_slice(writes[0].1).unwrap();
+        assert_eq!(stored.sidebar_hidden, hidden);
+    }
+}
+
+#[test]
 fn pending_diff_expand_group_lists_every_continuation() {
     let mut core = ready();
     assert!(matches!(core.view().focus, Focus::Diff { .. }));

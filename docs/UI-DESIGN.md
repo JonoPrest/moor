@@ -52,8 +52,9 @@ light both):
   (`N files · +A −D`) · connection dot.
 - **Tabs**: `Files changed` (with count) · `Conversation` (with thread
   count) · `Browse`. Keys `1/2/3`.
-- **Left sidebar**: file tree with per-file `+A −D` and thread-count
-  badges; commits list below (chronological, working tree on top).
+- **Left sidebar**: a stationary top-left icon toggles the file tree;
+  the tree shows per-file `+A −D` and thread-count badges, with the commits
+  list below (chronological, working tree on top).
 - **Center**: all changed files stacked in one scroll, sticky per-file
   headers (`path · +A −D · viewed checkbox`), viewed files collapse.
 - **Hint bar** footer: connection state, viewed progress, and — always —
@@ -163,6 +164,7 @@ Flat (the main flow):
 | `1`/`2`/`3` | Files changed / Conversation / Browse |
 | `tab`/`shift-tab` | cycle pane focus |
 | `ctrl+enter` | submit comment (inside the composer) |
+| `<leader>b` | hide / show the file tree |
 | `Esc` | close/back/cancel leader (also leaves jump-to-context) |
 | `?` | help overlay |
 
